@@ -58,8 +58,9 @@ namespace Robust.Shared.Serialization.Manager
                 var (value, nodeType) = tuple;
                 var (node, instance) = vfArgument;
 
-                var nullable = value.IsNullable();
-                value = value.EnsureNotNullableType();
+                var nullable = value.IsNullable(out var underlying);
+                var original = value;
+                value = underlying ?? value;
 
                 var instanceConst = Expression.Constant(instance);
 
@@ -225,7 +226,7 @@ namespace Robust.Shared.Serialization.Manager
                         ValueDataNode when nullable => Expression.Call(
                             instanceConst,
                             nameof(ReadGenericNullable),
-                            new[] { value },
+                            new[] { original },
                             Expression.Convert(nodeParam, typeof(ValueDataNode)),
                             instantiatorConst,
                             definitionConst,
@@ -278,7 +279,7 @@ namespace Robust.Shared.Serialization.Manager
             ISerializationContext? context = null,
             bool skipHook = false)
         {
-            if (value.Value == "null")
+            if (value.IsNull)
             {
                 return null;
             }
@@ -325,7 +326,7 @@ namespace Robust.Shared.Serialization.Manager
 
         private TEnum? ReadEnumNullable<TEnum>(ValueDataNode node) where TEnum : struct
         {
-            if (node.Value == "null")
+            if (node.IsNull)
             {
                 return null;
             }
@@ -349,9 +350,9 @@ namespace Robust.Shared.Serialization.Manager
             object? rawValue = null)
             where TValue : ISelfSerialize
         {
-            if (node.Value == "null")
+            if (node.IsNull && typeof(TValue).IsNullable())
             {
-                return default; //todo paul this default should be null
+                return default;
             }
 
             var value = (TValue) (rawValue ?? instantiator());
@@ -365,7 +366,7 @@ namespace Robust.Shared.Serialization.Manager
             InstantiationDelegate<object> instantiator)
             where TValue : struct, ISelfSerialize
         {
-            if (node.Value == "null")
+            if (node.IsNull)
             {
                 return null;
             }
@@ -383,7 +384,7 @@ namespace Robust.Shared.Serialization.Manager
             object? value = null)
         where TValue : class
         {
-            if (node.Value == "null")
+            if (node.IsNull)
             {
                 return null;
             }
@@ -398,7 +399,7 @@ namespace Robust.Shared.Serialization.Manager
             bool skipHook = false)
             where TValue : struct
         {
-            if (node.Value == "null")
+            if (node.IsNull)
             {
                 return null;
             }
@@ -433,9 +434,10 @@ namespace Robust.Shared.Serialization.Manager
             bool skipHook = false,
             object? value = null)
         {
-            if (node.Value == "null")
+            if (node.IsNull)
             {
-                return default; //todo paul this default should be null
+                DebugTools.Assert(typeof(TValue).IsNullable(), $"{nameof(ReadGenericNullable)} called with a non-nullable generic argument: {nameof(TValue)}");
+                return default;
             }
 
             return ReadGenericValue<TValue>(node, instantiator, definition, populate, hooks, context, skipHook, value);

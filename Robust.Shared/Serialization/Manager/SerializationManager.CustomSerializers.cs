@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using Robust.Shared.Serialization.Markdown;
 using Robust.Shared.Serialization.Markdown.Validation;
+using Robust.Shared.Serialization.Markdown.Value;
 using Robust.Shared.Serialization.TypeSerializers.Interfaces;
 using Robust.Shared.Utility;
 
@@ -49,15 +50,30 @@ namespace Robust.Shared.Serialization.Manager
                 var skipHookParam = Expression.Parameter(typeof(bool), "skipHook");
                 var valueParam = Expression.Parameter(typeof(object), "value");
 
-                var call = Expression.Call(
-                    instanceParam,
-                    nameof(ReadWithSerializer),
-                    new[] {tuple.value, tuple.node, tuple.serializer},
-                    Expression.Convert(nodeParam, tuple.node),
-                    contextParam,
-                    skipHookParam,
-                    valueParam);
-
+                MethodCallExpression call;
+                if (tuple.value.IsNullable())
+                {
+                    call = Expression.Call(
+                        instanceParam,
+                        nameof(ReadNullableWithSerializer),
+                        new[] { tuple.value, tuple.node, tuple.serializer },
+                        Expression.Convert(nodeParam, tuple.node),
+                        contextParam,
+                        skipHookParam,
+                        valueParam);
+                }
+                else
+                {
+                    call = Expression.Call(
+                        instanceParam,
+                        nameof(ReadWithSerializer),
+                        new[] { tuple.value, tuple.node, tuple.serializer },
+                        Expression.Convert(nodeParam, tuple.node),
+                        contextParam,
+                        skipHookParam,
+                        valueParam);
+                }
+                
                 return Expression.Lambda<ReadSerializerDelegate>(
                     Expression.Convert(call, typeof(object)),
                     nodeParam,
@@ -150,6 +166,20 @@ namespace Robust.Shared.Serialization.Manager
         {
             var serializer = (ITypeReader<T, TNode>) GetTypeSerializer(typeof(TSerializer));
             return serializer.Read(this, node, DependencyCollection, skipHook, context, value == null ? default : (T)value);
+        }
+
+        private T? ReadNullableWithSerializer<T, TNode, TSerializer>(
+            TNode node,
+            ISerializationContext? context = null,
+            bool skipHook = false,
+            object? value = default)
+            where TSerializer : ITypeReader<T, TNode>
+            where TNode : DataNode
+        {
+            if (node is ValueDataNode { IsNull: true })
+                return default;
+
+            return ReadWithSerializer<T, TNode, TSerializer>(node, context, skipHook, value);
         }
 
         private DataNode WriteWithSerializerRaw(

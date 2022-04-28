@@ -327,7 +327,7 @@ namespace Robust.Shared.Serialization.Manager
         {
             var underlyingType = Nullable.GetUnderlyingType(type) ?? type;
 
-            if (value == null) return new MappingDataNode();
+            if (value == null) return ValueDataNode.Null;
 
             if (underlyingType.IsEnum)
             {
@@ -392,8 +392,7 @@ namespace Robust.Shared.Serialization.Manager
         public DataNode WriteWithTypeSerializer(Type type, Type serializer, object? value, bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
-            // TODO Serialization: just return null
-            if (type.IsNullable() && value == null) return new MappingDataNode();
+            if (type.IsNullable() && value == null) return ValueDataNode.Null;
 
             return WriteWithSerializerRaw(type, serializer, value!, context, alwaysWrite);
         }

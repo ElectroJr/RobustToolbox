@@ -1008,7 +1008,7 @@ namespace Robust.Server.Maps
                 // This is the code that deserializes the Grids index into the GridId. This has to happen between Grid allocation
                 // and when grids are bound to their entities.
 
-                if (node.Value == "null")
+                if (node.IsNull)
                 {
                     throw new MapLoadException($"Error in map file: found local grid ID '{node.Value}' which does not exist.");
                 }
@@ -1025,7 +1025,7 @@ namespace Robust.Server.Maps
             ValidationNode ITypeValidator<EntityUid, ValueDataNode>.Validate(ISerializationManager serializationManager,
                 ValueDataNode node, IDependencyCollection dependencies, ISerializationContext? context)
             {
-                if (node.Value == "null")
+                if (node.IsNull)
                 {
                     return new ValidatedValueNode(node);
                 }
@@ -1041,7 +1041,7 @@ namespace Robust.Server.Maps
             ValidationNode ITypeValidator<GridId, ValueDataNode>.Validate(ISerializationManager serializationManager,
                 ValueDataNode node, IDependencyCollection dependencies, ISerializationContext? context)
             {
-                if (node.Value == "null") return new ValidatedValueNode(node);
+                if (node.IsNull) return new ValidatedValueNode(node);
 
                 if (!int.TryParse(node.Value, out var val) || val >= Grids.Count)
                 {
@@ -1063,7 +1063,7 @@ namespace Robust.Server.Maps
                         Logger.WarningS("map", "Cannot write entity UID '{0}'.", value);
                     }
 
-                    return new ValueDataNode("null");
+                    return ValueDataNode.Null;
                 }
                 else
                 {
@@ -1091,7 +1091,7 @@ namespace Robust.Server.Maps
                 bool skipHook,
                 ISerializationContext? context, EntityUid _)
             {
-                if (node.Value == "null")
+                if (node.IsNull)
                 {
                     return EntityUid.Invalid;
                 }

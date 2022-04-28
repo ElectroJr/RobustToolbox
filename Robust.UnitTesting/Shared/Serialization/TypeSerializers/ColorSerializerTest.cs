@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using NUnit.Framework;
 using Robust.Shared.Maths;
 using Robust.Shared.Serialization.Manager;
@@ -45,7 +45,7 @@ namespace Robust.UnitTesting.Shared.Serialization.TypeSerializers
         [Test]
         public void DeserializeNullableNullTest()
         {
-            var node = new ValueDataNode("null");
+            var node = ValueDataNode.Null;
             var color = Serialization.Read<Color?>(node);
 
             Assert.That(color, Is.Null);
@@ -64,7 +64,7 @@ namespace Robust.UnitTesting.Shared.Serialization.TypeSerializers
         [Test]
         public void DeserializeNullTest()
         {
-            var node = new ValueDataNode("null");
+            var node = ValueDataNode.Null;
             Assert.That(() => Serialization.Read<Color>(node), Throws.Exception);
         }
 
