@@ -56,9 +56,6 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
             IDependencyCollection dependencies,
             bool skipHook, ISerializationContext? context, EntityPrototype? value)
         {
-            if (!IoCManager.Resolve<Prototypes.IPrototypeManager>().HasIndex<Prototypes.EntityPrototype>(node.Value))
-                throw new InvalidMappingException("Invalid Entity Prototype");
-
             return new EntityPrototype(node.Value);
         }
 
