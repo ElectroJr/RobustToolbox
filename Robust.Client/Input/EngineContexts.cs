@@ -64,9 +64,6 @@ namespace Robust.Client.Input
             common.AddFunction(EngineKeyFunctions.TextCompleteNext);
             common.AddFunction(EngineKeyFunctions.TextCompletePrev);
 
-            // Not in the editor context, so that it can be used to initiate placement.
-            common.AddFunction(EngineKeyFunctions.EditorCopyObject);
-
             var editor = contexts.New("editor", common);
             editor.AddFunction(EngineKeyFunctions.EditorLinePlace);
             editor.AddFunction(EngineKeyFunctions.EditorGridPlace);
