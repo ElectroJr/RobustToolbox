@@ -319,6 +319,10 @@ namespace Robust.Shared.GameObjects
                 _canCollide = value;
                 var ev = new CollisionChangeEvent(this, _canCollide);
                 _entMan.EventBus.RaiseEvent(EventSource.Local, ref ev);
+
+                // TODO: why is this required for PVS?
+                Awake = false;
+
                 Dirty(_entMan);
             }
         }

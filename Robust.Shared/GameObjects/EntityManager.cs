@@ -5,6 +5,7 @@ using System.Linq;
 using Prometheus;
 using Robust.Shared.IoC;
 using Robust.Shared.Map;
+using Robust.Shared.Network;
 using Robust.Shared.Profiling;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.Manager;
@@ -26,6 +27,7 @@ namespace Robust.Shared.GameObjects
         [Dependency] private readonly IMapManager _mapManager = default!;
         [Dependency] private readonly IGameTiming _gameTiming = default!;
         [Dependency] private readonly ISerializationManager _serManager = default!;
+        [Dependency] private readonly INetManager _netMan = default!;
         [Dependency] private readonly ProfManager _prof = default!;
 
         #endregion Dependencies
@@ -232,7 +234,9 @@ namespace Robust.Shared.GameObjects
         /// </remarks>
         public void Dirty(EntityUid uid)
         {
-            var currentTick = CurrentTick;
+            var currentTick = _gameTiming.CurTick;
+            if (_netMan.IsClient && (_gameTiming.CurTick <= _gameTiming.LastRealTick || _gameTiming.ApplyingState))
+                return;
 
             // We want to retrieve MetaDataComponent even if its Deleted flag is set.
             if (!_entTraitArray[CompIdx.ArrayIndex<MetaDataComponent>()].TryGetValue(uid, out var component))
@@ -252,6 +256,9 @@ namespace Robust.Shared.GameObjects
 
         public void Dirty(Component component)
         {
+            if (_netMan.IsClient && (_gameTiming.CurTick <= _gameTiming.LastRealTick || _gameTiming.ApplyingState))
+                return;
+
             var owner = component.Owner;
 
             // Deserialization will cause this to be true.

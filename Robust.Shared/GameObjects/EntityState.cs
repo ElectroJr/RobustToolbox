@@ -1,6 +1,7 @@
 using Robust.Shared.Serialization;
 using System;
 using NetSerializer;
+using Robust.Shared.Timing;
 
 namespace Robust.Shared.GameObjects
 {
@@ -13,10 +14,24 @@ namespace Robust.Shared.GameObjects
 
         public bool Empty => ComponentChanges.Value is null or { Count: 0 };
 
-        public EntityState(EntityUid uid, NetListAsArray<ComponentChange> changedComponents, bool hide = false)
+        public readonly GameTick EntityLastModified;
+
+        /// <summary>
+        ///     If true, a client should perform a full entity reset when applying this state.
+        /// </summary>
+        /// <remarks>
+        ///     This is currently required for entities that are re-entering a clients PVS. E.g., entities are removed
+        ///     from containers when they get sent to null-space. A full reset will ensure that they are moved back to their
+        ///     containers, without requiring the server to re-send the whole state.
+        /// </remarks>
+        public bool ReEnteringPvs;
+
+        public EntityState(EntityUid uid, NetListAsArray<ComponentChange> changedComponents, GameTick lastModified, bool reEnteringPvs = false)
         {
             Uid = uid;
             ComponentChanges = changedComponents;
+            EntityLastModified = lastModified;
+            ReEnteringPvs = reEnteringPvs;
         }
     }
 
@@ -45,12 +60,15 @@ namespace Robust.Shared.GameObjects
         /// </summary>
         public readonly ushort NetID;
 
-        public ComponentChange(ushort netId, bool created, bool deleted, ComponentState? state)
+        public readonly GameTick LastModifiedTick;
+
+        public ComponentChange(ushort netId, bool created, bool deleted, ComponentState? state, GameTick lastModifiedTick)
         {
             Deleted = deleted;
             State = state;
             NetID = netId;
             Created = created;
+            LastModifiedTick = lastModifiedTick;
         }
 
         public override string ToString()
@@ -58,19 +76,19 @@ namespace Robust.Shared.GameObjects
             return $"{(Deleted ? "D" : "C")} {NetID} {State?.GetType().Name}";
         }
 
-        public static ComponentChange Added(ushort netId, ComponentState? state)
+        public static ComponentChange Added(ushort netId, ComponentState? state, GameTick lastModifiedTick)
         {
-            return new(netId, true, false, state);
+            return new(netId, true, false, state, lastModifiedTick);
         }
 
-        public static ComponentChange Changed(ushort netId, ComponentState state)
+        public static ComponentChange Changed(ushort netId, ComponentState state, GameTick lastModifiedTick)
         {
-            return new(netId, false, false, state);
+            return new(netId, false, false, state, lastModifiedTick);
         }
 
         public static ComponentChange Removed(ushort netId)
         {
-            return new(netId, false, true, null);
+            return new(netId, false, true, null, default);
         }
     }
 }

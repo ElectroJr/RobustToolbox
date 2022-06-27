@@ -28,6 +28,7 @@ namespace Robust.Client.GameStates
         private const int MidrangePayloadBps = 33600 / 8; // mid-range line
         private const int BytesPerPixel = 2; // If you are running the game on a DSL connection, you can scale the graph to fit your absurd bandwidth.
         private const int LowerGraphOffset = 100; // Offset on the Y axis in pixels of the lower lag/interp graph.
+        private const int LeftMargin = 500; // X offset, to avoid interfering with the f3 menu.
         private const int MsPerPixel = 4; // Latency Milliseconds per pixel, for scaling the graph.
 
         /// <inheritdoc />
@@ -155,17 +156,16 @@ namespace Robust.Client.GameStates
         {
             // remember, 0,0 is top left of ui with +X right and +Y down
 
-            var leftMargin = 300;
             var width = HistorySize;
             var height = 500;
             var drawSizeThreshold = Math.Min(_totalHistoryPayload / HistorySize, 300);
             var handle = args.ScreenHandle;
 
             // bottom payload line
-            handle.DrawLine(new Vector2(leftMargin, height), new Vector2(leftMargin + width, height), Color.DarkGray.WithAlpha(0.8f));
+            handle.DrawLine(new Vector2(LeftMargin, height), new Vector2(LeftMargin + width, height), Color.DarkGray.WithAlpha(0.8f));
 
             // bottom lag line
-            handle.DrawLine(new Vector2(leftMargin, height + LowerGraphOffset), new Vector2(leftMargin + width, height + LowerGraphOffset), Color.DarkGray.WithAlpha(0.8f));
+            handle.DrawLine(new Vector2(LeftMargin, height + LowerGraphOffset), new Vector2(LeftMargin + width, height + LowerGraphOffset), Color.DarkGray.WithAlpha(0.8f));
 
             int lastLagY = -1;
             int lastLagMs = -1;
@@ -175,7 +175,7 @@ namespace Robust.Client.GameStates
                 var state = _history[i];
 
                 // draw the payload size
-                var xOff = leftMargin + i;
+                var xOff = LeftMargin + i;
                 var yoff = height - state.Payload / BytesPerPixel;
                 handle.DrawLine(new Vector2(xOff, height), new Vector2(xOff, yoff), Color.LightGreen.WithAlpha(0.8f));
 
@@ -211,25 +211,25 @@ namespace Robust.Client.GameStates
 
             // average payload line
             var avgyoff = height - drawSizeThreshold / BytesPerPixel;
-            handle.DrawLine(new Vector2(leftMargin, avgyoff), new Vector2(leftMargin + width, avgyoff), Color.DarkGray.WithAlpha(0.8f));
+            handle.DrawLine(new Vector2(LeftMargin, avgyoff), new Vector2(LeftMargin + width, avgyoff), Color.DarkGray.WithAlpha(0.8f));
 
             // top payload warning line
             var warnYoff = height - _warningPayloadSize / BytesPerPixel;
-            handle.DrawLine(new Vector2(leftMargin, warnYoff), new Vector2(leftMargin + width, warnYoff), Color.DarkGray.WithAlpha(0.8f));
+            handle.DrawLine(new Vector2(LeftMargin, warnYoff), new Vector2(LeftMargin + width, warnYoff), Color.DarkGray.WithAlpha(0.8f));
 
             // mid payload line
             var midYoff = height - _midrangePayloadSize / BytesPerPixel;
-            handle.DrawLine(new Vector2(leftMargin, midYoff), new Vector2(leftMargin + width, midYoff), Color.DarkGray.WithAlpha(0.8f));
+            handle.DrawLine(new Vector2(LeftMargin, midYoff), new Vector2(LeftMargin + width, midYoff), Color.DarkGray.WithAlpha(0.8f));
 
             // payload text
-            handle.DrawString(_font, new Vector2(leftMargin + width, warnYoff), "56K");
-            handle.DrawString(_font, new Vector2(leftMargin + width, midYoff), "33.6K");
+            handle.DrawString(_font, new Vector2(LeftMargin + width, warnYoff), "56K");
+            handle.DrawString(_font, new Vector2(LeftMargin + width, midYoff), "33.6K");
 
             // interp text info
             if(lastLagY != -1)
-                handle.DrawString(_font, new Vector2(leftMargin + width, lastLagY), $"{lastLagMs.ToString()}ms");
+                handle.DrawString(_font, new Vector2(LeftMargin + width, lastLagY), $"{lastLagMs.ToString()}ms");
 
-            handle.DrawString(_font, new Vector2(leftMargin, height + LowerGraphOffset), $"{_gameStateManager.CurrentBufferSize.ToString()} states");
+            handle.DrawString(_font, new Vector2(LeftMargin, height + LowerGraphOffset), $"{_gameStateManager.CurrentBufferSize.ToString()} states");
         }
 
         protected override void DisposeBehavior()

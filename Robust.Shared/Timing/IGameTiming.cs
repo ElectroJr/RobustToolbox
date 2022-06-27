@@ -149,9 +149,14 @@ namespace Robust.Shared.Timing
         bool ApplyingState { get; }
 
         /// <summary>
-        /// The last real non-predicted tick that was processed.
+        /// The last real non-extrapolated tick that was processed.
         /// </summary>
         GameTick LastRealTick { get; set; }
+
+        /// <summary>
+        ///     The last tick that was processed. This might not have been a real server tick. See <see cref="LastRealTick"/>
+        /// </summary>
+        GameTick LastProcessedTick { get; set; }
 
         string TickStamp => $"{CurTick}, predFirst: {IsFirstTimePredicted}, tickRem: {TickRemainder.TotalSeconds}, sim: {InSimulation}";
 

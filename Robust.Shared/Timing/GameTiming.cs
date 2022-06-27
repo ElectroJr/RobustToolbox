@@ -259,6 +259,9 @@ namespace Robust.Shared.Timing
         /// <inheritdoc />
         public GameTick LastRealTick { get; set; }
 
+        /// <inheritdoc />
+        public GameTick LastProcessedTick { get; set; }
+
         /// <summary>
         ///     Calculates the average FPS of the last 50 real frame times.
         /// </summary>

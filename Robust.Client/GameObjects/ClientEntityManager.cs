@@ -67,7 +67,8 @@ namespace Robust.Client.GameObjects
         {
             using (histogram?.WithLabels("EntityNet").NewTimer())
             {
-                while (_queue.Count != 0 && _queue.Peek().msg.SourceTick <= _gameStateManager.CurServerTick)
+                // TODO should this be using LastRealTick?
+                while (_queue.Count != 0 && _queue.Peek().msg.SourceTick <= _gameTiming.LastProcessedTick)
                 {
                     var (_, msg) = _queue.Take();
                     // Logger.DebugS("net.ent", "Dispatching: {0}: {1}", seq, msg);
@@ -103,7 +104,8 @@ namespace Robust.Client.GameObjects
 
         private void HandleEntityNetworkMessage(MsgEntity message)
         {
-            if (message.SourceTick <= _gameStateManager.CurServerTick)
+            // TODO should this be using LastRealTick>
+            if (message.SourceTick <= _gameTiming.LastProcessedTick)
             {
                 DispatchMsgEntity(message);
                 return;

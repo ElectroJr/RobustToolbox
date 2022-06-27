@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using Robust.Shared.Log;
 using Robust.Shared.Exceptions;

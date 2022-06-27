@@ -1,9 +1,7 @@
-﻿
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using Robust.Shared.Utility;
 
 namespace Robust.Shared.Collections;
 
@@ -74,6 +72,35 @@ public sealed class OverflowDictionary<TKey, TValue> : IDictionary<TKey, TValue>
         {
             _currentIndex = 0;
         }
+    }
+
+    /// <summary>
+    ///     Variant of <see cref="Add(TKey, TValue)"/> that also returns any entry that was removed to make room for the new entry.
+    /// </summary>
+    public (TKey Key, TValue Value)? AddAndReturnOld(TKey key, TValue value)
+    {
+        if (_dict.ContainsKey(key))
+            throw new InvalidOperationException("Tried inserting duplicate key.");
+
+        (TKey, TValue)? result = null;
+        if (Count == Capacity)
+        {
+            var startIndex = GetArrayStartIndex();
+            var entry = _insertionQueue[startIndex];
+            _dict.Remove(entry, out var oldValue);
+            Array.Clear(_insertionQueue, startIndex, 1);
+            _valueDisposer?.Invoke(oldValue!);
+            result = (entry, oldValue!);
+        }
+        _dict.Add(key, value);
+        _insertionQueue[_currentIndex++] = key;
+        if (_currentIndex == Capacity)
+        {
+            _currentIndex = 0;
+        }
+
+
+        return result;
     }
 
     public bool Remove(TKey key)

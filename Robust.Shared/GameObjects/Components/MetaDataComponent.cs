@@ -60,6 +60,25 @@ namespace Robust.Shared.GameObjects
         public GameTick EntityLastModifiedTick { get; internal set; } = new(1);
 
         /// <summary>
+        ///     This tick is the <see cref="EntityLastModifiedTick"/> of the most recently applied sever state.
+        /// </summary>
+        /// <remarks>
+        ///     This is used by clients to avoid repeatedly applying redundant server states.
+        /// </remarks>
+        [ViewVariables]
+        public GameTick LastAppliedEntityModifiedTick { get; internal set; } = GameTick.Zero;
+
+        /// <summary>
+        ///     This is the tick at which the server last received entity data from the server.
+        /// </summary>
+        /// <remarks>
+        ///     If an entity leaves PVS, this will get set to zero, to ensure that any newly received state will get
+        ///     re-applied, even if the entity has not technically changed since leaving PVS.
+        /// </remarks>
+        [ViewVariables]
+        public GameTick LastReceivedEntityData { get; internal set; } = GameTick.Zero;
+
+        /// <summary>
         ///     The in-game name of this entity.
         /// </summary>
         [ViewVariables(VVAccess.ReadWrite)]

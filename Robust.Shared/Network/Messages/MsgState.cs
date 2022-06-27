@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Diagnostics;
 using System.IO;
@@ -26,8 +26,6 @@ namespace Robust.Shared.Network.Messages
 
         public GameState State;
         public ZStdCompressionContext CompressionContext;
-
-        private bool _hasWritten;
 
         public override void ReadFromBuffer(NetIncomingMessage buffer)
         {
@@ -70,7 +68,7 @@ namespace Robust.Shared.Network.Messages
             // We compress the state.
             if (stateStream.Length > CompressionThreshold)
             {
-                var sw = Stopwatch.StartNew();
+                //var sw = Stopwatch.StartNew();
                 stateStream.Position = 0;
                 var buf = ArrayPool<byte>.Shared.Rent(ZStd.CompressBound((int)stateStream.Length));
                 var length = CompressionContext.Compress2(buf, stateStream.AsSpan());
@@ -79,7 +77,7 @@ namespace Robust.Shared.Network.Messages
 
                 buffer.Write(buf.AsSpan(0, length));
 
-                var elapsed = sw.Elapsed;
+                //var elapsed = sw.Elapsed;
                 // System.Console.WriteLine(
                 //    $"From: {State.FromSequence} To: {State.ToSequence} Size: {length} B Before: {stateStream.Length} B time: {elapsed}");
 
@@ -94,8 +92,6 @@ namespace Robust.Shared.Network.Messages
                 buffer.Write(stateStream.AsSpan());
             }
 
-
-            _hasWritten = false;
             MsgSize = buffer.LengthBytes;
         }
 
@@ -106,13 +102,6 @@ namespace Robust.Shared.Network.Messages
         /// <returns></returns>
         public bool ShouldSendReliably()
         {
-            // This check will be true in integration tests.
-            // TODO: Maybe handle this better so that packet loss integration testing can be done?
-            if (!_hasWritten)
-            {
-                return true;
-            }
-
             return MsgSize > ReliableThreshold;
         }
 
