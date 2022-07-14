@@ -38,7 +38,7 @@ public sealed class MetaDataSystem : EntitySystem
         if (metadata._entityPaused == value) return;
 
         metadata._entityPaused = value;
-        RaiseLocalEvent(uid, new EntityPausedEvent(uid, value));
+        RaiseLocalEvent(uid, new EntityPausedEvent(uid, value), true);
     }
 
     public void AddFlag(EntityUid uid, MetaDataFlags flags, MetaDataComponent? component = null)
