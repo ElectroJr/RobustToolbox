@@ -81,13 +81,13 @@ namespace Robust.Shared.Maths
         // (for _matrix.Translation = Unsafe.As<Vector128<float>, Vector2>(ref someVector);
         [FieldOffset(sizeof(float) * 4)]
         [NonSerialized]
-        public System.Numerics.Vector2 Translation;
+        private System.Numerics.Vector2 _offset;
 
         // Again, being able to use matrix.SubMatrix = vec.AsVector4() is faster than something like matrix =
         // Unsafe.As<Vector128<float>, Matrix3>(ref vec), for whatever acursed reason.
         [FieldOffset(sizeof(float) * 0)]
         [NonSerialized]
-        public System.Numerics.Vector4 SubMatrix;
+        private System.Numerics.Vector4 _subMat;
 
         /// <summary>Gets the component at the given row and column in the matrix.</summary>
         /// <param name="row">The row of the matrix.</param>
@@ -806,38 +806,35 @@ namespace Robust.Shared.Maths
             result.R1C2 = right.R1C0 * left.R0C2 + right.R1C1 * left.R1C2 + right.R1C2;
         }
 
+
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe void MultiplyFma(in Matrix3 left, in Matrix3 right, out Matrix3 result)
         {
             Unsafe.SkipInit(out result);
-            // 2x2 submatrix from first 4 elements
-            var subMatrixLeft = left.SubMatrix.AsVector128();
-            var subMatrixRight = right.SubMatrix.AsVector128();
 
-            var A = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b10_10_00_00);
-            var B = Sse.MoveLowToHigh(subMatrixLeft, subMatrixLeft);
-            var E = Sse.Multiply(A, B);
-            var C = Sse.UnpackHigh(subMatrixRight, subMatrixRight);
-            var D = Sse.MoveHighToLow(subMatrixLeft, subMatrixLeft);
-            var F = Fma.MultiplyAdd(C, D, E);
+            // 2x2 submatrix from first 4 elements
+            var subMatrixLeft = left._subMat.AsVector128();
+            var subMatrixRight = right._subMat.AsVector128();
+            var vecA = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b10_10_00_00);
+            var vecB = Sse.MoveLowToHigh(subMatrixLeft, subMatrixLeft);
+            var vecC = Sse.Multiply(vecA, vecB);
+            vecA = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b11_11_01_01);
+            vecB = Sse.MoveHighToLow(subMatrixLeft, subMatrixLeft);
+            vecC = Fma.MultiplyAdd(vecA, vecB, vecC);
 
             // first 4 elements of result are done
-            result.SubMatrix = F.AsVector4();
+            result._subMat = vecC.AsVector4();
 
-            // next:
-            // result.R0C2 = right.R0C0 * left.R0C2 + right.R0C1 * left.R1C2 + right.R0C2;
-            // result.R1C2 = right.R1C0 * left.R0C2 + right.R1C1 * left.R1C2 + right.R1C2;
-            A = left.Translation.AsVector128();
-            A = Sse.UnpackLow(A, A);
-            B = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b11_01_10_00);
-            C = Sse.Multiply(A, B);
-            D = Sse.MoveHighToLow(D, C);
-            C = Sse.Add(C, D);
-
-            // only care abut lower part from here on. Old upper part of E is irrelevant.
-            E = right.Translation.AsVector128();
-            C = Sse.Add(C, E);
-            result.Translation = C.AsVector2();
+            vecA = left._offset.AsVector128();
+            vecB = Sse.UnpackLow(vecA, vecA);
+            vecC = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b11_01_10_00);
+            vecA = Sse.Multiply(vecB, vecC);
+            vecB = Sse.MoveHighToLow(vecC, vecA);
+            vecC = Sse.Add(vecA, vecB);
+            vecA = right._offset.AsVector128();
+            vecB = Sse.Add(vecA, vecC);
+            result._offset = vecB.AsVector2();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -845,34 +842,29 @@ namespace Robust.Shared.Maths
         {
             Unsafe.SkipInit(out result);
             // 2x2 submatrix from first 4 elements
-            var subMatrixLeft = left.SubMatrix.AsVector128();
-            var subMatrixRight = right.SubMatrix.AsVector128();
+            var subMatrixLeft = left._subMat.AsVector128();
+            var subMatrixRight = right._subMat.AsVector128();
 
-            var A = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b10_10_00_00);
-            var B = Sse.MoveLowToHigh(subMatrixLeft, subMatrixLeft);
-            var E = Sse.Multiply(A, B);
-            var C = Sse.UnpackHigh(subMatrixRight, subMatrixRight);
-            var D = Sse.MoveHighToLow(subMatrixLeft, subMatrixLeft);
-            var F = Sse.Multiply(C, D);
-            var G = Sse.Add(F, E);
+            var vecA = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b10_10_00_00);
+            var vecB = Sse.MoveLowToHigh(subMatrixLeft, subMatrixLeft);
+            var vecC = Sse.Multiply(vecA, vecB);
+            vecA = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b11_11_01_01);
+            vecB = Sse.MoveHighToLow(subMatrixLeft, subMatrixLeft);
+            vecA = Sse.Multiply(vecA, vecB);
+            vecC = Sse.Add(vecA, vecC);
 
             // first 4 elements of result are done
-            result.SubMatrix = G.AsVector4();
+            result._subMat = vecC.AsVector4();
 
-            // next:
-            // result.R0C2 = right.R0C0 * left.R0C2 + right.R0C1 * left.R1C2 + right.R0C2;
-            // result.R1C2 = right.R1C0 * left.R0C2 + right.R1C1 * left.R1C2 + right.R1C2;
-            A = left.Translation.AsVector128();
-            A = Sse.UnpackLow(A, A);
-            B = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b11_01_10_00);
-            C = Sse.Multiply(A, B);
-            D = Sse.MoveHighToLow(D, C);
-            C = Sse.Add(C, D);
-
-            // only care abut lower part from here on. Old upper part of E is irrelevant.
-            E = right.Translation.AsVector128();
-            C = Sse.Add(C, E);
-            result.Translation = C.AsVector2();
+            vecA = left._offset.AsVector128();
+            vecA = Sse.UnpackLow(vecA, vecA);
+            vecB = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b11_01_10_00);
+            vecA = Sse.Multiply(vecA, vecB);
+            vecB = Sse.MoveHighToLow(vecB, vecA);
+            vecA = Sse.Add(vecA, vecB);
+            vecC = right._offset.AsVector128();
+            vecA = Sse.Add(vecA, vecC);
+            result._offset = vecA.AsVector2();
         }
 
         /// <summary>Multiply matrix times this scalar.</summary>
@@ -1147,8 +1139,8 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe Vector2 TransformVec2Sse(in Matrix3 matrix, Vector2 vector)
         {
-            var subMatrix = matrix.SubMatrix.AsVector128();
-            var translate = matrix.Translation.AsVector128();
+            var subMatrix = matrix._subMat.AsVector128();
+            var translate = matrix._offset.AsVector128();
             translate = Sse.UnpackLow(translate, Vector128<float>.Zero);
 
             var X = Vector128.Create(vector.X);
@@ -1167,8 +1159,8 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe Vector2 TransformVec2Sse3(in Matrix3 matrix, Vector2 vector)
         {
-            var subMatrix = matrix.SubMatrix.AsVector128();
-            var translate = matrix.Translation.AsVector128();
+            var subMatrix = matrix._subMat.AsVector128();
+            var translate = matrix._offset.AsVector128();
 
             var X = Vector128.Create(vector.X);
             var Y = Vector128.Create(vector.Y);
@@ -1196,8 +1188,8 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe Vector2 TransformVec2Fma(in Matrix3 matrix, Vector2 vector)
         {
-            var subMatrix = matrix.SubMatrix.AsVector128();
-            var translate = matrix.Translation.AsVector128();
+            var subMatrix = matrix._subMat.AsVector128();
+            var translate = matrix._offset.AsVector128();
             translate = Sse.UnpackLow(Vector128<float>.Zero, translate);
 
             var X = Vector128.Create(vector.X);
