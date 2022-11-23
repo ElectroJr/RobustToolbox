@@ -1017,31 +1017,7 @@ namespace Robust.Shared.Maths
         #region Transformation Functions
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Transform(ref Vector3 vector)
-        {
-            Transform(this, ref vector);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Transform(in Matrix3 matrix, ref Vector3 vector)
-        {
-            var x = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2 * vector.Z;
-            var y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2 * vector.Z;
-            vector.Z = matrix.R2C0 * vector.X + matrix.R2C1 * vector.Y + matrix.R2C2 * vector.Z;
-            vector.X = x;
-            vector.Y = y;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Transform(in Matrix3 matrix, ref Vector2 vector)
-        {
-            var x = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2;
-            vector.Y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2;
-            vector.X = x;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly Vector2 Transform(Vector2 vector)
+        public readonly Vector2 Transform(in Vector2 vector)
         {
             return Transform(this, vector);
         }
@@ -1116,99 +1092,100 @@ namespace Robust.Shared.Maths
         }
         #endregion
 
-        #region Transform Vectro2
+        #region Transform Vector2
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Vector2 Transform(in Matrix3 matrix, Vector2 vector)
+        public static Vector2 Transform(in Matrix3 matrix, in Vector2 vector)
+        {
+            Transform(in matrix, in vector, out Vector2 result);
+            return result;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void Transform(in Matrix3 matrix, in Vector2 vector, out Vector2 result)
         {
             if (NumericsHelpers.Enabled)
             {
+                if (Fma.IsSupported)
+                {
+                    TransformVec2Fma(in matrix, in vector, out result);
+                    return;
+                }
+
                 if (Sse3.IsSupported)
-                    return TransformVec2Sse3(in matrix, vector);
+                {
+                    TransformVec2Sse3(in matrix, in vector, out result);
+                    return;
+                }
 
                 // Welp their CPU is 18+years old.
                 if (Sse.IsSupported)
-                    return TransformVec2Sse(in matrix, vector);
+                {
+                    TransformVec2Sse(in matrix, in vector, out result);
+                    return;
+                }
 
                 // Or ARM?
                 // TODO: ARM
             }
 
-            return TransformVec2NoSimd(in matrix, vector);
+            TransformVec2NoSimd(in matrix, in vector, out result);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe Vector2 TransformVec2Sse(in Matrix3 matrix, Vector2 vector)
+        public static unsafe void TransformVec2Sse(in Matrix3 matrix, in Vector2 vector, out Vector2 result)
         {
+            Unsafe.SkipInit(out result);
             var subMatrix = matrix._subMat.AsVector128();
-            var translate = matrix._offset.AsVector128();
-            translate = Sse.UnpackLow(translate, Vector128<float>.Zero);
+            var offset = matrix._offset.AsVector128();
+            offset = Sse.UnpackLow(offset, Vector128<float>.Zero);
 
-            var X = Vector128.Create(vector.X);
-            var Y = Vector128.Create(vector.Y);
-            var vec = Sse.UnpackLow(X, Y);
-
+            var vec = vector._vec.AsVector128();
+            vec = Sse.MoveLowToHigh(vec, vec);
             vec = Sse.Multiply(subMatrix, vec);
-            vec = Sse.Add(vec, translate);
+            vec = Sse.Add(vec, offset);
             var tmp = Sse.Shuffle(vec, vec, 0b10_11_00_01);
             vec = Sse.Add(tmp, vec);
             vec = Sse.Shuffle(vec, vec, 0b00_00_11_00);
-
-            return new Vector2() { Translation = vec.AsVector2() };
+            result._vec = vec.AsVector2();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe Vector2 TransformVec2Sse3(in Matrix3 matrix, Vector2 vector)
+        public static unsafe void TransformVec2Sse3(in Matrix3 matrix, in Vector2 vector, out Vector2 result)
         {
+            Unsafe.SkipInit(out result);
             var subMatrix = matrix._subMat.AsVector128();
-            var translate = matrix._offset.AsVector128();
+            var offset = matrix._offset.AsVector128();
 
-            var X = Vector128.Create(vector.X);
-            var Y = Vector128.Create(vector.Y);
-            var vec = Sse.UnpackLow(X, Y);
-            // ^^ this way of creating vec is apparently faster than
-            // var vec = vector.Translation.AsVector128();
-            // vec = Sse.MoveLowToHigh(vec, vec);
-
+            var vec = vector._vec.AsVector128();
+            vec = Sse.MoveLowToHigh(vec, vec);
             vec = Sse.Multiply(subMatrix, vec);
-            // ^^ could also do Fma.MultiplyAdd with a modified `translate`, but speed seems about the same?
-
             vec = Sse3.HorizontalAdd(vec, vec);
-            // ^^ every so slightly faster than
-            //var A = Sse.Multiply(subMatrix, vec);
-            //var B = Sse.Shuffle(A, A, 0b00_00_11_01);
-            //var C = Sse.Shuffle(A, A, 0b00_00_01_00);
-            //var D = Sse.Add(B, C);
-            // but maybe only on new cpus?
-
-            vec = Sse.Add(vec, translate);
-
-            return new Vector2() { Translation = vec.AsVector2() };
+            vec = Sse.Add(vec, offset);
+            result._vec = vec.AsVector2();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe Vector2 TransformVec2Fma(in Matrix3 matrix, Vector2 vector)
+        public static unsafe void TransformVec2Fma(in Matrix3 matrix, in Vector2 vector, out Vector2 result)
         {
+            Unsafe.SkipInit(out result);
             var subMatrix = matrix._subMat.AsVector128();
-            var translate = matrix._offset.AsVector128();
-            translate = Sse.UnpackLow(Vector128<float>.Zero, translate);
+            var offset = matrix._offset.AsVector128();
+            offset = Sse.UnpackLow(Vector128<float>.Zero, offset);
 
-            var X = Vector128.Create(vector.X);
-            var Y = Vector128.Create(vector.Y);
-            var vec = Sse.UnpackLow(X, Y);
-
-            vec = Fma.MultiplyAdd(subMatrix, vec, translate);
+            var vec = vector._vec.AsVector128();
+            vec = Sse.MoveLowToHigh(vec, vec);
+            vec = Fma.MultiplyAdd(subMatrix, vec, offset);
             vec = Sse3.HorizontalAdd(vec, vec);
-
-            return new Vector2() { Translation = vec.AsVector2() };
+            result._vec = vec.AsVector2();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Vector2 TransformVec2NoSimd(in Matrix3 matrix, Vector2 vector)
-        {
-            var x = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2;
-            var y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2;
 
-            return new Vector2(x, y);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void TransformVec2NoSimd(in Matrix3 matrix, in Vector2 vector, out Vector2 result)
+        {
+            Unsafe.SkipInit(out result);
+            result.X = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2;
+            result.Y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2;
         }
         #endregion
 
@@ -1230,21 +1207,6 @@ namespace Robust.Shared.Maths
             result.X = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2 * vector.Z;
             result.Y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2 * vector.Z;
             result.Z = matrix.R2C0 * vector.X + matrix.R2C1 * vector.Y + matrix.R2C2 * vector.Z;
-        }
-
-        /// <summary>
-        /// Post-multiplies a 3x3 matrix with a 2x1 vector. The column-major 3x3 matrix is treated as
-        /// a 3x2 matrix for this calculation.
-        /// </summary>
-        /// <param name="matrix">Matrix containing the transformation.</param>
-        /// <param name="vector">Input vector to transform.</param>
-        /// <param name="result">Transformed vector.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Transform(in Matrix3 matrix, in Vector2 vector, out Vector2 result)
-        {
-            Unsafe.SkipInit(out result);
-            result.X = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2;
-            result.Y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2;
         }
 
         /// <summary>

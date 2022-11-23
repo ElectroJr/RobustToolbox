@@ -24,10 +24,10 @@ namespace Robust.Shared.Maths
         [FieldOffset(sizeof(float) * 1)]
         public float Y;
 
-        // Shhhhh don't question it.
+        // Shhhhh don't question it. Needed for SIMD shenanigans.
         [FieldOffset(sizeof(float) * 0)]
         [NonSerialized]
-        public System.Numerics.Vector2 Translation;
+        public System.Numerics.Vector2 _vec;
 
         /// <summary>
         ///     A zero length vector.
