@@ -1,4 +1,4 @@
-﻿//
+//
 // The Open Toolkit Library License
 //
 // Copyright (c) 2006 - 2008 the Open Toolkit library, except where noted.
@@ -34,6 +34,7 @@ using JetBrains.Annotations;
 using Robust.Shared.Utility;
 using SysVector3 = System.Numerics.Vector3;
 using SysVector4 = System.Numerics.Vector4;
+using System.Runtime.Intrinsics.Arm;
 
 #if NETCOREAPP
 using System.Runtime.Intrinsics;
@@ -46,28 +47,36 @@ namespace Robust.Shared.Maths
     ///     Represents a color with 4 floating-point components (R, G, B, A).
     /// </summary>
     [Serializable]
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Explicit)]
     public struct Color : IEquatable<Color>, ISpanFormattable
     {
         /// <summary>
         ///     The red component of this Color4 structure.
         /// </summary>
+        [FieldOffset(sizeof(float) * 0)] 
         public float R;
 
         /// <summary>
         ///     The green component of this Color4 structure.
         /// </summary>
+        [FieldOffset(sizeof(float) * 1)] 
         public float G;
 
         /// <summary>
         ///     The blue component of this Color4 structure.
         /// </summary>
+        [FieldOffset(sizeof(float) * 2)]
         public float B;
 
         /// <summary>
         ///     The alpha component of this Color4 structure.
         /// </summary>
+        [FieldOffset(sizeof(float) * 3)]
         public float A;
+
+        // internal vec for simd black magic. overlaps with RGBA floats.
+        [FieldOffset(sizeof(float) * 0), NonSerialized]
+        private SysVector4 _vec;
 
         public readonly byte RByte => (byte) (R * byte.MaxValue);
         public readonly byte GByte => (byte) (G * byte.MaxValue);
@@ -83,10 +92,17 @@ namespace Robust.Shared.Maths
         /// <param name="a">The alpha component of the new Color4 structure.</param>
         public Color(float r, float g, float b, float a = 1)
         {
+            Unsafe.SkipInit(out this);
             R = r;
             G = g;
             B = b;
             A = a;
+        }
+
+        public Color(SysVector4 vec)
+        {
+            Unsafe.SkipInit(out this);
+            _vec = vec;
         }
 
         /// <summary>
@@ -98,6 +114,7 @@ namespace Robust.Shared.Maths
         /// <param name="a">The alpha component of the new Color4 structure.</param>
         public Color(byte r, byte g, byte b, byte a = 255)
         {
+            Unsafe.SkipInit(out this);
             R = r / (float) byte.MaxValue;
             G = g / (float) byte.MaxValue;
             B = b / (float) byte.MaxValue;
@@ -1004,12 +1021,12 @@ namespace Robust.Shared.Maths
         /// <summary>
         ///     Component wise multiplication of two colors.
         /// </summary>
-        /// <param name="a"></param>
-        /// <param name="b"></param>
-        /// <returns></returns>
-        public static Color operator *(Color a, Color b)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Color operator *(in Color a, in Color b)
         {
-            return new(a.R * b.R, a.G * b.G, a.B * b.B, a.A * b.A);
+            var vecA = a._vec.AsVector128();
+            var vecB = b._vec.AsVector128();
+            return new Color(Sse.Multiply(vecA, vecB).AsVector4());
         }
 
         public readonly string ToHex()

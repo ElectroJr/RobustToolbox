@@ -364,7 +364,7 @@ namespace Robust.Client.Graphics.Clyde
 
                     _renderHandle.DrawTextureScreen(entityPostRenderTarget.Texture,
                         box.BottomLeft, box.BottomRight, box.TopLeft, box.TopRight,
-                        Color.White, null);
+                        Color.White);
 
                     _renderHandle.SetProjView(oldProj, oldView);
                     _renderHandle.UseShader(null);

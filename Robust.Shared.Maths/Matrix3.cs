@@ -34,37 +34,60 @@ using Robust.Shared.Utility;
 namespace Robust.Shared.Maths
 {
     [Serializable]
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Explicit)]
     public struct Matrix3 : IEquatable<Matrix3>, IApproxEquatable<Matrix3>, ISpanFormattable
     {
         #region Fields & Access
 
+        // Vector2 Transform SIMD: first 4 elements are 2x2 submatrix, for simd
         /// <summary>Row 0, Column 0</summary>
+        [FieldOffset(sizeof(float) * 0)]
         public float R0C0;
 
         /// <summary>Row 0, Column 1</summary>
+        [FieldOffset(sizeof(float) * 1)]
         public float R0C1;
 
-        /// <summary>Row 0, Column 2</summary>
-        public float R0C2;
-
         /// <summary>Row 1, Column 0</summary>
+        [FieldOffset(sizeof(float) * 2)]
         public float R1C0;
 
         /// <summary>Row 1, Column 1</summary>
+        [FieldOffset(sizeof(float) * 3)]
         public float R1C1;
 
+        // Vector2 Transform SIMD: next 2 must be R0C2 and then R1C2, after that it doesn't matter.
+        /// <summary>Row 0, Column 2</summary>
+        [FieldOffset(sizeof(float) * 4)]
+        public float R0C2;
+
         /// <summary>Row 1, Column 2</summary>
+        [FieldOffset(sizeof(float) * 5)]
         public float R1C2;
 
         /// <summary>Row 2, Column 0</summary>
+        [FieldOffset(sizeof(float) * 6)]
         public float R2C0;
 
         /// <summary>Row 2, Column 1</summary>
+        [FieldOffset(sizeof(float) * 7)]
         public float R2C1;
 
         /// <summary>Row 2, Column 2</summary>
+        [FieldOffset(sizeof(float) * 8)]
         public float R2C2;
+
+        // For whatever bloody reason, using Numerics.Vector2 noticeably faster than Vector2.
+        // (for _matrix.Translation = Unsafe.As<Vector128<float>, Vector2>(ref someVector);
+        [FieldOffset(sizeof(float) * 4)]
+        [NonSerialized]
+        private System.Numerics.Vector2 _offset;
+
+        // Again, being able to use matrix.SubMatrix = vec.AsVector4() is faster than something like matrix =
+        // Unsafe.As<Vector128<float>, Matrix3>(ref vec), for whatever acursed reason.
+        [FieldOffset(sizeof(float) * 0)]
+        [NonSerialized]
+        private System.Numerics.Vector4 _subMat;
 
         /// <summary>Gets the component at the given row and column in the matrix.</summary>
         /// <param name="row">The row of the matrix.</param>
@@ -256,6 +279,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Matrix3(in Matrix3 matrix)
         {
+            Unsafe.SkipInit(out this);
             R0C0 = matrix.R0C0;
             R0C1 = matrix.R0C1;
             R0C2 = matrix.R0C2;
@@ -291,6 +315,7 @@ namespace Robust.Shared.Maths
             float r2c2
         )
         {
+            Unsafe.SkipInit(out this);
             R0C0 = r0c0;
             R0C1 = r0c1;
             R0C2 = r0c2;
@@ -307,6 +332,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Matrix3(float[] floatArray)
         {
+            Unsafe.SkipInit(out this);
             if (floatArray == null || floatArray.GetLength(0) < 9) throw new MissingFieldException();
 
             R0C0 = floatArray[0];
@@ -327,6 +353,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Matrix3(in Matrix4 matrix)
         {
+            Unsafe.SkipInit(out this);
             R0C0 = matrix.Row0.X;
             R0C1 = matrix.Row0.Y;
             R0C2 = matrix.Row0.Z;
@@ -349,6 +376,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Matrix3(in Vector2 x, in Vector2 y, in Vector2 origin)
         {
+            Unsafe.SkipInit(out this);
             R0C0 = x.X;
             R0C1 = y.X;
             R0C2 = origin.X;
@@ -619,6 +647,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void Add(in Matrix3 matrix, out Matrix3 result)
         {
+            Unsafe.SkipInit(out result);
             result.R0C0 = R0C0 + matrix.R0C0;
             result.R0C1 = R0C1 + matrix.R0C1;
             result.R0C2 = R0C2 + matrix.R0C2;
@@ -637,6 +666,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void Add(in Matrix3 left, in Matrix3 right, out Matrix3 result)
         {
+            Unsafe.SkipInit(out result);
             result.R0C0 = left.R0C0 + right.R0C0;
             result.R0C1 = left.R0C1 + right.R0C1;
             result.R0C2 = left.R0C2 + right.R0C2;
@@ -670,6 +700,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void Subtract(in Matrix3 matrix, out Matrix3 result)
         {
+            Unsafe.SkipInit(out result);
             result.R0C0 = R0C0 - matrix.R0C0;
             result.R0C1 = R0C1 - matrix.R0C1;
             result.R0C2 = R0C2 - matrix.R0C2;
@@ -688,6 +719,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void Subtract(in Matrix3 left, in Matrix3 right, out Matrix3 result)
         {
+            Unsafe.SkipInit(out result);
             result.R0C0 = left.R0C0 - right.R0C0;
             result.R0C1 = left.R0C1 - right.R0C1;
             result.R0C2 = left.R0C2 - right.R0C2;
@@ -731,6 +763,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void Multiply(in Matrix3 matrix, out Matrix3 result)
         {
+            Unsafe.SkipInit(out result);
             result.R0C0 = matrix.R0C0 * R0C0 + matrix.R0C1 * R1C0 + matrix.R0C2 * R2C0;
             result.R0C1 = matrix.R0C0 * R0C1 + matrix.R0C1 * R1C1 + matrix.R0C2 * R2C1;
             result.R0C2 = matrix.R0C0 * R0C2 + matrix.R0C1 * R1C2 + matrix.R0C2 * R2C2;
@@ -742,73 +775,37 @@ namespace Robust.Shared.Maths
             result.R2C2 = matrix.R2C0 * R0C2 + matrix.R2C1 * R1C2 + matrix.R2C2 * R2C2;
         }
 
-        /// <summary>Multiply left matrix times right matrix.</summary>
-        /// <param name="left">The matrix on the matrix side of the equation.</param>
-        /// <param name="right">The matrix on the right side of the equation</param>
-        /// <param name="result">The resulting matrix of the multiplication.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Multiply(in Matrix3 left, in Matrix3 right, out Matrix3 result)
+        public static unsafe void Multiply(in Matrix3 left, in Matrix3 right, out Matrix3 result)
         {
-            result.R0C0 = right.R0C0 * left.R0C0 + right.R0C1 * left.R1C0 + right.R0C2 * left.R2C0;
-            result.R0C1 = right.R0C0 * left.R0C1 + right.R0C1 * left.R1C1 + right.R0C2 * left.R2C1;
-            result.R0C2 = right.R0C0 * left.R0C2 + right.R0C1 * left.R1C2 + right.R0C2 * left.R2C2;
-            result.R1C0 = right.R1C0 * left.R0C0 + right.R1C1 * left.R1C0 + right.R1C2 * left.R2C0;
-            result.R1C1 = right.R1C0 * left.R0C1 + right.R1C1 * left.R1C1 + right.R1C2 * left.R2C1;
-            result.R1C2 = right.R1C0 * left.R0C2 + right.R1C1 * left.R1C2 + right.R1C2 * left.R2C2;
-            result.R2C0 = right.R2C0 * left.R0C0 + right.R2C1 * left.R1C0 + right.R2C2 * left.R2C0;
-            result.R2C1 = right.R2C0 * left.R0C1 + right.R2C1 * left.R1C1 + right.R2C2 * left.R2C1;
-            result.R2C2 = right.R2C0 * left.R0C2 + right.R2C1 * left.R1C2 + right.R2C2 * left.R2C2;
-        }
+            Unsafe.SkipInit(out result);
 
-        /// <summary>Multiply matrix times this scalar.</summary>
-        /// <param name="scalar">The scalar to multiply.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Multiply(float scalar)
-        {
-            R0C0 = scalar * R0C0;
-            R0C1 = scalar * R0C1;
-            R0C2 = scalar * R0C2;
-            R1C0 = scalar * R1C0;
-            R1C1 = scalar * R1C1;
-            R1C2 = scalar * R1C2;
-            R2C0 = scalar * R2C0;
-            R2C1 = scalar * R2C1;
-            R2C2 = scalar * R2C2;
-        }
+            // 2x2 submatrix from first 4 elements
+            var subMatrixLeft = left._subMat.AsVector128();
+            var subMatrixRight = right._subMat.AsVector128();
+            var vecA = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b10_10_00_00);
+            var vecB = Sse.MoveLowToHigh(subMatrixLeft, subMatrixLeft);
+            var vecC = Sse.Multiply(vecA, vecB);
+            vecA = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b11_11_01_01);
+            vecB = Sse.MoveHighToLow(subMatrixLeft, subMatrixLeft);
+            vecC = Fma.MultiplyAdd(vecA, vecB, vecC);
 
-        /// <summary>Multiply matrix times this matrix.</summary>
-        /// <param name="scalar">The scalar to multiply.</param>
-        /// <param name="result">The resulting matrix of the multiplication.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Multiply(float scalar, out Matrix3 result)
-        {
-            result.R0C0 = scalar * R0C0;
-            result.R0C1 = scalar * R0C1;
-            result.R0C2 = scalar * R0C2;
-            result.R1C0 = scalar * R1C0;
-            result.R1C1 = scalar * R1C1;
-            result.R1C2 = scalar * R1C2;
-            result.R2C0 = scalar * R2C0;
-            result.R2C1 = scalar * R2C1;
-            result.R2C2 = scalar * R2C2;
-        }
+            // first 4 elements of result are done
+            result._subMat = vecC.AsVector4();
 
-        /// <summary>Multiply left matrix times left matrix.</summary>
-        /// <param name="matrix">The matrix on the matrix side of the equation.</param>
-        /// <param name="scalar">The scalar on the right side of the equation</param>
-        /// <param name="result">The resulting matrix of the multiplication.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Multiply(in Matrix3 matrix, float scalar, out Matrix3 result)
-        {
-            result.R0C0 = scalar * matrix.R0C0;
-            result.R0C1 = scalar * matrix.R0C1;
-            result.R0C2 = scalar * matrix.R0C2;
-            result.R1C0 = scalar * matrix.R1C0;
-            result.R1C1 = scalar * matrix.R1C1;
-            result.R1C2 = scalar * matrix.R1C2;
-            result.R2C0 = scalar * matrix.R2C0;
-            result.R2C1 = scalar * matrix.R2C1;
-            result.R2C2 = scalar * matrix.R2C2;
+            vecA = left._offset.AsVector128();
+            vecB = Sse.UnpackLow(vecA, vecA);
+            vecC = Sse.Shuffle(subMatrixRight, subMatrixRight, 0b11_01_10_00);
+            vecA = Sse.Multiply(vecB, vecC);
+            vecB = Sse.MoveHighToLow(vecC, vecA);
+            vecC = Sse.Add(vecA, vecB);
+            vecA = right._offset.AsVector128();
+            vecB = Sse.Add(vecA, vecC);
+            result._offset = vecB.AsVector2();
+
+            result.R2C2 = 1;
+            result.R2C1 = 0;
+            result.R2C0 = 0;
         }
 
         #endregion Arithmetic Operators
@@ -832,6 +829,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void Transpose(out Matrix3 result)
         {
+            Unsafe.SkipInit(out result);
             result.R0C0 = R0C0;
             result.R0C1 = R1C0;
             result.R0C2 = R2C0;
@@ -846,6 +844,7 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void Transpose(in Matrix3 matrix, out Matrix3 result)
         {
+            Unsafe.SkipInit(out result);
             result.R0C0 = matrix.R0C0;
             result.R0C1 = matrix.R1C0;
             result.R0C2 = matrix.R2C0;
@@ -880,23 +879,24 @@ namespace Robust.Shared.Maths
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void Invert(in Matrix3 m, out Matrix3 minv)
         {
+            Unsafe.SkipInit(out minv);
             //Credit: https://stackoverflow.com/a/18504573
 
-            var det = m.Determinant;
-            if (MathHelper.CloseToPercent(det, 0))
+            var det = m.R0C0 * m.R1C1 - m.R0C1 * m.R1C0;
+            if (MathF.Abs(det) < 1e-5)
                 throw new InvalidOperationException("Matrix is singular and cannot be inverted.");
 
             var invdet = 1 / det;
 
-            minv.R0C0 = (float) ((m.R1C1 * m.R2C2 - m.R2C1 * m.R1C2) * invdet);
-            minv.R0C1 = (float) ((m.R0C2 * m.R2C1 - m.R0C1 * m.R2C2) * invdet);
-            minv.R0C2 = (float) ((m.R0C1 * m.R1C2 - m.R0C2 * m.R1C1) * invdet);
-            minv.R1C0 = (float) ((m.R1C2 * m.R2C0 - m.R1C0 * m.R2C2) * invdet);
-            minv.R1C1 = (float) ((m.R0C0 * m.R2C2 - m.R0C2 * m.R2C0) * invdet);
-            minv.R1C2 = (float) ((m.R1C0 * m.R0C2 - m.R0C0 * m.R1C2) * invdet);
-            minv.R2C0 = (float) ((m.R1C0 * m.R2C1 - m.R2C0 * m.R1C1) * invdet);
-            minv.R2C1 = (float) ((m.R2C0 * m.R0C1 - m.R0C0 * m.R2C1) * invdet);
-            minv.R2C2 = (float) ((m.R0C0 * m.R1C1 - m.R1C0 * m.R0C1) * invdet);
+            minv.R0C0 = m.R1C1 * invdet;
+            minv.R1C1 = m.R0C0 * invdet;
+
+            minv.R0C1 = -m.R0C1 * invdet;
+            minv.R1C0 = -m.R1C0 * invdet;
+
+            minv.R0C2 = (m.R0C1 * m.R1C2 - m.R0C2 * m.R1C1) * invdet;
+            minv.R1C2 = (m.R1C0 * m.R0C2 - m.R0C0 * m.R1C2) * invdet;
+            minv.R2C2 = 1;
         }
 
         #endregion Functions
@@ -904,31 +904,7 @@ namespace Robust.Shared.Maths
         #region Transformation Functions
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void Transform(ref Vector3 vector)
-        {
-            Transform(this, ref vector);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Transform(in Matrix3 matrix, ref Vector3 vector)
-        {
-            var x = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2 * vector.Z;
-            var y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2 * vector.Z;
-            vector.Z = matrix.R2C0 * vector.X + matrix.R2C1 * vector.Y + matrix.R2C2 * vector.Z;
-            vector.X = x;
-            vector.Y = y;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Transform(in Matrix3 matrix, ref Vector2 vector)
-        {
-            var x = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2;
-            vector.Y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2;
-            vector.X = x;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly Vector2 Transform(Vector2 vector)
+        public readonly Vector2 Transform(in Vector2 vector)
         {
             return Transform(this, vector);
         }
@@ -939,23 +915,10 @@ namespace Robust.Shared.Maths
             return (box.Transform * this).TransformBox(box.Box);
         }
 
-        public readonly Box2 TransformBox(in Box2 box)
-        {
-            if (Sse.IsSupported && NumericsHelpers.Enabled)
-            {
-                return TransformBoxSse(box);
-            }
-
-            return TransformBoxSlow(box);
-        }
-
+        #region Transform Box
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly unsafe Box2 TransformBoxSse(in Box2 box)
+        public unsafe readonly Box2 TransformBox(in Box2 box)
         {
-            // This code was largely pilfered from Box2Rotated.CalcBoundingBox(), but instead of transforming the
-            // corners using the rotated box transform, this applies a general matrix transform before obtaining the
-            // bounding box.
-
             Vector128<float> boxVec;
             fixed (float* lPtr = &box.Left)
             {
@@ -969,57 +932,46 @@ namespace Robust.Shared.Maths
             // Transform coordinates
             var modX = Sse.Multiply(allX, Vector128.Create(R0C0));
             var modY = Sse.Multiply(allX, Vector128.Create(R1C0));
+
+            // Could use FMA variant, but benchmarking seems to show negligible benefit.
             modX = Sse.Add(modX, Sse.Multiply(allY, Vector128.Create(R0C1)));
             modY = Sse.Add(modY, Sse.Multiply(allY, Vector128.Create(R1C1)));
+
             modX = Sse.Add(modX, Vector128.Create(R0C2));
             modY = Sse.Add(modY, Vector128.Create(R1C2));
 
-            // Get bounding box by finding the min and max X and Y values.
-            var l = SimdHelpers.MinHorizontalSse(modX);
-            var b = SimdHelpers.MinHorizontalSse(modY);
-            var r = SimdHelpers.MaxHorizontalSse(modX);
-            var t = SimdHelpers.MaxHorizontalSse(modY);
+            var lr = SimdHelpers.MinMaxHorizontalSse(modX);
+            var bt = SimdHelpers.MinMaxHorizontalSse(modY);
+            var lbrt = Sse.UnpackLow(lr, bt);
 
-            // Convert to Box2
-            var lb = Sse.UnpackLow(l, b);
-            var rt = Sse.UnpackLow(r, t);
-            var lbrt = Sse.Shuffle(lb, rt, 0b11_10_01_00);
             return Unsafe.As<Vector128<float>, Box2>(ref lbrt);
         }
+        #endregion
 
+        #region Transform Vector2
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly Box2 TransformBoxSlow(in Box2 box)
+        public static Vector2 Transform(in Matrix3 matrix, in Vector2 vector)
         {
-            Span<Vector2> vertices = stackalloc Vector2[4];
-            vertices[0] = Transform(box.BottomLeft);
-            vertices[1] = Transform(box.BottomRight);
-            vertices[2] = Transform(box.TopRight);
-            vertices[3] = vertices[0] + vertices[2] - vertices[1]; // Transformed TopLeft
-
-            var botLeft = vertices[0];
-            var topRight = vertices[0];
-
-            for (var i = 1; i < 4; i++)
-            {
-                var vertex = vertices[i];
-
-                botLeft = Vector2.ComponentMin(vertex, botLeft);
-                topRight = Vector2.ComponentMax(vertex, topRight);
-            }
-
-            return new Box2(botLeft, topRight);
+            Transform(in matrix, in vector, out Vector2 result);
+            return result;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Vector2 Transform(in Matrix3 matrix, Vector2 vector)
+        public unsafe static void Transform(in Matrix3 matrix, in Vector2 vector, out Vector2 result)
         {
-            // TODO: Look at SIMD coz holy fak this is called a lot
 
-            var x = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2;
-            var y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2;
+            Unsafe.SkipInit(out result);
+            var subMatrix = matrix._subMat.AsVector128();
+            var offset = matrix._offset.AsVector128();
+            offset = Sse.UnpackLow(Vector128<float>.Zero, offset);
 
-            return new Vector2(x, y);
+            var vec = vector._vec.AsVector128();
+            vec = Sse.MoveLowToHigh(vec, vec);
+            vec = Fma.MultiplyAdd(subMatrix, vec, offset);
+            vec = Sse3.HorizontalAdd(vec, vec);
+            result._vec = vec.AsVector2();
         }
+        #endregion
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Transform(in Vector3 vector, out Vector3 result)
@@ -1039,91 +991,6 @@ namespace Robust.Shared.Maths
             result.X = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2 * vector.Z;
             result.Y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2 * vector.Z;
             result.Z = matrix.R2C0 * vector.X + matrix.R2C1 * vector.Y + matrix.R2C2 * vector.Z;
-        }
-
-        /// <summary>
-        /// Post-multiplies a 3x3 matrix with a 2x1 vector. The column-major 3x3 matrix is treated as
-        /// a 3x2 matrix for this calculation.
-        /// </summary>
-        /// <param name="matrix">Matrix containing the transformation.</param>
-        /// <param name="vector">Input vector to transform.</param>
-        /// <param name="result">Transformed vector.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Transform(in Matrix3 matrix, in Vector2 vector, out Vector2 result)
-        {
-            result.X = matrix.R0C0 * vector.X + matrix.R0C1 * vector.Y + matrix.R0C2;
-            result.Y = matrix.R1C0 * vector.X + matrix.R1C1 * vector.Y + matrix.R1C2;
-        }
-
-        /// <summary>
-        /// Pre-multiples a 1x3 vector with a 3x3 matrix.
-        /// </summary>
-        /// <param name="matrix">Matrix containing the transformation.</param>
-        /// <param name="vector">Input vector to transform.</param>
-        /// <param name="result">Transformed vector.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Transform(in Vector3 vector, in Matrix3 matrix, out Vector3 result)
-        {
-            result.X = (vector.X * matrix.R0C0) + (vector.Y * matrix.R1C0) + (vector.Z * matrix.R2C0);
-            result.Y = (vector.X * matrix.R0C1) + (vector.Y * matrix.R1C1) + (vector.Z * matrix.R2C1);
-            result.Z = (vector.X * matrix.R0C2) + (vector.Y * matrix.R1C2) + (vector.Z * matrix.R2C2);
-        }
-
-        /// <summary>
-        /// Pre-multiples a 1x2 vector with a 3x3 matrix. The row-major 3x3 matrix is treated as
-        /// a 2x3 matrix for this calculation.
-        /// </summary>
-        /// <param name="matrix">Matrix containing the transformation.</param>
-        /// <param name="vector">Input vector to transform.</param>
-        /// <param name="result">Transformed vector.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Transform(in Vector2 vector, in Matrix3 matrix, out Vector2 result)
-        {
-            result.X = (vector.X * matrix.R0C0) + (vector.Y * matrix.R1C0) + (matrix.R2C0);
-            result.Y = (vector.X * matrix.R0C1) + (vector.Y * matrix.R1C1) + (matrix.R2C1);
-        }
-
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Rotate(Angle angle)
-        {
-            var sin = (float) Math.Sin(angle);
-            var cos = (float) Math.Cos(angle);
-
-            var r0c0 = cos * R0C0 + sin * R1C0;
-            var r0c1 = cos * R0C1 + sin * R1C1;
-            var r0c2 = cos * R0C2 + sin * R1C2;
-
-            R1C0 = cos * R1C0 - sin * R0C0;
-            R1C1 = cos * R1C1 - sin * R0C1;
-            R1C2 = cos * R1C2 - sin * R0C2;
-
-            R0C0 = r0c0;
-            R0C1 = r0c1;
-            R0C2 = r0c2;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Rotate(Angle angle, out Matrix3 result)
-        {
-            Rotate(this, angle, out result);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Rotate(in Matrix3 matrix, Angle angle, out Matrix3 result)
-        {
-            var sin = (float) Math.Sin(angle);
-            var cos = (float) Math.Cos(angle);
-
-            result.R0C0 = cos * matrix.R0C0 + sin * matrix.R1C0;
-            result.R0C1 = cos * matrix.R0C1 + sin * matrix.R1C1;
-            result.R0C2 = cos * matrix.R0C2 + sin * matrix.R1C2;
-            result.R1C0 = cos * matrix.R1C0 - sin * matrix.R0C0;
-            result.R1C1 = cos * matrix.R1C1 - sin * matrix.R0C1;
-            result.R1C2 = cos * matrix.R1C2 - sin * matrix.R0C2;
-            result.R2C0 = matrix.R2C0;
-            result.R2C1 = matrix.R2C1;
-            result.R2C2 = matrix.R2C2;
         }
         #endregion Transformation Functions
 
@@ -1153,20 +1020,6 @@ namespace Robust.Shared.Maths
         public static Vector2 operator *(in Matrix3 matrix, in Vector2 vector)
         {
             Transform(in matrix, vector, out var result);
-            return result;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Vector3 operator *(in Vector3 vector, in Matrix3 matrix)
-        {
-            Transform(in vector, in matrix, out var result);
-            return result;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Vector2 operator *(in Vector2 vector, in Matrix3 matrix)
-        {
-            Transform(in vector, in matrix, out var result);
             return result;
         }
 

@@ -6,7 +6,9 @@
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
         <OutputPath>../bin/Benchmarks</OutputPath>
         <OutputType>Exe</OutputType>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <NoWarn>RA0003</NoWarn>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
     <ItemGroup>
       <ProjectReference Include="..\Robust.Server\Robust.Server.csproj" />

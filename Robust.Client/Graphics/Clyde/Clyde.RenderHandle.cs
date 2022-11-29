@@ -4,6 +4,7 @@ using Robust.Client.GameObjects;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Maths;
 using OpenToolkit.Graphics.OpenGL4;
+using Robust.Shared.Serialization.Manager.Exceptions;
 
 namespace Robust.Client.Graphics.Clyde
 {
@@ -53,9 +54,20 @@ namespace Robust.Client.Graphics.Clyde
             /// <param name="modulate">A color to multiply the texture by when shading.</param
             /// <param name="subRegion">The four corners of the texture sub region in px.</param>
             public void DrawTextureScreen(Texture texture, Vector2 bl, Vector2 br, Vector2 tl, Vector2 tr,
-                in Color modulate, in UIBox2? subRegion)
+                in Color modulate, in UIBox2 subRegion)
             {
                 var clydeTexture = ExtractTexture(texture, in subRegion, out var csr);
+
+                var (w, h) = clydeTexture.Size;
+                var sr = new Box2(csr.Left / w, (h - csr.Top) / h, csr.Right / w, (h - csr.Bottom) / h);
+
+                _clyde.DrawTexture(clydeTexture.TextureId, bl, br, tl, tr, in modulate, in sr);
+            }
+
+            public void DrawTextureScreen(Texture texture, Vector2 bl, Vector2 br, Vector2 tl, Vector2 tr,
+                in Color modulate)
+            {
+                var clydeTexture = ExtractTexture(texture, out var csr);
 
                 var (w, h) = clydeTexture.Size;
                 var sr = new Box2(csr.Left / w, (h - csr.Top) / h, csr.Right / w, (h - csr.Bottom) / h);
@@ -76,9 +88,20 @@ namespace Robust.Client.Graphics.Clyde
             /// <param name="modulate">A color to multiply the texture by when shading.</param>
             /// <param name="subRegion">The four corners of the texture sub region in px.</param>
             public void DrawTextureWorld(Texture texture, Vector2 bl, Vector2 br, Vector2 tl, Vector2 tr,
-                Color modulate, in UIBox2? subRegion)
+                in Color modulate, in UIBox2 subRegion)
             {
-                var clydeTexture = ExtractTexture(texture, in subRegion, out var csr);
+                var clydeTexture = ExtractTexture(texture, subRegion, out var csr);
+
+                var (w, h) = clydeTexture.Size;
+                var sr = new Box2(csr.Left / w, (h - csr.Bottom) / h, csr.Right / w, (h - csr.Top) / h);
+
+                _clyde.DrawTexture(clydeTexture.TextureId, bl, br, tl, tr, in modulate, in sr);
+            }
+
+            public void DrawTextureWorld(Texture texture, Vector2 bl, Vector2 br, Vector2 tl, Vector2 tr,
+                in Color modulate)
+            {
+                var clydeTexture = ExtractTexture(texture, out var csr);
 
                 var (w, h) = clydeTexture.Size;
                 var sr = new Box2(csr.Left / w, (h - csr.Bottom) / h, csr.Right / w, (h - csr.Top) / h);
@@ -89,32 +112,41 @@ namespace Robust.Client.Graphics.Clyde
             /// <summary>
             /// Converts a subRegion (px) into texture coords (0-1) of a given texture (cells of the textureAtlas).
             /// </summary>
-            private static ClydeTexture ExtractTexture(Texture texture, in UIBox2? subRegion, out UIBox2 sr)
+            private static ClydeTexture ExtractTexture(Texture texture, in UIBox2 subRegion, out UIBox2 sr)
             {
                 if (texture is AtlasTexture atlas)
                 {
                     texture = atlas.SourceTexture;
-                    if (subRegion.HasValue)
-                    {
-                        var offset = atlas.SubRegion.TopLeft;
-                        sr = new UIBox2(
-                            subRegion.Value.TopLeft + offset,
-                            subRegion.Value.BottomRight + offset);
-                    }
-                    else
-                    {
-                        sr = atlas.SubRegion;
-                    }
+                    var offset = atlas.SubRegion.TopLeft;
+                    sr = new UIBox2( subRegion.TopLeft + offset, subRegion.BottomRight + offset);
                 }
                 else
                 {
-                    sr = subRegion ?? new UIBox2(0, 0, texture.Width, texture.Height);
+                    sr = subRegion;
                 }
 
                 var clydeTexture = (ClydeTexture) texture;
                 return clydeTexture;
             }
 
+            /// <summary>
+            /// Converts a subRegion (px) into texture coords (0-1) of a given texture (cells of the textureAtlas).
+            /// </summary>
+            private static ClydeTexture ExtractTexture(Texture texture, out UIBox2 sr)
+            {
+                if (texture is AtlasTexture atlas)
+                {
+                    texture = atlas.SourceTexture;
+                    sr = atlas.SubRegion;
+                }
+                else
+                {
+                    sr = new UIBox2(0, 0, texture.Width, texture.Height);
+                }
+
+                var clydeTexture = (ClydeTexture)texture;
+                return clydeTexture;
+            }
             public void RenderInRenderTarget(IRenderTarget target, Action a, Color? clearColor)
             {
                 _clyde.RenderInRenderTarget((RenderTargetBase) target, a, clearColor);
@@ -293,12 +325,30 @@ namespace Robust.Client.Graphics.Clyde
                     }
                 }
 
-                public override void DrawTextureRectRegion(Texture texture, UIBox2 rect, UIBox2? subRegion = null,
-                    Color? modulate = null)
+                public override void DrawTextureRectRegion(Texture texture, in UIBox2 rect, in UIBox2 subRegion,
+                    in Color modulate)
                 {
-                    var color = (modulate ?? Color.White) * Modulate;
                     _renderHandle.DrawTextureScreen(texture, rect.TopLeft, rect.TopRight,
-                        rect.BottomLeft, rect.BottomRight, color, subRegion);
+                        rect.BottomLeft, rect.BottomRight, modulate * Modulate, subRegion);
+                }
+
+                public override void DrawTextureRectRegion(Texture texture, in UIBox2 rect, in Color modulate)
+                {
+                    _renderHandle.DrawTextureScreen(texture, rect.TopLeft, rect.TopRight,
+                        rect.BottomLeft, rect.BottomRight, modulate * Modulate);
+                }
+
+
+                public override void DrawTextureRectRegion(Texture texture, in UIBox2 rect)
+                {
+                    _renderHandle.DrawTextureScreen(texture, rect.TopLeft, rect.TopRight,
+                        rect.BottomLeft, rect.BottomRight, Modulate);
+                }
+
+                public override void DrawTextureRectRegion(Texture texture, in UIBox2 rect, in UIBox2 subRegion)
+                {
+                    _renderHandle.DrawTextureScreen(texture, rect.TopLeft, rect.TopRight,
+                        rect.BottomLeft, rect.BottomRight, Modulate, subRegion);
                 }
 
                 public override void DrawEntity(EntityUid entity, Vector2 position, Vector2 scale, Direction? overrideDirection)
@@ -411,13 +461,20 @@ namespace Robust.Client.Graphics.Clyde
                 /// <param name="quad">The four vertices of the quad in object space (or world if the transform is identity.).</param>
                 /// <param name="modulate">A color to multiply the texture by when shading.</param>
                 /// <param name="subRegion">The four corners of the texture sub region in px.</param>
-                public override void DrawTextureRectRegion(Texture texture, Box2 quad,
-                    Color? modulate = null, UIBox2? subRegion = null)
+                public override void DrawTextureRectRegion(Texture texture, in Box2 quad, in Color modulate, in UIBox2 subRegion)
                 {
-                    var color = (modulate ?? Color.White) * Modulate;
-
                     _renderHandle.DrawTextureWorld(texture, quad.BottomLeft, quad.BottomRight,
-                        quad.TopLeft, quad.TopRight, color, in subRegion);
+                        quad.TopLeft, quad.TopRight, modulate * Modulate, subRegion);
+                }
+
+                public override void DrawTextureRectRegion(Texture texture, in Box2 quad)
+                {
+                    _renderHandle.DrawTextureWorld(texture, quad.BottomLeft, quad.BottomRight, quad.TopLeft, quad.TopRight, Modulate);
+                }
+                public override void DrawTextureRectRegion(Texture texture, in Box2 quad, in Color modulate)
+                {
+                    _renderHandle.DrawTextureWorld(texture, quad.BottomLeft, quad.BottomRight,
+                        quad.TopLeft, quad.TopRight, modulate * Modulate);
                 }
 
                 /// <summary>
@@ -430,14 +487,24 @@ namespace Robust.Client.Graphics.Clyde
                 /// <param name="modulate">A color to multiply the texture by when shading.</param>
                 /// <param name="subRegion">The four corners of the texture sub region in px.</param>
                 public override void DrawTextureRectRegion(Texture texture, in Box2Rotated quad,
-                    Color? modulate = null, UIBox2? subRegion = null)
+                    in Color modulate, in UIBox2 subRegion)
                 {
-                    var color = (modulate ?? Color.White) * Modulate;
-
                     _renderHandle.DrawTextureWorld(texture, quad.BottomLeft, quad.BottomRight,
-                        quad.TopLeft, quad.TopRight, color, in subRegion);
+                        quad.TopLeft, quad.TopRight, modulate * Modulate, in subRegion);
                 }
 
+                public override void DrawTextureRectRegion(Texture texture, in Box2Rotated quad,
+                    in Color modulate)
+                {
+                    _renderHandle.DrawTextureWorld(texture, quad.BottomLeft, quad.BottomRight,
+                        quad.TopLeft, quad.TopRight, modulate * Modulate);
+                }
+
+                public override void DrawTextureRectRegion(Texture texture, in Box2Rotated quad)
+                {
+                    _renderHandle.DrawTextureWorld(texture, quad.BottomLeft, quad.BottomRight,
+                        quad.TopLeft, quad.TopRight, Modulate);
+                }
                 public override void DrawPrimitives(DrawPrimitiveTopology primitiveTopology, Texture texture,
                     ReadOnlySpan<DrawVertexUV2DColor> vertices)
                 {

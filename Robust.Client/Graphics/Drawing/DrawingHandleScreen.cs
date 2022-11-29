@@ -9,20 +9,36 @@ namespace Robust.Client.Graphics
     {
         public abstract void DrawRect(UIBox2 rect, Color color, bool filled = true);
 
-        public abstract void DrawTextureRectRegion(Texture texture, UIBox2 rect, UIBox2? subRegion = null, Color? modulate = null);
+        public abstract void DrawTextureRectRegion(Texture texture, in UIBox2 rect, in UIBox2 subRegion, in Color modulate);
+        public abstract void DrawTextureRectRegion(Texture texture, in UIBox2 rect, in Color modulate);
+        public abstract void DrawTextureRectRegion(Texture texture, in UIBox2 rect);
+        public abstract void DrawTextureRectRegion(Texture texture, in UIBox2 rect, in UIBox2 subRegion);
 
-        public void DrawTexture(Texture texture, Vector2 position, Color? modulate = null)
+        public void DrawTexture(Texture texture, Vector2 position, in Color modulate)
         {
             CheckDisposed();
 
             DrawTextureRect(texture, UIBox2.FromDimensions(position, texture.Size), modulate);
         }
-
-        public void DrawTextureRect(Texture texture, UIBox2 rect, Color? modulate = null)
+        public void DrawTexture(Texture texture, Vector2 position)
         {
             CheckDisposed();
 
-            DrawTextureRectRegion(texture, rect, null, modulate);
+            DrawTextureRect(texture, UIBox2.FromDimensions(position, texture.Size));
+        }
+
+        public void DrawTextureRect(Texture texture, in UIBox2 rect, in Color modulate)
+        {
+            CheckDisposed();
+
+            DrawTextureRectRegion(texture, rect, modulate);
+        }
+
+
+        public void DrawTextureRect(Texture texture, in UIBox2 rect)
+        {
+            CheckDisposed();
+            DrawTextureRectRegion(texture, rect);
         }
 
         public override void DrawCircle(Vector2 position, float radius, Color color, bool filled = true)

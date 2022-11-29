@@ -1,4 +1,5 @@
 using Robust.Shared.Maths;
+using static Robust.Shared.Utility.SpriteSpecifier;
 
 namespace Robust.Client.Graphics
 {
@@ -36,8 +37,9 @@ namespace Robust.Client.Graphics
         /// <param name="quad">The four vertices of the quad in object space (or world if the transform is identity.).</param>
         /// <param name="modulate">A color to multiply the texture by when shading.</param>
         /// <param name="subRegion">The four corners of the texture sub region in px.</param>
-        public abstract void DrawTextureRectRegion(Texture texture, Box2 quad,
-            Color? modulate = null, UIBox2? subRegion = null);
+        public abstract void DrawTextureRectRegion(Texture texture, in Box2 quad, in Color modulate, in UIBox2 subRegion);
+        public abstract void DrawTextureRectRegion(Texture texture, in Box2 quad);
+        public abstract void DrawTextureRectRegion(Texture texture, in Box2 quad, in Color modulate);
 
         /// <summary>
         /// Draws a sprite to the world. The coordinate system is right handed.
@@ -50,7 +52,11 @@ namespace Robust.Client.Graphics
         /// <param name="modulate">A color to multiply the texture by when shading.</param>
         /// <param name="subRegion">The four corners of the texture sub region in px.</param>
         public abstract void DrawTextureRectRegion(Texture texture, in Box2Rotated quad,
-            Color? modulate = null, UIBox2? subRegion = null);
+            in Color modulate, in UIBox2 subRegion);
+
+        public abstract void DrawTextureRectRegion(Texture texture, in Box2Rotated quad,
+            in Color modulate);
+        public abstract void DrawTextureRectRegion(Texture texture, in Box2Rotated quad);
 
         private Box2 GetQuad(Texture texture, Vector2 position)
         {
@@ -68,11 +74,17 @@ namespace Robust.Client.Graphics
         /// <remarks>
         /// The sprite will have it's local dimensions calculated so that it has <see cref="EyeManager.PixelsPerMeter"/> texels per meter in the world.
         /// </remarks>
-        public void DrawTexture(Texture texture, Vector2 position, Color? modulate = null)
+        public void DrawTexture(Texture texture, Vector2 position, Color modulate)
         {
             CheckDisposed();
 
             DrawTextureRect(texture, GetQuad(texture, position), modulate);
+        }
+        public void DrawTexture(Texture texture, Vector2 position)
+        {
+            CheckDisposed();
+
+            DrawTextureRect(texture, GetQuad(texture, position));
         }
 
         /// <summary>
@@ -87,13 +99,22 @@ namespace Robust.Client.Graphics
         /// <remarks>
         /// The sprite will have it's local dimensions calculated so that it has <see cref="EyeManager.PixelsPerMeter"/> texels per meter in the world.
         /// </remarks>
-        public void DrawTexture(Texture texture, Vector2 position, Angle angle, Color? modulate = null)
+        public void DrawTexture(Texture texture, Vector2 position, Angle angle, in Color modulate)
         {
             CheckDisposed();
 
             var quad = GetQuad(texture, position);
 
             DrawTextureRect(texture, new Box2Rotated(quad, angle, quad.Center), modulate);
+        }
+
+        public void DrawTexture(Texture texture, Vector2 position, Angle angle)
+        {
+            CheckDisposed();
+
+            var quad = GetQuad(texture, position);
+
+            DrawTextureRect(texture, new Box2Rotated(quad, angle, quad.Center));
         }
 
         /// <summary>
@@ -104,11 +125,18 @@ namespace Robust.Client.Graphics
         /// <param name="texture">Texture to draw.</param>
         /// <param name="quad">The four vertices of the quad in object space (or world if the transform is identity.).</param>
         /// <param name="modulate">A color to multiply the texture by when shading.</param>
-        public void DrawTextureRect(Texture texture, Box2 quad, Color? modulate = null)
+        public void DrawTextureRect(Texture texture, Box2 quad, Color modulate)
         {
             CheckDisposed();
 
             DrawTextureRectRegion(texture, quad, modulate);
+        }
+
+        public void DrawTextureRect(Texture texture, Box2 quad)
+        {
+            CheckDisposed();
+
+            DrawTextureRectRegion(texture, quad);
         }
 
         /// <summary>
@@ -120,11 +148,18 @@ namespace Robust.Client.Graphics
         /// <param name="quad">The four vertices of the quad in object space (or world if the transform is identity.).
         /// The rotation of the rectangle is applied before the transform matrix.</param>
         /// <param name="modulate">A color to multiply the texture by when shading.</param>
-        public void DrawTextureRect(Texture texture, in Box2Rotated quad, Color? modulate = null)
+        public void DrawTextureRect(Texture texture, in Box2Rotated quad, in Color modulate)
         {
             CheckDisposed();
 
             DrawTextureRectRegion(texture, in quad, modulate);
+        }
+
+        public void DrawTextureRect(Texture texture, in Box2Rotated quad)
+        {
+            CheckDisposed();
+
+            DrawTextureRectRegion(texture, in quad);
         }
     }
 }
