@@ -150,9 +150,8 @@ namespace Robust.Shared.Map
             if(!IsValid(entityManager))
                 return new Vector2i();
 
-            var gridId = GetGridId(entityManager);
-
-            if (gridId != GridId.Invalid)
+            var gridIdOpt = GetGridUid(entityManager);
+            if (gridIdOpt is EntityUid gridId && gridId.IsValid())
             {
                 return mapManager.GetGrid(gridId).GetTileRef(this).GridIndices;
             }
@@ -205,17 +204,6 @@ namespace Robust.Shared.Map
         }
 
         /// <summary>
-        ///     Returns the Grid Id these coordinates are on.
-        ///     If none of the ancestors are a grid, returns <see cref="GridId.Invalid"/> grid instead.
-        /// </summary>
-        /// <param name="entityManager"></param>
-        /// <returns>Grid Id this entity is on or <see cref="GridId.Invalid"/></returns>
-        public GridId GetGridId(IEntityManager entityManager)
-        {
-            return !IsValid(entityManager) ? GridId.Invalid : entityManager.GetComponent<TransformComponent>(EntityId).GridID;
-        }
-
-        /// <summary>
         ///     Returns the Grid EntityUid these coordinates are on.
         ///     If none of the ancestors are a grid, returns null instead.
         /// </summary>
@@ -224,17 +212,6 @@ namespace Robust.Shared.Map
         public EntityUid? GetGridUid(IEntityManager entityManager)
         {
             return !IsValid(entityManager) ? null : entityManager.GetComponent<TransformComponent>(EntityId).GridUid;
-        }
-
-        /// <summary>
-        ///     Returns the Grid EntityUid these coordinates are on.
-        ///     If none of the ancestors are a grid, returns null instead.
-        /// </summary>
-        /// <param name="entityManager"></param>
-        /// <returns>Grid EntityUid this entity is on or null</returns>
-        public EntityUid GetGridEntityId(IEntityManager entityManager)
-        {
-            return !IsValid(entityManager) ? EntityUid.Invalid : entityManager.GetComponent<TransformComponent>(EntityId).GridEntityId;
         }
 
         /// <summary>

@@ -12,7 +12,7 @@ using Robust.Shared.Serialization.TypeSerializers.Interfaces;
 namespace Robust.Shared.Serialization.TypeSerializers.Implementations
 {
     [TypeSerializer]
-    public sealed class TypeSerializer : ITypeSerializer<Type, ValueDataNode>
+    public sealed class TypeSerializer : ITypeSerializer<Type, ValueDataNode>, ITypeCopyCreator<Type>
     {
         private static readonly Dictionary<string, Type> Shortcuts = new ()
         {
@@ -31,7 +31,8 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
         }
 
         public Type Read(ISerializationManager serializationManager, ValueDataNode node,
-            IDependencyCollection dependencies, bool skipHook, ISerializationContext? context = null, Type? value = default)
+            IDependencyCollection dependencies, bool skipHook, ISerializationContext? context = null,
+            ISerializationManager.InstantiationDelegate<Type>? instanceProvider = null)
         {
             if (Shortcuts.TryGetValue(node.Value, out var shortcutType))
                 return shortcutType;
@@ -43,13 +44,14 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
                 : type;
         }
 
-        public DataNode Write(ISerializationManager serializationManager, Type value, bool alwaysWrite = false,
+        public DataNode Write(ISerializationManager serializationManager, Type value,
+            IDependencyCollection dependencies, bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
             return new ValueDataNode(value.FullName ?? value.Name);
         }
 
-        public Type Copy(ISerializationManager serializationManager, Type source, Type target, bool skipHook,
+        public Type CreateCopy(ISerializationManager serializationManager, Type source, bool skipHook,
             ISerializationContext? context = null)
         {
             return source;

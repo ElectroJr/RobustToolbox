@@ -25,13 +25,14 @@ namespace Robust.Shared.GameObjects
         [IoC.Dependency] private readonly IReflectionManager _reflectionManager = default!;
         [IoC.Dependency] private readonly IEntityManager _entityManager = default!;
         [IoC.Dependency] private readonly ProfManager _profManager = default!;
+        [IoC.Dependency] private readonly IDependencyCollection _dependencyCollection = default!;
 
 #if EXCEPTION_TOLERANCE
         [Dependency] private readonly IRuntimeLog _runtimeLog = default!;
 #endif
 
         private DependencyCollection _systemDependencyCollection = default!;
-        private List<Type> _systemTypes = new();
+        private readonly List<Type> _systemTypes = new();
 
         private static readonly Histogram _tickUsageHistogram = Metrics.CreateHistogram("robust_entity_systems_update_usage",
             "Amount of time spent processing each entity system", new HistogramConfiguration
@@ -121,7 +122,7 @@ namespace Robust.Shared.GameObjects
 
             var excludedTypes = new HashSet<Type>();
 
-            _systemDependencyCollection = new(IoCManager.Instance!);
+            _systemDependencyCollection = new(_dependencyCollection);
             var subTypes = new Dictionary<Type, Type>();
             _systemTypes.Clear();
             IEnumerable<Type> systems;
@@ -347,6 +348,16 @@ namespace Robust.Shared.GameObjects
             }
 
             _extraLoadedTypes.Add(typeof(T));
+        }
+
+        public IEnumerable<Type> GetEntitySystemTypes()
+        {
+            return _systemTypes;
+        }
+
+        public bool TryGetEntitySystem(Type sysType, [NotNullWhen(true)] out object? system)
+        {
+            return _systemDependencyCollection.TryResolveType(sysType, out system);
         }
 
         public object GetEntitySystem(Type sysType)

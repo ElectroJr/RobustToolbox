@@ -102,6 +102,8 @@ namespace Robust.Shared.Timing
         /// </summary>
         TimeSpan TickRemainder { get; set; }
 
+        TimeSpan CalcAdjustedTickPeriod();
+
         /// <summary>
         ///     Fraction of how far into the tick we are. <c>0</c> is 0% and <see cref="ushort.MaxValue"/> is 100%.
         /// </summary>
@@ -148,13 +150,14 @@ namespace Robust.Shared.Timing
         /// </summary>
         bool ApplyingState { get; }
 
-        /// <summary>
-        /// The last real non-predicted tick that was processed.
-        /// </summary>
-        GameTick LastRealTick { get; set; }
-
         string TickStamp => $"{CurTick}, predFirst: {IsFirstTimePredicted}, tickRem: {TickRemainder.TotalSeconds}, sim: {InSimulation}";
 
+        /// <summary>
+        /// Statically-accessible version of <see cref="TickStamp"/>.
+        /// </summary>
+        /// <remarks>
+        /// This is intended as a debugging aid, and should not be used in regular committed code.
+        /// </remarks>
         static string TickStampStatic => IoCManager.Resolve<IGameTiming>().TickStamp;
 
         /// <summary>

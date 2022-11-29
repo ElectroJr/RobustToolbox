@@ -40,7 +40,7 @@ namespace Robust.Shared.Serialization.Markdown.Mapping
                 _children.Add(key.ToDataNode(), val.ToDataNode());
             }
 
-            Tag = mapping.Tag;
+            Tag = mapping.Tag.IsEmpty ? null : mapping.Tag.Value;
         }
 
         public MappingDataNode(Dictionary<DataNode, DataNode> nodes) : base(NodeMark.Invalid, NodeMark.Invalid)
@@ -57,7 +57,13 @@ namespace Robust.Shared.Serialization.Markdown.Mapping
         public DataNode this[string index]
         {
             get => Get(index);
-            set => Add(new ValueDataNode(index), value);
+            set => Add(index, value);
+        }
+
+        public MappingDataNode Add(string key, DataNode node)
+        {
+            _children.Add(new ValueDataNode(key), node);
+            return this;
         }
 
         private static ValueDataNode GetFetchNode(string key)
@@ -181,11 +187,7 @@ namespace Robust.Shared.Serialization.Markdown.Mapping
         public MappingDataNode Merge(MappingDataNode otherMapping)
         {
             var newMapping = Copy();
-            foreach (var (key, val) in otherMapping.Children)
-            {
-                // Intentionally raises an ArgumentException
-                newMapping.Add(key.Copy(), val.Copy());
-            }
+            newMapping.Insert(otherMapping);
 
             // TODO Serialization: should prob make this smarter
             newMapping.Tag = Tag;
@@ -193,6 +195,18 @@ namespace Robust.Shared.Serialization.Markdown.Mapping
             newMapping.End = End;
 
             return newMapping;
+        }
+
+        public void Insert(MappingDataNode otherMapping, bool skipDuplicates = false)
+        {
+            foreach (var (key, val) in otherMapping.Children)
+            {
+                if (!skipDuplicates || !Has(key))
+                {
+                    // Intentionally raises an ArgumentException
+                    Add(key.Copy(), val.Copy());
+                }
+            }
         }
 
         public override bool IsEmpty => _children.Count == 0;
@@ -283,7 +297,7 @@ namespace Robust.Shared.Serialization.Markdown.Mapping
 
             // Given that keys are unique and we do not care about the ordering, we know that if removing identical
             // key-value pairs leaves us with an empty list then the mappings are equal.
-            return Except(other) == null;
+            return Except(other) == null && Tag == other.Tag;
         }
 
         public override MappingDataNode PushInheritance(MappingDataNode node)

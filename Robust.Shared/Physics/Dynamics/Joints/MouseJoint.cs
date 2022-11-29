@@ -25,6 +25,7 @@ using System.Runtime.CompilerServices;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Maths;
+using Robust.Shared.Physics.Components;
 using Robust.Shared.Serialization;
 using Robust.Shared.Serialization.Manager.Attributes;
 using Robust.Shared.ViewVariables;
@@ -40,20 +41,7 @@ internal sealed class MouseJointState : JointState
 
     public override Joint GetJoint()
     {
-        var joint = new MouseJoint(UidA, UidB, LocalAnchorA, LocalAnchorB)
-        {
-            ID = ID,
-            Breakpoint = Breakpoint,
-            CollideConnected = CollideConnected,
-            Enabled = Enabled,
-            Damping = Damping,
-            Stiffness = Stiffness,
-            MaxForce = MaxForce,
-            LocalAnchorA = LocalAnchorA,
-            LocalAnchorB = LocalAnchorB
-        };
-
-        return joint;
+        return new MouseJoint(this);
     }
 }
 
@@ -147,6 +135,13 @@ public sealed class MouseJoint : Joint, IEquatable<MouseJoint>
         LocalAnchorB = localAnchorB;
     }
 
+    internal MouseJoint(MouseJointState state) : base(state)
+    {
+        Damping = state.Damping;
+        Stiffness = state.Stiffness;
+        MaxForce = state.MaxForce;
+    }
+
     public override JointState GetState()
     {
         var mouseState = new MouseJointState
@@ -175,10 +170,8 @@ public sealed class MouseJoint : Joint, IEquatable<MouseJoint>
     private int _indexB;
     private Vector2 _localCenterB;
 
-    internal override void InitVelocityConstraints(SolverData data)
+    internal override void InitVelocityConstraints(SolverData data, PhysicsComponent bodyA, PhysicsComponent bodyB)
     {
-        var bodyB = BodyB;
-
         _indexB = bodyB.IslandIndex[data.IslandIndex];
         _localCenterB = bodyB.LocalCenter;
         _invMassB = bodyB.InvMass;

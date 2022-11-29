@@ -12,12 +12,13 @@ using Robust.Shared.Utility;
 namespace Robust.Shared.Serialization.TypeSerializers.Implementations
 {
     [TypeSerializer]
-    public sealed class Vector2iSerializer : ITypeSerializer<Vector2i, ValueDataNode>
+    public sealed class Vector2iSerializer : ITypeSerializer<Vector2i, ValueDataNode>, ITypeCopyCreator<Vector2i>
     {
         public Vector2i Read(ISerializationManager serializationManager, ValueDataNode node,
             IDependencyCollection dependencies,
             bool skipHook,
-            ISerializationContext? context = null, Vector2i value = default)
+            ISerializationContext? context = null,
+            ISerializationManager.InstantiationDelegate<Vector2i>? instanceProvider = null)
         {
             if (!VectorSerializerUtility.TryParseArgs(node.Value, 2, out var args))
             {
@@ -44,14 +45,15 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
                 : new ErrorNode(node, "Failed parsing values for Vector2i.");
         }
 
-        public DataNode Write(ISerializationManager serializationManager, Vector2i value, bool alwaysWrite = false,
+        public DataNode Write(ISerializationManager serializationManager, Vector2i value,
+            IDependencyCollection dependencies, bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
             return new ValueDataNode($"{value.X.ToString(CultureInfo.InvariantCulture)}," +
                                      $"{value.Y.ToString(CultureInfo.InvariantCulture)}");
         }
 
-        public Vector2i Copy(ISerializationManager serializationManager, Vector2i source, Vector2i target,
+        public Vector2i CreateCopy(ISerializationManager serializationManager, Vector2i source,
             bool skipHook,
             ISerializationContext? context = null)
         {

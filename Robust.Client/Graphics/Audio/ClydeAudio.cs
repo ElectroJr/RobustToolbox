@@ -5,9 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using OpenToolkit.Audio.OpenAL;
-using OpenToolkit.Audio.OpenAL.Extensions.Creative.EFX;
-using OpenToolkit.Mathematics;
+using OpenTK.Audio.OpenAL;
+using OpenTK.Audio.OpenAL.Extensions.Creative.EFX;
+using OpenTK.Mathematics;
 using Robust.Client.Audio;
 using Robust.Shared;
 using Robust.Shared.Configuration;
@@ -122,26 +122,55 @@ namespace Robust.Client.Graphics.Audio
             return true;
         }
 
-        private void _shutdownAudio()
+        public void StopAllAudio()
         {
-            foreach (var source in _audioSources.Values.ToArray())
+            foreach (var (key, source) in _audioSources)
             {
                 if (source.TryGetTarget(out var target))
                 {
-                    target.Dispose();
+                    target.StopPlaying();
                 }
             }
 
-            foreach (var source in _bufferedAudioSources.Values.ToArray())
+            foreach (var (key, source) in _bufferedAudioSources)
+            {
+                if (source.TryGetTarget(out var target))
+                {
+                    target.StopPlaying();
+                }
+            }
+        }
+
+        public void DisposeAllAudio()
+        {
+            foreach (var (key, source) in _audioSources)
             {
                 if (source.TryGetTarget(out var target))
                 {
                     target.Dispose();
                 }
             }
+            _audioSources.Clear();
+
+            foreach (var (key, source) in _bufferedAudioSources)
+            {
+                if (source.TryGetTarget(out var target))
+                {
+                    target.StopPlaying();
+                    target.Dispose();
+                }
+            }
+            _bufferedAudioSources.Clear();
+        }
+
+        private void _shutdownAudio()
+        {
+            DisposeAllAudio();
 
             if (_openALContext != ALContext.Null)
             {
+                ALC.MakeContextCurrent(ALContext.Null);
+
                 ALC.DestroyContext(_openALContext);
             }
 

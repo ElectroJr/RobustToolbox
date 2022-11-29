@@ -1,64 +1,31 @@
-using System.Collections.Generic;
 using JetBrains.Annotations;
 using Robust.Shared.IoC;
 using Robust.Shared.Map;
 using Robust.Shared.Maths;
+using System.Collections.Generic;
+using Robust.Shared.GameStates;
+using Robust.Shared.Map.Components;
+using System.Linq;
+using Robust.Shared.Timing;
 
 namespace Robust.Shared.GameObjects
 {
     [UsedImplicitly]
-    internal abstract class SharedMapSystem : EntitySystem
+    public abstract partial class SharedMapSystem : EntitySystem
     {
-        [Dependency] protected readonly IMapManagerInternal MapManager = default!;
+        [Dependency] private readonly IGameTiming _timing = default!;
+        [Dependency] protected readonly IMapManager MapManager = default!;
+        [Dependency] private readonly SharedTransformSystem _transform = default!;
 
         public override void Initialize()
         {
             base.Initialize();
 
-            SubscribeLocalEvent<MapComponent, ComponentInit>(OnMapAdded);
-            SubscribeLocalEvent<MapComponent, ComponentShutdown>(OnMapRemoved);
+            InitializeMap();
+            InitializeGrid();
 
-            SubscribeLocalEvent<MapGridComponent, ComponentAdd>(OnGridAdd);
-            SubscribeLocalEvent<MapGridComponent, ComponentInit>(OnGridInit);
-            SubscribeLocalEvent<MapGridComponent, ComponentStartup>(OnGridStartup);
-            SubscribeLocalEvent<MapGridComponent, ComponentShutdown>(OnGridRemove);
-        }
-
-        private void OnMapAdded(EntityUid uid, MapComponent component, ComponentInit args)
-        {
-            var msg = new MapChangedEvent(component.WorldMap, true);
-            EntityManager.EventBus.RaiseLocalEvent(uid, msg);
-        }
-
-        private void OnMapRemoved(EntityUid uid, MapComponent component, ComponentShutdown args)
-        {
-            var msg = new MapChangedEvent(component.WorldMap, false);
-            EntityManager.EventBus.RaiseLocalEvent(uid, msg);
-        }
-
-        private void OnGridAdd(EntityUid uid, MapGridComponent component, ComponentAdd args)
-        {
-            // GridID is not set yet so we don't include it.
-            var msg = new GridAddEvent(uid);
-            EntityManager.EventBus.RaiseLocalEvent(uid, msg);
-        }
-
-        private void OnGridInit(EntityUid uid, MapGridComponent component, ComponentInit args)
-        {
-            var msg = new GridInitializeEvent(uid, component.GridIndex);
-            EntityManager.EventBus.RaiseLocalEvent(uid, msg);
-        }
-
-        private void OnGridStartup(EntityUid uid, MapGridComponent component, ComponentStartup args)
-        {
-            var msg = new GridStartupEvent(uid, component.GridIndex);
-            EntityManager.EventBus.RaiseLocalEvent(uid, msg);
-        }
-
-        private void OnGridRemove(EntityUid uid, MapGridComponent component, ComponentShutdown args)
-        {
-            EntityManager.EventBus.RaiseLocalEvent(uid, new GridRemovalEvent(uid, component.GridIndex));
-            MapManager.OnComponentRemoved(component);
+            SubscribeLocalEvent<MapLightComponent, ComponentGetState>(OnMapLightGetState);
+            SubscribeLocalEvent<MapLightComponent, ComponentHandleState>(OnMapLightHandleState);
         }
     }
 
@@ -92,27 +59,24 @@ namespace Robust.Shared.GameObjects
         public bool Destroyed => !Created;
     }
 
+#pragma warning disable CS0618
     public sealed class GridStartupEvent : EntityEventArgs
     {
         public EntityUid EntityUid { get; }
-        public GridId GridId { get; }
 
-        public GridStartupEvent(EntityUid uid, GridId gridId)
+        public GridStartupEvent(EntityUid uid)
         {
             EntityUid = uid;
-            GridId = gridId;
         }
     }
 
     public sealed class GridRemovalEvent : EntityEventArgs
     {
         public EntityUid EntityUid { get; }
-        public GridId GridId { get; }
 
-        public GridRemovalEvent(EntityUid uid, GridId gridId)
+        public GridRemovalEvent(EntityUid uid)
         {
             EntityUid = uid;
-            GridId = gridId;
         }
     }
 
@@ -122,14 +86,13 @@ namespace Robust.Shared.GameObjects
     public sealed class GridInitializeEvent : EntityEventArgs
     {
         public EntityUid EntityUid { get; }
-        public GridId GridId { get; }
 
-        public GridInitializeEvent(EntityUid uid, GridId gridId)
+        public GridInitializeEvent(EntityUid uid)
         {
             EntityUid = uid;
-            GridId = gridId;
         }
     }
+#pragma warning restore CS0618
 
     /// <summary>
     /// Raised whenever a grid is Added
@@ -183,7 +146,7 @@ namespace Robust.Shared.GameObjects
         /// <summary>
         ///     Grid being changed.
         /// </summary>
-        public IMapGrid Grid { get; }
+        public MapGridComponent Grid { get; }
 
         /// <summary>
         /// Set of tiles that were modified.
@@ -193,7 +156,7 @@ namespace Robust.Shared.GameObjects
         /// <summary>
         ///     Creates a new instance of this class.
         /// </summary>
-        public GridModifiedEvent(IMapGrid grid, IReadOnlyCollection<(Vector2i position, Tile tile)> modified)
+        public GridModifiedEvent(MapGridComponent grid, IReadOnlyCollection<(Vector2i position, Tile tile)> modified)
         {
             Grid = grid;
             Modified = modified;

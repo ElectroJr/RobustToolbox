@@ -25,6 +25,7 @@ using Robust.Shared.Log;
 using Robust.Shared.Network;
 using Robust.Shared.Serialization;
 using Robust.Shared.Timing;
+using Robust.Shared.Utility;
 using ServerProgram = Robust.Server.Program;
 
 namespace Robust.UnitTesting
@@ -164,7 +165,7 @@ namespace Robust.UnitTesting
         {
             await instance.WaitPost(() =>
             {
-                var config = IoCManager.Resolve<IConfigurationManagerInternal>();
+                var config = instance.InstanceDependencyCollection.Resolve<IConfigurationManagerInternal>();
                 var overrides = new[]
                 {
                     (RTCVars.FailureLogLevel.Name, (instance.Options?.FailureLogLevel ?? RTCVars.FailureLogLevel.DefaultValue).ToString())
@@ -249,6 +250,8 @@ namespace Robust.UnitTesting
             private bool _isAlive = true;
             private Exception? _unhandledException;
 
+            public IDependencyCollection InstanceDependencyCollection => DependencyCollection;
+
             public virtual IntegrationOptions? Options { get; internal set; }
 
             /// <summary>
@@ -319,7 +322,7 @@ namespace Robust.UnitTesting
 
             /// <summary>
             ///     Resolve a dependency inside the instance.
-            ///     This works identical to <see cref="IoCManager.Resolve{T}"/>.
+            ///     This works identical to <see cref="IoCManager.Resolve{T}()"/>.
             /// </summary>
             /// <exception cref="InvalidOperationException">
             ///     Thrown if you did not ensure that the instance is idle via <see cref="WaitIdleAsync"/> first.
@@ -361,7 +364,17 @@ namespace Robust.UnitTesting
             {
                 while (_isAlive && _currentTicksId != _ackTicksId)
                 {
-                    var msg = await _fromInstanceReader.ReadAsync(cancellationToken);
+                    object msg = default!;
+                    try
+                    {
+                        msg = await _fromInstanceReader.ReadAsync(cancellationToken);
+                    }
+                    catch(OperationCanceledException ex)
+                    {
+                        _unhandledException = ex;
+                        _isAlive = false;
+                        break;
+                    }
                     switch (msg)
                     {
                         case ShutDownMessage shutDownMessage:
@@ -475,6 +488,7 @@ namespace Robust.UnitTesting
                 // Won't get ack'd directly but the shutdown is convincing enough.
                 _currentTicksId += 1;
                 _toInstanceWriter.TryWrite(new StopMessage());
+                _toInstanceWriter.TryComplete();
             }
 
             /// <summary>
@@ -526,7 +540,7 @@ namespace Robust.UnitTesting
 
         public sealed class ServerIntegrationInstance : IntegrationInstance
         {
-            internal ServerIntegrationInstance(ServerIntegrationOptions? options) : base(options)
+            public ServerIntegrationInstance(ServerIntegrationOptions? options) : base(options)
             {
                 ServerOptions = options;
                 DependencyCollection = new DependencyCollection();
@@ -562,6 +576,7 @@ namespace Robust.UnitTesting
                     var server = Init();
                     GameLoop.Run();
                     server.FinishMainLoop();
+                    IoCManager.Clear();
                 }
                 catch (Exception e)
                 {
@@ -574,21 +589,22 @@ namespace Robust.UnitTesting
 
             private BaseServer Init()
             {
-                IoCManager.InitThread(DependencyCollection, replaceExisting: true);
-                ServerIoC.RegisterIoC();
-                IoCManager.Register<INetManager, IntegrationNetManager>(true);
-                IoCManager.Register<IServerNetManager, IntegrationNetManager>(true);
-                IoCManager.Register<IntegrationNetManager, IntegrationNetManager>(true);
-                IoCManager.Register<ISystemConsoleManager, SystemConsoleManagerDummy>(true);
-                IoCManager.Register<IModLoader, TestingModLoader>(true);
-                IoCManager.Register<IModLoaderInternal, TestingModLoader>(true);
-                IoCManager.Register<TestingModLoader, TestingModLoader>(true);
-                IoCManager.RegisterInstance<IStatusHost>(new Mock<IStatusHost>().Object, true);
-                IoCManager.Register<IRobustMappedStringSerializer, IntegrationMappedStringSerializer>(true);
+                var deps = DependencyCollection;
+                IoCManager.InitThread(deps, replaceExisting: true);
+                ServerIoC.RegisterIoC(deps);
+                deps.Register<INetManager, IntegrationNetManager>(true);
+                deps.Register<IServerNetManager, IntegrationNetManager>(true);
+                deps.Register<IntegrationNetManager, IntegrationNetManager>(true);
+                deps.Register<ISystemConsoleManager, SystemConsoleManagerDummy>(true);
+                deps.Register<IModLoader, TestingModLoader>(true);
+                deps.Register<IModLoaderInternal, TestingModLoader>(true);
+                deps.Register<TestingModLoader, TestingModLoader>(true);
+                deps.RegisterInstance<IStatusHost>(new Mock<IStatusHost>().Object, true);
+                deps.Register<IRobustMappedStringSerializer, IntegrationMappedStringSerializer>(true);
                 Options?.InitIoC?.Invoke();
-                IoCManager.BuildGraph();
+                deps.BuildGraph();
                 //ServerProgram.SetupLogging();
-                ServerProgram.InitReflectionManager();
+                ServerProgram.InitReflectionManager(deps);
 
                 var server = DependencyCollection.Resolve<BaseServer>();
 
@@ -598,20 +614,23 @@ namespace Robust.UnitTesting
                     LoadContentResources = false,
                 };
 
-                // Autoregister components if options are null or we're NOT starting from content.
+                // Autoregister components if options are null or we're NOT starting from content, as in that case
+                // components will get auto-registered later. But either way, we will still invoke
+                // BeforeRegisterComponents here.
+                Options?.BeforeRegisterComponents?.Invoke();
                 if (!Options?.ContentStart ?? true)
                 {
-                    var componentFactory = IoCManager.Resolve<IComponentFactory>();
+                    var componentFactory = deps.Resolve<IComponentFactory>();
                     componentFactory.DoAutoRegistrations();
                     componentFactory.GenerateNetIds();
                 }
 
                 if (Options?.ContentAssemblies != null)
                 {
-                    IoCManager.Resolve<TestingModLoader>().Assemblies = Options.ContentAssemblies;
+                    deps.Resolve<TestingModLoader>().Assemblies = Options.ContentAssemblies;
                 }
 
-                var cfg = IoCManager.Resolve<IConfigurationManagerInternal>();
+                var cfg = deps.Resolve<IConfigurationManagerInternal>();
 
                 cfg.LoadCVarsFromAssembly(typeof(RobustIntegrationTest).Assembly);
 
@@ -622,7 +641,7 @@ namespace Robust.UnitTesting
 
                     if (Options.ExtraPrototypes != null)
                     {
-                        IoCManager.Resolve<IResourceManagerInternal>()
+                        deps.Resolve<IResourceManagerInternal>()
                             .MountString("/Prototypes/__integration_extra.yml", Options.ExtraPrototypes);
                     }
                 }
@@ -654,7 +673,7 @@ namespace Robust.UnitTesting
 
         public sealed class ClientIntegrationInstance : IntegrationInstance
         {
-            internal ClientIntegrationInstance(ClientIntegrationOptions? options) : base(options)
+            public ClientIntegrationInstance(ClientIntegrationOptions? options) : base(options)
             {
                 ClientOptions = options;
                 DependencyCollection = new DependencyCollection();
@@ -700,6 +719,18 @@ namespace Robust.UnitTesting
                 clientNetManager.NextConnectChannel = serverNetManager.MessageChannelWriter;
             }
 
+            public async Task CheckSandboxed(Assembly assembly)
+            {
+                await WaitIdleAsync();
+                await WaitAssertion(() =>
+                {
+                    var modLoader = new ModLoader();
+                    IoCManager.InjectDependencies(modLoader);
+                    modLoader.SetEnableSandboxing(true);
+                    modLoader.LoadGameAssembly(assembly.Location);
+                });
+            }
+
             private void ThreadMain()
             {
                 try
@@ -720,19 +751,20 @@ namespace Robust.UnitTesting
 
             private GameController Init()
             {
-                IoCManager.InitThread(DependencyCollection, replaceExisting: true);
-                ClientIoC.RegisterIoC(GameController.DisplayMode.Headless);
-                IoCManager.Register<INetManager, IntegrationNetManager>(true);
-                IoCManager.Register<IClientNetManager, IntegrationNetManager>(true);
-                IoCManager.Register<IntegrationNetManager, IntegrationNetManager>(true);
-                IoCManager.Register<IModLoader, TestingModLoader>(true);
-                IoCManager.Register<IModLoaderInternal, TestingModLoader>(true);
-                IoCManager.Register<TestingModLoader, TestingModLoader>(true);
-                IoCManager.Register<IRobustMappedStringSerializer, IntegrationMappedStringSerializer>(true);
+                var deps = DependencyCollection;
+                IoCManager.InitThread(deps, replaceExisting: true);
+                ClientIoC.RegisterIoC(GameController.DisplayMode.Headless, deps);
+                deps.Register<INetManager, IntegrationNetManager>(true);
+                deps.Register<IClientNetManager, IntegrationNetManager>(true);
+                deps.Register<IntegrationNetManager, IntegrationNetManager>(true);
+                deps.Register<IModLoader, TestingModLoader>(true);
+                deps.Register<IModLoaderInternal, TestingModLoader>(true);
+                deps.Register<TestingModLoader, TestingModLoader>(true);
+                deps.Register<IRobustMappedStringSerializer, IntegrationMappedStringSerializer>(true);
                 Options?.InitIoC?.Invoke();
-                IoCManager.BuildGraph();
+                deps.BuildGraph();
 
-                GameController.RegisterReflection();
+                GameController.RegisterReflection(deps);
 
                 var client = DependencyCollection.Resolve<GameController>();
 
@@ -742,20 +774,23 @@ namespace Robust.UnitTesting
                     LoadConfigAndUserData = false,
                 };
 
-                // Autoregister components if options are null or we're NOT starting from content.
+                // Autoregister components if options are null or we're NOT starting from content, as in that case
+                // components will get auto-registered later. But either way, we will still invoke
+                // BeforeRegisterComponents here.
+                Options?.BeforeRegisterComponents?.Invoke();
                 if (!Options?.ContentStart ?? true)
                 {
-                    var componentFactory = IoCManager.Resolve<IComponentFactory>();
+                    var componentFactory = deps.Resolve<IComponentFactory>();
                     componentFactory.DoAutoRegistrations();
                     componentFactory.GenerateNetIds();
                 }
 
                 if (Options?.ContentAssemblies != null)
                 {
-                    IoCManager.Resolve<TestingModLoader>().Assemblies = Options.ContentAssemblies;
+                    deps.Resolve<TestingModLoader>().Assemblies = Options.ContentAssemblies;
                 }
 
-                var cfg = IoCManager.Resolve<IConfigurationManagerInternal>();
+                var cfg = deps.Resolve<IConfigurationManagerInternal>();
 
                 cfg.LoadCVarsFromAssembly(typeof(RobustIntegrationTest).Assembly);
 
@@ -766,7 +801,7 @@ namespace Robust.UnitTesting
 
                     if (Options.ExtraPrototypes != null)
                     {
-                        IoCManager.Resolve<IResourceManagerInternal>()
+                        deps.Resolve<IResourceManagerInternal>()
                             .MountString("/Prototypes/__integration_extra.yml", Options.ExtraPrototypes);
                     }
                 }
@@ -839,8 +874,12 @@ namespace Robust.UnitTesting
 
                 while (Running)
                 {
-                    _channelReader.WaitToReadAsync().AsTask().Wait();
-
+                    var readerNotDone = _channelReader.WaitToReadAsync().AsTask().GetAwaiter().GetResult();
+                    if (!readerNotDone)
+                    {
+                        Running = false;
+                        return;
+                    }
                     SingleThreadRunUntilEmpty();
                 }
             }
@@ -921,6 +960,7 @@ namespace Robust.UnitTesting
         public abstract class IntegrationOptions
         {
             public Action? InitIoC { get; set; }
+            public Action? BeforeRegisterComponents { get; set; }
             public Action? BeforeStart { get; set; }
             public Assembly[]? ContentAssemblies { get; set; }
             public string? ExtraPrototypes { get; set; }

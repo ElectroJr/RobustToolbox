@@ -14,12 +14,20 @@ namespace Robust.Client.GameObjects
     ///     Handles interpolation of transform positions.
     /// </summary>
     [UsedImplicitly]
-    public sealed class TransformSystem : SharedTransformSystem
+    public sealed partial class TransformSystem : SharedTransformSystem
     {
         // Max distance per tick how far an entity can move before it is considered teleporting.
         // TODO: Make these values somehow dependent on server TPS.
         private const float MaxInterpolationDistance = 2.0f;
-        private const double MaxInterpolationAngle = Math.PI / 4; // 45 degrees.
+        private const float MaxInterpolationDistanceSquared = MaxInterpolationDistance * MaxInterpolationDistance;
+
+        private const float MinInterpolationDistance = 0.001f;
+        private const float MinInterpolationDistanceSquared = MinInterpolationDistance * MinInterpolationDistance;
+
+        private const double MinInterpolationAngle = Math.PI / 720;
+
+        // 45 degrees.
+        private const double MaxInterpolationAngle = Math.PI / 4;
 
         [Dependency] private readonly IGameTiming _gameTiming = default!;
 
@@ -27,16 +35,33 @@ namespace Robust.Client.GameObjects
         // Much faster than iterating 3000+ transforms every frame.
         [ViewVariables] private readonly List<TransformComponent> _lerpingTransforms = new();
 
-        public override void Initialize()
+        public void Reset()
         {
-            base.Initialize();
-
-            SubscribeLocalEvent<TransformStartLerpMessage>(TransformStartLerpHandler);
+            foreach (var xform in _lerpingTransforms)
+            {
+                xform.ActivelyLerping = false;
+                xform.NextPosition = null;
+                xform.NextRotation = null;
+                xform.LerpParent = EntityUid.Invalid;
+            }
+            _lerpingTransforms.Clear();
         }
 
-        private void TransformStartLerpHandler(TransformStartLerpMessage ev)
+        public override void ActivateLerp(TransformComponent xform)
         {
-            _lerpingTransforms.Add(ev.Transform);
+            if (xform.ActivelyLerping)
+                return;
+
+            xform.ActivelyLerping = true;
+            _lerpingTransforms.Add(xform);
+        }
+
+        public override void DeactivateLerp(TransformComponent component)
+        {
+            // this should cause the lerp to do nothing
+            component.NextPosition = null;
+            component.NextRotation = null;
+            component.LerpParent = EntityUid.Invalid;
         }
 
         public override void FrameUpdate(float frameTime)
@@ -52,31 +77,36 @@ namespace Robust.Client.GameObjects
 
                 // Only lerp if parent didn't change.
                 // E.g. entering lockers would do it.
-                if (transform.LerpParent == transform.ParentUid &&
-                    transform.ParentUid.IsValid())
+                if (transform.LerpParent == transform.ParentUid
+                    && transform.ParentUid.IsValid()
+                    && !transform.Deleted)
                 {
-                    if (transform.LerpDestination != null)
+                    if (transform.NextPosition != null)
                     {
-                        var lerpDest = transform.LerpDestination.Value;
-                        var lerpSource = transform.LerpSource;
-                        if ((lerpDest - lerpSource).LengthSquared < MaxInterpolationDistance * MaxInterpolationDistance)
+                        var lerpDest = transform.NextPosition.Value;
+                        var lerpSource = transform.PrevPosition;
+                        var distance = (lerpDest - lerpSource).LengthSquared;
+
+                        if (distance is > MinInterpolationDistanceSquared and < MaxInterpolationDistanceSquared)
                         {
                             transform.LocalPosition = Vector2.Lerp(lerpSource, lerpDest, step);
                             // Setting LocalPosition clears LerpPosition so fix that.
-                            transform.LerpDestination = lerpDest;
+                            transform.NextPosition = lerpDest;
                             found = true;
                         }
                     }
 
-                    if (transform.LerpAngle != null)
+                    if (transform.NextRotation != null)
                     {
-                        var lerpDest = transform.LerpAngle.Value;
-                        var lerpSource = transform.LerpSourceAngle;
-                        if (Math.Abs(Angle.ShortestDistance(lerpDest, lerpSource)) < MaxInterpolationAngle)
+                        var lerpDest = transform.NextRotation.Value;
+                        var lerpSource = transform.PrevRotation;
+                        var distance = Math.Abs(Angle.ShortestDistance(lerpDest, lerpSource));
+
+                        if (distance is > MinInterpolationAngle and < MaxInterpolationAngle)
                         {
                             transform.LocalRotation = Angle.Lerp(lerpSource, lerpDest, step);
                             // Setting LocalRotation clears LerpAngle so fix that.
-                            transform.LerpAngle = lerpDest;
+                            transform.NextRotation = lerpDest;
                             found = true;
                         }
                     }

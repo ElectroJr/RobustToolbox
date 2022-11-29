@@ -57,6 +57,19 @@ namespace Robust.Shared.Configuration
         /// <remarks>
         ///     This is intended to aid shared code.
         /// </remarks>
-        CLIENTONLY = 128
+        CLIENTONLY = 128,
+
+        /// <summary>
+        /// CVar contains sensitive data that should not be accidentally leaked.
+        /// </summary>
+        /// <remarks>
+        /// This currently hides the content of the cvar in the "cvar" command completions.
+        /// </remarks>
+        CONFIDENTIAL = 256,
+
+        /// <summary>
+        /// Only the client can change this variable.
+        /// </summary>
+        CLIENT = 512,
     }
 }

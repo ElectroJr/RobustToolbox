@@ -14,9 +14,10 @@ using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
 using Robust.Shared.Map;
-using Robust.Shared.Maths;
 using Robust.Shared.Profiling;
 using Robust.Shared.Timing;
+using SixLabors.ImageSharp;
+using Color = Robust.Shared.Maths.Color;
 using DependencyAttribute = Robust.Shared.IoC.DependencyAttribute;
 
 namespace Robust.Client.Graphics.Clyde
@@ -38,6 +39,7 @@ namespace Robust.Client.Graphics.Clyde
         [Dependency] private readonly IGameTiming _gameTiming = default!;
         [Dependency] private readonly IConfigurationManager _cfg = default!;
         [Dependency] private readonly ProfManager _prof = default!;
+        [Dependency] private readonly IDependencyCollection _deps = default!;
 
         private GLUniformBuffer<ProjViewMatrices> ProjViewUBO = default!;
         private GLUniformBuffer<UniformConstants> UniformConstantsUBO = default!;
@@ -75,6 +77,7 @@ namespace Robust.Client.Graphics.Clyde
         {
             _currentBoundRenderTarget = default!;
             _currentRenderTarget = default!;
+            Configuration.Default.PreferContiguousImageBuffers = true;
         }
 
         public bool InitializePreWindowing()
@@ -242,7 +245,7 @@ namespace Robust.Client.Graphics.Clyde
 
             _sawmillOgl.Debug("Setting up RenderHandle...");
 
-            _renderHandle = new RenderHandle(this);
+            _renderHandle = new RenderHandle(this, _entityManager);
         }
 
         private (int major, int minor)? ParseGLOverrideVersion()
@@ -332,7 +335,7 @@ namespace Robust.Client.Graphics.Clyde
 
             screenBufferHandle = new GLHandle(GL.GenTexture());
             GL.BindTexture(TextureTarget.Texture2D, screenBufferHandle.Handle);
-            ApplySampleParameters(TextureSampleParameters.Default);
+            ApplySampleParameters(new TextureSampleParameters() { Filter = false, WrapMode = TextureWrapMode.MirroredRepeat});
             // TODO: This is atrocious and broken and awful why did I merge this
             ScreenBufferTexture = GenTexture(screenBufferHandle, (1920, 1080), true, null, TexturePixelType.Rgba32);
         }

@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using Robust.Client.Timing;
 using Robust.LoaderApi;
 using Robust.Shared;
 using Robust.Shared.IoC;
@@ -13,7 +14,7 @@ namespace Robust.Client
     {
         private IGameLoop? _mainLoop;
 
-        [Dependency] private readonly IGameTiming _gameTiming = default!;
+        [Dependency] private readonly IClientGameTiming _gameTiming = default!;
         [Dependency] private readonly IDependencyCollection _dependencyCollection = default!;
 
         private static bool _hasStarted;
@@ -32,6 +33,8 @@ namespace Robust.Client
                 throw new InvalidOperationException("Cannot start twice!");
             }
 
+            GlibcBug.Check();
+
             _hasStarted = true;
 
             if (CommandLineArgs.TryParse(args, out var parsed))
@@ -42,13 +45,12 @@ namespace Robust.Client
 
         private static void ParsedMain(CommandLineArgs args, bool contentStart, IMainArgs? loaderArgs, GameControllerOptions options)
         {
-            IoCManager.InitThread();
-
+            var deps = IoCManager.InitThread();
             var mode = args.Headless ? DisplayMode.Headless : DisplayMode.Clyde;
 
-            InitIoC(mode);
+            InitIoC(mode, deps);
 
-            var gc = IoCManager.Resolve<GameController>();
+            var gc = deps.Resolve<GameController>();
             gc.SetCommandLineArgs(args);
             gc._loaderArgs = loaderArgs;
 
@@ -104,7 +106,7 @@ namespace Robust.Client
             CleanupWindowThread();
 
             Logger.Debug("Goodbye");
-            IoCManager.Clear();
+            _dependencyCollection.Clear();
         }
 
         private void GameThreadMain(DisplayMode mode)

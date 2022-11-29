@@ -1,15 +1,19 @@
 using System.Collections.Generic;
 using System.Linq;
+using Robust.Server.Physics;
 using Robust.Shared;
 using Robust.Shared.Configuration;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
-using Robust.Shared.Map;
+using Robust.Shared.Map.Components;
+using Robust.Shared.Map.Events;
 
 namespace Robust.Server.GameObjects
 {
-    internal sealed class MapSystem : SharedMapSystem
+    public sealed class MapSystem : SharedMapSystem
     {
+        [Dependency] private readonly IConfigurationManager _cfg = default!;
+
         private bool _deleteEmptyGrids;
 
         public override void Initialize()
@@ -17,8 +21,12 @@ namespace Robust.Server.GameObjects
             base.Initialize();
             SubscribeLocalEvent<MapGridComponent, EmptyGridEvent>(HandleGridEmpty);
 
-            var configManager = IoCManager.Resolve<IConfigurationManager>();
-            configManager.OnValueChanged(CVars.GameDeleteEmptyGrids, SetGridDeletion, true);
+            _cfg.OnValueChanged(CVars.GameDeleteEmptyGrids, SetGridDeletion, true);
+        }
+
+        protected override void OnMapAdd(EntityUid uid, MapComponent component, ComponentAdd args)
+        {
+            EnsureComp<PhysicsMapComponent>(uid);
         }
 
         private void SetGridDeletion(bool value)
@@ -28,7 +36,7 @@ namespace Robust.Server.GameObjects
             // If we have any existing empty ones then cull them on setting the cvar
             if (_deleteEmptyGrids)
             {
-                var toDelete = new List<IMapGrid>();
+                var toDelete = new List<MapGridComponent>();
 
                 foreach (var grid in MapManager.GetAllGrids())
                 {
@@ -38,12 +46,12 @@ namespace Robust.Server.GameObjects
 
                 foreach (var grid in toDelete)
                 {
-                    MapManager.DeleteGrid(grid.Index);
+                    MapManager.DeleteGrid(grid.GridEntityId);
                 }
             }
         }
 
-        private bool GridEmpty(IMapGrid grid)
+        private bool GridEmpty(MapGridComponent grid)
         {
             return !(grid.GetAllTiles().Any());
         }
@@ -51,8 +59,8 @@ namespace Robust.Server.GameObjects
         public override void Shutdown()
         {
             base.Shutdown();
-            var configManager = IoCManager.Resolve<IConfigurationManager>();
-            configManager.UnsubValueChanged(CVars.GameDeleteEmptyGrids, SetGridDeletion);
+
+            _cfg.UnsubValueChanged(CVars.GameDeleteEmptyGrids, SetGridDeletion);
         }
 
         private void HandleGridEmpty(EntityUid uid, MapGridComponent component, EmptyGridEvent args)

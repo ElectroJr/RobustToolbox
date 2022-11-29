@@ -157,6 +157,17 @@ namespace Robust.Client.Graphics.Clyde
                 return newPoint;
             }
 
+            public Matrix3 GetWorldToLocalMatrix()
+            {
+                if (Eye == null)
+                    return Matrix3.Identity;
+
+                Eye.GetViewMatrix(out var viewMatrix, RenderScale * (EyeManager.PixelsPerMeter, -EyeManager.PixelsPerMeter));
+                viewMatrix.R0C2 += Size.X / 2f;
+                viewMatrix.R1C2 += Size.Y / 2f;
+                return viewMatrix;
+            }
+
             public void RenderScreenOverlaysBelow(
                 DrawingHandleScreen handle,
                 IViewportControl control,

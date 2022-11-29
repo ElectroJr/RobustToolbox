@@ -1,82 +1,79 @@
-using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.Linq;
-using Microsoft.Extensions.ObjectPool;
+using Robust.Client.Timing;
 using Robust.Shared.GameObjects;
-using Robust.Shared.GameStates;
 using Robust.Shared.IoC;
-using Robust.Shared.Timing;
+using Robust.Shared.Log;
 using Robust.Shared.Utility;
+using System;
+using System.Collections.Generic;
 
 namespace Robust.Client.GameStates;
 
 /// <summary>
 /// Tracks dirty entities on the client for the purposes of gamestatemanager.
 /// </summary>
-internal sealed class ClientDirtySystem : EntitySystem
+public sealed class ClientDirtySystem : EntitySystem
 {
-    [Dependency] private readonly IGameTiming _timing = default!;
+    [Dependency] private readonly IClientGameTiming _timing = default!;
+    [Dependency] private readonly IComponentFactory _compFact = default!;
+    
+    // Entities that have removed networked components
+    // could pool the ushort sets, but predicted component changes are rare... soo...
+    internal readonly Dictionary<EntityUid, HashSet<ushort>> RemovedComponents = new();
 
-    private readonly Dictionary<GameTick, HashSet<EntityUid>> _dirtyEntities = new();
-
-    private ObjectPool<HashSet<EntityUid>> _dirtyPool =
-        new DefaultObjectPool<HashSet<EntityUid>>(new DefaultPooledObjectPolicy<HashSet<EntityUid>>(), 64);
-
-    // Keep it out of the pool because it's probably going to be a lot bigger.
-    private HashSet<EntityUid> _dirty = new(256);
+    internal readonly HashSet<EntityUid> DirtyEntities = new(256);
 
     public override void Initialize()
     {
         base.Initialize();
+        SubscribeLocalEvent<EntityTerminatingEvent>(OnTerminate);
         EntityManager.EntityDirtied += OnEntityDirty;
+        EntityManager.ComponentRemoved += OnCompRemoved;
     }
 
     public override void Shutdown()
     {
         base.Shutdown();
         EntityManager.EntityDirtied -= OnEntityDirty;
-        _dirtyEntities.Clear();
+        EntityManager.ComponentRemoved -= OnCompRemoved;
+        Reset();
     }
 
-    internal void Reset()
+    private void OnTerminate(ref EntityTerminatingEvent ev)
     {
-        foreach (var (_, sets) in _dirtyEntities)
-        {
-            sets.Clear();
-            _dirtyPool.Return(sets);
-        }
+        if (!_timing.InPrediction || ev.Entity.IsClientSide())
+            return;
 
-        _dirtyEntities.Clear();
+        // Client-side entity deletion is not supported and will cause errors.
+        Logger.Error($"Predicting the deletion of a networked entity: {ToPrettyString(ev.Entity)}. Trace: {Environment.StackTrace}");
     }
 
-    public IEnumerable<EntityUid> GetDirtyEntities(GameTick currentTick)
+    private void OnCompRemoved(RemovedComponentEventArgs args)
     {
-        _dirty.Clear();
+        if (args.Terminating)
+            return;
 
-        // This is just to avoid collection being modified during iteration unfortunately.
-        foreach (var (tick, dirty) in _dirtyEntities)
-        {
-            if (tick < currentTick) continue;
-            foreach (var ent in dirty)
-            {
-                _dirty.Add(ent);
-            }
-        }
+        var comp = args.BaseArgs.Component;
+        if (!_timing.InPrediction || comp.Owner.IsClientSide() || !comp.NetSyncEnabled)
+            return;
 
-        return _dirty;
+        // Was this component added during prediction? If yes, then there is no need to re-add it when resetting.
+        if (comp.CreationTick > _timing.LastRealTick)
+            return;
+
+        var netId = _compFact.GetRegistration(comp).NetID;
+        if (netId != null)
+            RemovedComponents.GetOrNew(comp.Owner).Add(netId.Value);
+    }
+
+    public void Reset()
+    {
+        DirtyEntities.Clear();
+        RemovedComponents.Clear();
     }
 
     private void OnEntityDirty(EntityUid e)
     {
-        if (e.IsClientSide()) return;
-
-        var tick = _timing.CurTick;
-        if (!_dirtyEntities.TryGetValue(tick, out var ents))
-        {
-            ents = _dirtyPool.Get();
-            _dirtyEntities[tick] = ents;
-        }
-
-        ents.Add(e);
+        if (_timing.InPrediction && !e.IsClientSide())
+            DirtyEntities.Add(e);
     }
 }

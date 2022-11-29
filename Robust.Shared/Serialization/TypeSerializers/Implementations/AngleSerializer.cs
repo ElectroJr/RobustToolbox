@@ -12,12 +12,13 @@ using Robust.Shared.Serialization.TypeSerializers.Interfaces;
 namespace Robust.Shared.Serialization.TypeSerializers.Implementations
 {
     [TypeSerializer]
-    public sealed class AngleSerializer : ITypeSerializer<Angle, ValueDataNode>
+    public sealed class AngleSerializer : ITypeSerializer<Angle, ValueDataNode>, ITypeCopyCreator<Angle>
     {
         public Angle Read(ISerializationManager serializationManager, ValueDataNode node,
             IDependencyCollection dependencies,
             bool skipHook,
-            ISerializationContext? context = null, Angle value = default)
+            ISerializationContext? context = null,
+            ISerializationManager.InstantiationDelegate<Angle>? instanceProvider = null)
         {
             var nodeContents = node.Value;
 
@@ -39,14 +40,15 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
             return double.TryParse(value, out _) ? new ValidatedValueNode(node) : new ErrorNode(node, "Failed parsing angle.");
         }
 
-        public DataNode Write(ISerializationManager serializationManager, Angle value, bool alwaysWrite = false,
+        public DataNode Write(ISerializationManager serializationManager, Angle value,
+            IDependencyCollection dependencies, bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
             return new ValueDataNode($"{value.Theta.ToString(CultureInfo.InvariantCulture)} rad");
         }
 
         [MustUseReturnValue]
-        public Angle Copy(ISerializationManager serializationManager, Angle source, Angle target,
+        public Angle CreateCopy(ISerializationManager serializationManager, Angle source,
             bool skipHook,
             ISerializationContext? context = null)
         {

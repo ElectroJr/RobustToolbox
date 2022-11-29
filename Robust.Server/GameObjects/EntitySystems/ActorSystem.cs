@@ -50,8 +50,8 @@ namespace Robust.Server.GameObjects
             // Null by default.
             forceKicked = null;
 
-            // Cannot attach to a deleted/nonexisting entity.
-            if (EntityManager.Deleted(uid))
+            // Cannot attach to a deleted, nonexisting or terminating entity.
+            if (!TryComp(uid, out MetaDataComponent? meta) || meta.EntityLifeStage > EntityLifeStage.MapInitialized)
             {
                 return false;
             }
@@ -70,16 +70,17 @@ namespace Robust.Server.GameObjects
 
                 // This detach cannot fail, as a player is attached to this entity.
                 // It's important to note that detaching the player removes the component.
-                RaiseLocalEvent(uid, new DetachPlayerEvent());
+                RaiseLocalEvent(uid, new DetachPlayerEvent(), true);
             }
 
             // We add the actor component.
             actor = EntityManager.AddComponent<ActorComponent>(uid);
+            EntityManager.EnsureComponent<EyeComponent>(uid);
             actor.PlayerSession = player;
             player.SetAttachedEntity(actor.Owner);
 
             // The player is fully attached now, raise an event!
-            RaiseLocalEvent(uid, new PlayerAttachedEvent(actor.Owner, player, forceKicked));
+            RaiseLocalEvent(uid, new PlayerAttachedEvent(actor.Owner, player, forceKicked), true);
             return true;
         }
 
@@ -123,7 +124,7 @@ namespace Robust.Server.GameObjects
             component.PlayerSession.SetAttachedEntity(null);
 
             // The player is fully detached now that the component has shut down.
-            RaiseLocalEvent(entity, new PlayerDetachedEvent(entity, component.PlayerSession));
+            RaiseLocalEvent(entity, new PlayerDetachedEvent(entity, component.PlayerSession), true);
         }
     }
 

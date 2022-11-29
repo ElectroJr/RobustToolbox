@@ -115,6 +115,7 @@ namespace Robust.Shared.Network
                 return;
             }
 
+            DebugTools.Assert(ChannelCount > 0 && winningPeer.Channels.Count > 0);
             ClientConnectState = ClientConnectionState.Connected;
             Logger.DebugS("net", "Handshake completed, connection established.");
         }
@@ -142,7 +143,7 @@ namespace Robust.Shared.Network
             };
 
             var outLoginMsg = peer.Peer.CreateMessage();
-            msgLogin.WriteToBuffer(outLoginMsg);
+            msgLogin.WriteToBuffer(outLoginMsg, _serializer);
             peer.Peer.SendMessage(outLoginMsg, connection, NetDeliveryMethod.ReliableOrdered);
 
             NetEncryption? encryption = null;
@@ -153,7 +154,7 @@ namespace Robust.Shared.Network
             {
                 // Need to authenticate, packet is MsgEncryptionRequest
                 var encRequest = new MsgEncryptionRequest();
-                encRequest.ReadFromBuffer(response);
+                encRequest.ReadFromBuffer(response, _serializer);
 
                 var sharedSecret = new byte[SharedKeyLength];
                 RandomNumberGenerator.Fill(sharedSecret);
@@ -175,8 +176,9 @@ namespace Robust.Shared.Network
 
                 if (keyBytes.Length != CryptoBox.PublicKeyBytes)
                 {
-                    connection.Disconnect("Invalid public key length");
-                    return;
+                    var msg = $"Invalid public key length. Expected {CryptoBox.PublicKeyBytes}, but was {keyBytes.Length}.";
+                    connection.Disconnect(msg);
+                    throw new Exception(msg);
                 }
 
                 // Data is [shared]+[verify]
@@ -190,9 +192,10 @@ namespace Robust.Shared.Network
                 var authHash = Convert.ToBase64String(authHashBytes);
 
                 var joinReq = new JoinRequest(authHash);
-                var httpClient = new HttpClient();
-                httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("SS14Auth", authToken);
-                var joinResp = await httpClient.PostAsJsonAsync(authServer + "api/session/join", joinReq, cancel);
+                var request = new HttpRequestMessage(HttpMethod.Post, authServer + "api/session/join");
+                request.Content = JsonContent.Create(joinReq);
+                request.Headers.Authorization = new AuthenticationHeaderValue("SS14Auth", authToken);
+                var joinResp = await _httpClient.SendAsync(request, cancel);
 
                 joinResp.EnsureSuccessStatusCode();
 
@@ -203,7 +206,7 @@ namespace Robust.Shared.Network
                 };
 
                 var outEncRespMsg = peer.Peer.CreateMessage();
-                encryptionResponse.WriteToBuffer(outEncRespMsg);
+                encryptionResponse.WriteToBuffer(outEncRespMsg, _serializer);
                 peer.Peer.SendMessage(outEncRespMsg, connection, NetDeliveryMethod.ReliableOrdered);
 
                 // Expect login success here.
@@ -212,7 +215,7 @@ namespace Robust.Shared.Network
             }
 
             var msgSuc = new MsgLoginSuccess();
-            msgSuc.ReadFromBuffer(response);
+            msgSuc.ReadFromBuffer(response, _serializer);
 
             var channel = new NetChannel(this, connection, msgSuc.UserData with { HWId = hwId }, msgSuc.Type);
             _channels.Add(connection, channel);
@@ -371,7 +374,7 @@ namespace Robust.Shared.Network
                             Logger.DebugS("net", "First peer failed.");
                             firstPeer.Peer.Shutdown("You failed.");
                             _toCleanNetPeers.Add(firstPeer.Peer);
-                            firstReason = firstPeerChanged.Result;
+                            firstReason = await firstPeerChanged;
                             await secondPeerChanged;
                             winningPeer = secondPeer;
                             winningConnection = secondConnection;

@@ -12,12 +12,13 @@ using Robust.Shared.Serialization.TypeSerializers.Interfaces;
 namespace Robust.Shared.Serialization.TypeSerializers.Implementations
 {
     [TypeSerializer]
-    public sealed class RegexSerializer : ITypeSerializer<Regex, ValueDataNode>
+    public sealed class RegexSerializer : ITypeSerializer<Regex, ValueDataNode>, ITypeCopyCreator<Regex>
     {
         public Regex Read(ISerializationManager serializationManager, ValueDataNode node,
             IDependencyCollection dependencies,
             bool skipHook,
-            ISerializationContext? context = null, Regex? value = default)
+            ISerializationContext? context = null,
+            ISerializationManager.InstantiationDelegate<Regex>? instanceProvider = null)
         {
             return new Regex(node.Value, RegexOptions.Compiled);
         }
@@ -38,14 +39,15 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
             return new ValidatedValueNode(node);
         }
 
-        public DataNode Write(ISerializationManager serializationManager, Regex value, bool alwaysWrite = false,
+        public DataNode Write(ISerializationManager serializationManager, Regex value,
+            IDependencyCollection dependencies, bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
             return new ValueDataNode(value.ToString());
         }
 
         [MustUseReturnValue]
-        public Regex Copy(ISerializationManager serializationManager, Regex source, Regex target,
+        public Regex CreateCopy(ISerializationManager serializationManager, Regex source,
             bool skipHook,
             ISerializationContext? context = null)
         {

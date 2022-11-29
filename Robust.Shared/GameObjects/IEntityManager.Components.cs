@@ -34,12 +34,27 @@ namespace Robust.Shared.GameObjects
         void StartComponents(EntityUid uid);
 
         /// <summary>
+        /// Gets the number of a specific component.
+        /// </summary>
+        public int Count<T>() where T : Component;
+
+        /// <summary>
+        /// Gets the number of a specific component.
+        /// </summary>
+        int Count(Type component);
+
+        /// <summary>
         ///     Adds a Component type to an entity. If the entity is already Initialized, the component will
         ///     automatically be Initialized and Started.
         /// </summary>
         /// <typeparam name="T">Concrete component type to add.</typeparam>
         /// <returns>The newly added component.</returns>
         T AddComponent<T>(EntityUid uid) where T : Component, new();
+
+        /// <summary>
+        ///     Adds a Component with a given network id to an entity.
+        /// </summary>
+        Component AddComponent(EntityUid uid, ushort netId);
 
         /// <summary>
         ///     Adds an uninitialized Component type to an entity.
@@ -94,11 +109,44 @@ namespace Robust.Shared.GameObjects
         void RemoveComponent(EntityUid uid, IComponent component);
 
         /// <summary>
-        ///     Removes the specified component. Throws if the given component does not belong to the entity.
+        ///     Immediately shuts down a component, but defers the removal and deletion until the end of the tick.
+        ///     Without needing to have the component itself.
+        /// </summary>
+        /// <typeparam name="T">The component reference type to remove.</typeparam>
+        /// <param name="uid">Entity UID to modify.</param>
+        bool RemoveComponentDeferred<T>(EntityUid uid);
+
+        /// <summary>
+        ///     Immediately shuts down a component, but defers the removal and deletion until the end of the tick.
+        /// </summary>
+        /// <param name="uid">Entity UID to modify.</param>
+        /// <param name="type">A trait or component type to check for.</param>
+        /// <returns>Returns false if the entity did not have the specified component.</returns>
+        bool RemoveComponentDeferred(EntityUid uid, Type type);
+
+        /// <summary>
+        ///     Immediately shuts down a component, but defers the removal and deletion until the end of the tick.
+        /// </summary>
+        /// <param name="uid">Entity UID to modify.</param>
+        /// <param name="netID">Network ID of the component to remove.</param>
+        /// <returns>Returns false if the entity did not have the specified component.</returns>
+        bool RemoveComponentDeferred(EntityUid uid, ushort netID);
+
+        /// <summary>
+        ///     Immediately shuts down a component, but defers the removal and deletion until the end of the tick.
+        ///     Throws if the given component does not belong to the entity.
         /// </summary>
         /// <param name="uid">Entity UID to modify.</param>
         /// <param name="component">Component to remove.</param>
-        void RemoveComponent(EntityUid uid, Component component);
+        void RemoveComponentDeferred(EntityUid uid, IComponent component);
+
+        /// <summary>
+        ///     Immediately shuts down a component, but defers the removal and deletion until the end of the tick.
+        ///     Throws if the given component does not belong to the entity.
+        /// </summary>
+        /// <param name="uid">Entity UID to modify.</param>
+        /// <param name="component">Component to remove.</param>
+        void RemoveComponentDeferred(EntityUid uid, Component component);
 
         /// <summary>
         ///     Removes all components from an entity, except the required components.
@@ -284,6 +332,8 @@ namespace Robust.Shared.GameObjects
         /// </summary>
         EntityQuery<TComp1> GetEntityQuery<TComp1>() where TComp1 : Component;
 
+        EntityQuery<Component> GetEntityQuery(Type type);
+
         /// <summary>
         ///     Returns ALL component type instances on an entity. A single component instance
         ///     can have multiple component types.
@@ -309,13 +359,21 @@ namespace Robust.Shared.GameObjects
         NetComponentEnumerable GetNetComponents(EntityUid uid);
 
         /// <summary>
+        ///     Returns ALL networked components on an entity, including deleted ones. Returns null if the entity does
+        ///     not exist.
+        /// </summary>
+        /// <param name="uid">Entity UID to look on.</param>
+        /// <returns>All components that have a network ID.</returns>
+        public NetComponentEnumerable? GetNetComponentsOrNull(EntityUid uid);
+
+        /// <summary>
         ///     Gets a component state.
         /// </summary>
         /// <param name="eventBus">A reference to the event bus instance.</param>
         /// <param name="component">Component to generate the state for.</param>
         /// <returns>The component state of the component.</returns>
         ///
-        ComponentState GetComponentState(IEventBus eventBus, IComponent component);
+        ComponentState GetComponentState(IEventBus eventBus, IComponent component, ICommonSession? player);
 
         /// <summary>
         ///     Checks if a certain player should get a component state.
@@ -325,6 +383,42 @@ namespace Robust.Shared.GameObjects
         /// <param name="player">The player to generate the state for.</param>
         /// <returns>True if the player should get the component state.</returns>
         bool CanGetComponentState(IEventBus eventBus, IComponent component, ICommonSession player);
+
+        AllEntityQueryEnumerator<TComp1> AllEntityQueryEnumerator<TComp1>()
+            where TComp1 : Component;
+
+        AllEntityQueryEnumerator<TComp1, TComp2> AllEntityQueryEnumerator<TComp1, TComp2>()
+            where TComp1 : Component
+            where TComp2 : Component;
+
+        AllEntityQueryEnumerator<TComp1, TComp2, TComp3> AllEntityQueryEnumerator<TComp1, TComp2, TComp3>()
+            where TComp1 : Component
+            where TComp2 : Component
+            where TComp3 : Component;
+
+        AllEntityQueryEnumerator<TComp1, TComp2, TComp3, TComp4> AllEntityQueryEnumerator<TComp1, TComp2, TComp3, TComp4>()
+            where TComp1 : Component
+            where TComp2 : Component
+            where TComp3 : Component
+            where TComp4 : Component;
+
+        EntityQueryEnumerator<TComp1> EntityQueryEnumerator<TComp1>()
+            where TComp1 : Component;
+
+        EntityQueryEnumerator<TComp1, TComp2> EntityQueryEnumerator<TComp1, TComp2>()
+            where TComp1 : Component
+            where TComp2 : Component;
+
+        EntityQueryEnumerator<TComp1, TComp2, TComp3> EntityQueryEnumerator<TComp1, TComp2, TComp3>()
+            where TComp1 : Component
+            where TComp2 : Component
+            where TComp3 : Component;
+
+        EntityQueryEnumerator<TComp1, TComp2, TComp3, TComp4> EntityQueryEnumerator<TComp1, TComp2, TComp3, TComp4>()
+            where TComp1 : Component
+            where TComp2 : Component
+            where TComp3 : Component
+            where TComp4 : Component;
 
         /// <summary>
         ///     Returns ALL component instances of a specified type.

@@ -196,10 +196,10 @@ namespace Robust.Client.UserInterface
             {
                 case sw_nfdresult.SW_NFD_ERROR:
                     var errPtr = sw_NFD_GetError();
-                    throw new Exception(MarshalHelper.PtrToStringUTF8(errPtr));
+                    throw new Exception(Marshal.PtrToStringUTF8((IntPtr) errPtr));
 
                 case sw_nfdresult.SW_NFD_OKAY:
-                    var str = MarshalHelper.PtrToStringUTF8(outPath)!;
+                    var str = Marshal.PtrToStringUTF8((IntPtr) outPath)!;
 
                     sw_NFD_Free(outPath);
                     return str;
@@ -388,13 +388,11 @@ namespace Robust.Client.UserInterface
         }
     }
 
-    public sealed class OpenFileCommand : IConsoleCommand
+    public sealed class OpenFileCommand : LocalizedCommands
     {
-        public string Command => "testopenfile";
-        public string Description => "";
-        public string Help => "";
+        public override string Command => "testopenfile";
 
-        public async void Execute(IConsoleShell shell, string argStr, string[] args)
+        public override async void Execute(IConsoleShell shell, string argStr, string[] args)
         {
             var stream = await IoCManager.Resolve<IFileDialogManager>().OpenFile();
             stream?.Dispose();

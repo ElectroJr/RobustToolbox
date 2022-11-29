@@ -1,4 +1,3 @@
-using System.Globalization;
 using JetBrains.Annotations;
 using Robust.Shared.IoC;
 using Robust.Shared.Map;
@@ -8,18 +7,20 @@ using Robust.Shared.Serialization.Markdown;
 using Robust.Shared.Serialization.Markdown.Validation;
 using Robust.Shared.Serialization.Markdown.Value;
 using Robust.Shared.Serialization.TypeSerializers.Interfaces;
+using Robust.Shared.Utility;
 
 namespace Robust.Shared.Serialization.TypeSerializers.Implementations
 {
     [TypeSerializer]
-    public sealed class MapIdSerializer : ITypeSerializer<MapId, ValueDataNode>
+    public sealed class MapIdSerializer : ITypeSerializer<MapId, ValueDataNode>, ITypeCopyCreator<MapId>
     {
         public MapId Read(ISerializationManager serializationManager, ValueDataNode node,
             IDependencyCollection dependencies,
             bool skipHook,
-            ISerializationContext? context = null, MapId value = default)
+            ISerializationContext? context = null,
+            ISerializationManager.InstantiationDelegate<MapId>? instanceProvider = null)
         {
-            var val = int.Parse(node.Value, CultureInfo.InvariantCulture);
+            var val = Parse.Int32(node.Value);
             return new MapId(val);
         }
 
@@ -27,12 +28,13 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
             IDependencyCollection dependencies,
             ISerializationContext? context = null)
         {
-            return int.TryParse(node.Value, out _)
+            return Parse.TryInt32(node.Value, out _)
                 ? new ValidatedValueNode(node)
                 : new ErrorNode(node, "Failed parsing MapId");
         }
 
-        public DataNode Write(ISerializationManager serializationManager, MapId value, bool alwaysWrite = false,
+        public DataNode Write(ISerializationManager serializationManager, MapId value,
+            IDependencyCollection dependencies, bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
             var val = (int)value;
@@ -40,7 +42,7 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
         }
 
         [MustUseReturnValue]
-        public MapId Copy(ISerializationManager serializationManager, MapId source, MapId target,
+        public MapId CreateCopy(ISerializationManager serializationManager, MapId source,
             bool skipHook,
             ISerializationContext? context = null)
         {

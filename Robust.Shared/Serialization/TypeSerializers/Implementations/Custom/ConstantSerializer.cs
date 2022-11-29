@@ -18,13 +18,15 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations.Custom
         }
 
         public int Read(ISerializationManager serializationManager, ValueDataNode node,
-            IDependencyCollection dependencies, bool skipHook, ISerializationContext? context = null, int value = default)
+            IDependencyCollection dependencies, bool skipHook, ISerializationContext? context = null,
+            ISerializationManager.InstantiationDelegate<int>? instanceProvider = null)
         {
             var constType = serializationManager.GetConstantTypeFromTag(typeof(TTag));
             return (int) Enum.Parse(constType, node.Value);
         }
 
-        public DataNode Write(ISerializationManager serializationManager, int value, bool alwaysWrite = false,
+        public DataNode Write(ISerializationManager serializationManager, int value, IDependencyCollection dependencies,
+            bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
             var constType = serializationManager.GetConstantTypeFromTag(typeof(TTag));
@@ -36,12 +38,6 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations.Custom
             }
 
             return new ValueDataNode(constantName);
-        }
-
-        public int Copy(ISerializationManager serializationManager, int source, int target, bool skipHook,
-            ISerializationContext? context = null)
-        {
-            return source;
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Log;
+using Robust.Shared.Map.Components;
 using Robust.Shared.Utility;
 
 namespace Robust.Shared.Map;
@@ -56,9 +57,11 @@ internal partial class MapManager
     public void TrueDeleteMap(MapId mapId)
     {
         // grids are cached because Delete modifies collection
-        foreach (var grid in GetAllMapGrids(mapId).ToList())
+        var grids = GetAllMapGrids(mapId).ToList();
+
+        foreach (var grid in grids)
         {
-            DeleteGrid(grid.Index);
+            DeleteGrid(grid.GridEntityId);
         }
 
         if (mapId != MapId.Nullspace)
@@ -67,10 +70,6 @@ internal partial class MapManager
             OnMapDestroyedGridTree(args);
             MapDestroyed?.Invoke(this, args);
             _mapEntities.Remove(mapId);
-        }
-        else
-        {
-            _mapEntities[mapId] = EntityUid.Invalid;
         }
 
         Logger.InfoS("map", $"Deleting map {mapId}");
@@ -91,6 +90,7 @@ internal partial class MapManager
     /// <inheritdoc />
     public EntityUid CreateNewMapEntity(MapId mapId)
     {
+        DebugTools.Assert(mapId != MapId.Nullspace);
 #if DEBUG
         DebugTools.Assert(_dbgGuardRunning);
 #endif
@@ -118,26 +118,42 @@ internal partial class MapManager
         {
             if (kvEntity.Value == newMapEntity)
             {
+                if (mapId == kvEntity.Key)
+                    return;
+
                 throw new InvalidOperationException(
-                    $"Entity {newMapEntity} is already the root node of map {kvEntity.Key}.");
+                    $"Entity {newMapEntity} is already the root node of another map {kvEntity.Key}.");
             }
         }
+
+        MapComponent? mapComp;
+        // If this is being done as part of maploader then we want to copy the preinit state across mainly.
+        bool preInit = false;
+        bool paused = false;
 
         // remove existing graph
         if (_mapEntities.TryGetValue(mapId, out var oldEntId))
         {
+            if (EntityManager.TryGetComponent(oldEntId, out mapComp))
+            {
+                preInit = mapComp.MapPreInit;
+                paused = mapComp.MapPaused;
+            }
+
             //Note: EntityUid.Invalid gets passed in here
             //Note: This prevents setting a subgraph as the root, since the subgraph will be deleted
             EntityManager.DeleteEntity(oldEntId);
         }
-        else
-            _mapEntities.Add(mapId, EntityUid.Invalid);
+
+        var raiseEvent = false;
 
         // re-use or add map component
-        if (!EntityManager.TryGetComponent(newMapEntity, out MapComponent? mapComp))
+        if (!EntityManager.TryGetComponent(newMapEntity, out mapComp))
             mapComp = EntityManager.AddComponent<MapComponent>(newMapEntity);
         else
         {
+            raiseEvent = true;
+
             if (mapComp.WorldMap != mapId)
             {
                 Logger.WarningS("map",
@@ -148,8 +164,20 @@ internal partial class MapManager
         Logger.DebugS("map", $"Setting map {mapId} entity to {newMapEntity}");
 
         // set as new map entity
+        mapComp.MapPreInit = preInit;
+        mapComp.MapPaused = paused;
+
         mapComp.WorldMap = mapId;
         _mapEntities[mapId] = newMapEntity;
+
+        // Yeah this sucks but I just want to save maps for now, deal.
+        if (raiseEvent)
+        {
+            var args = new MapEventArgs(mapId);
+            OnMapCreatedGridTree(args);
+            var ev = new MapChangedEvent(mapId, true);
+            EntityManager.EventBus.RaiseLocalEvent(newMapEntity, ev, true);
+        }
     }
 
     /// <inheritdoc />
@@ -184,7 +212,7 @@ internal partial class MapManager
     /// <inheritdoc />
     public bool IsMap(EntityUid uid)
     {
-        return EntityManager.HasComponent<IMapComponent>(uid);
+        return EntityManager.HasComponent<MapComponent>(uid);
     }
 
     /// <inheritdoc />
@@ -201,6 +229,9 @@ internal partial class MapManager
 
     protected MapId CreateMap(MapId? mapId, EntityUid entityUid)
     {
+        if (mapId == MapId.Nullspace)
+            throw new InvalidOperationException("Attempted to create a null-space map.");
+
 #if DEBUG
         DebugTools.Assert(_dbgGuardRunning);
 #endif
@@ -219,7 +250,7 @@ internal partial class MapManager
         {
             var mapComps = EntityManager.EntityQuery<MapComponent>(true);
 
-            IMapComponent? result = null;
+            MapComponent? result = null;
             foreach (var mapComp in mapComps)
             {
                 if (mapComp.WorldMap != actualId)
@@ -241,14 +272,11 @@ internal partial class MapManager
 
                 var mapComp = EntityManager.AddComponent<MapComponent>(newEnt);
                 mapComp.WorldMap = actualId;
+                EntityManager.Dirty(mapComp);
                 EntityManager.InitializeComponents(newEnt);
                 EntityManager.StartComponents(newEnt);
                 Logger.DebugS("map", $"Binding map {actualId} to entity {newEnt}");
             }
-        }
-        else
-        {
-            _mapEntities.Add(MapId.Nullspace, EntityUid.Invalid);
         }
 
         var args = new MapEventArgs(actualId);
@@ -256,25 +284,5 @@ internal partial class MapManager
         MapCreated?.Invoke(this, args);
 
         return actualId;
-    }
-
-    private void EnsureNullspaceExistsAndClear()
-    {
-        if (!MapExists(MapId.Nullspace))
-            CreateMap(MapId.Nullspace);
-        else
-        {
-            // nullspace ent may not have been allocated, but the mapId does exist, so we are done here
-            if (!_mapEntities.TryGetValue(MapId.Nullspace, out var mapEntId) || mapEntId == EntityUid.Invalid)
-                return;
-
-            // the point of this is to completely clear the map without remaking the allocated entity, which would invalidate the
-            // euid which I'm sure some code has cached. Notice this does not touch the map ent itself, so any comps added to it are not removed,
-            // so i guess don't do that?
-            foreach (var childTransform in EntityManager.GetComponent<TransformComponent>(mapEntId).Children.ToArray())
-            {
-                EntityManager.DeleteEntity(childTransform.Owner);
-            }
-        }
     }
 }

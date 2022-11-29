@@ -1,8 +1,8 @@
 using System;
 using Robust.Client.Graphics;
 using Robust.Shared.GameObjects;
-using Robust.Shared.IoC;
 using Robust.Shared.Map;
+using Robust.Shared.Map.Components;
 using Robust.Shared.Maths;
 
 namespace Robust.Client.Placement.Modes
@@ -10,7 +10,7 @@ namespace Robust.Client.Placement.Modes
     [Virtual]
     public class SnapgridCenter : PlacementMode
     {
-        protected IMapGrid? Grid;
+        protected MapGridComponent? Grid;
         protected float SnapSize;
 
         public override bool HasLineMode => true;
@@ -51,9 +51,9 @@ namespace Robust.Client.Placement.Modes
         {
             MouseCoords = ScreenToCursorGrid(mouseScreen);
 
-            var gridId = MouseCoords.GetGridId(pManager.EntityManager);
+            var gridIdOpt = MouseCoords.GetGridUid(pManager.EntityManager);
             SnapSize = 1f;
-            if (gridId.IsValid())
+            if (gridIdOpt is EntityUid gridId && gridId.IsValid())
             {
                 Grid = pManager.MapManager.GetGrid(gridId);
                 SnapSize = Grid.TileSize; //Find snap size for the grid.

@@ -2,24 +2,17 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
-using JetBrains.Annotations;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Reflection;
 using Robust.Shared.Serialization.Manager.Attributes;
 using Robust.Shared.Serialization.Manager.Definition;
-using Robust.Shared.Serialization.Markdown;
-using Robust.Shared.Serialization.Markdown.Mapping;
-using Robust.Shared.Serialization.Markdown.Sequence;
-using Robust.Shared.Serialization.Markdown.Validation;
-using Robust.Shared.Serialization.Markdown.Value;
-using Robust.Shared.Serialization.TypeSerializers.Interfaces;
 using Robust.Shared.Utility;
 
 namespace Robust.Shared.Serialization.Manager
@@ -28,16 +21,19 @@ namespace Robust.Shared.Serialization.Manager
     {
         [IoC.Dependency] private readonly IReflectionManager _reflectionManager = default!;
 
+        public IReflectionManager ReflectionManager => _reflectionManager;
+
         public const string LogCategory = "serialization";
 
         private bool _initializing;
         private bool _initialized;
 
         // Using CWT<,> here in case we ever want assembly unloading.
-        private static readonly ConditionalWeakTable<Type, DataDefinition> DataDefinitions = new();
+        private readonly ConditionalWeakTable<Type, DataDefinition> _dataDefinitions = new();
         private readonly HashSet<Type> _copyByRefRegistrations = new();
 
-        public IDependencyCollection DependencyCollection { get; private set; } = default!;
+        [field: IoC.Dependency]
+        public IDependencyCollection DependencyCollection { get; } = default!;
 
         public void Initialize()
         {
@@ -49,15 +45,15 @@ namespace Robust.Shared.Serialization.Manager
 
             _initializing = true;
 
-            DependencyCollection = IoCManager.Instance ?? throw new NullReferenceException();
-
             var flagsTypes = new ConcurrentBag<Type>();
             var constantsTypes = new ConcurrentBag<Type>();
             var typeSerializers = new ConcurrentBag<Type>();
             var meansDataDef = new ConcurrentBag<Type>();
-            var implicitDataDefForInheritors = new ConcurrentBag<Type>();
+            var meansDataRecord = new ConcurrentBag<Type>();
+            var implicitDataDef = new ConcurrentBag<Type>();
+            var implicitDataRecord = new ConcurrentBag<Type>();
 
-            CollectAttributedTypes(flagsTypes, constantsTypes, typeSerializers, meansDataDef, implicitDataDefForInheritors);
+            CollectAttributedTypes(flagsTypes, constantsTypes, typeSerializers, meansDataDef, meansDataRecord, implicitDataDef, implicitDataRecord);
 
             InitializeFlagsAndConstants(flagsTypes, constantsTypes);
             InitializeTypeSerializers(typeSerializers);
@@ -65,33 +61,50 @@ namespace Robust.Shared.Serialization.Manager
             // This is a bag, not a hash set.
             // Duplicates are fine since the CWT<,> won't re-run the constructor if it's already in there.
             var registrations = new ConcurrentBag<Type>();
+            var records = new ConcurrentDictionary<Type, byte>();
 
-            foreach (var baseType in implicitDataDefForInheritors)
+            IEnumerable<Type> GetImplicitTypes(Type type)
             {
                 // Inherited attributes don't work with interfaces.
-                if (baseType.IsInterface)
+                if (type.IsInterface)
                 {
-                    foreach (var child in _reflectionManager.GetAllChildren(baseType))
+                    foreach (var child in _reflectionManager.GetAllChildren(type))
                     {
                         if (child.IsAbstract || child.IsGenericTypeDefinition)
                             continue;
 
-                        registrations.Add(child);
+                        yield return child;
                     }
                 }
-                else if (!baseType.IsAbstract && !baseType.IsGenericTypeDefinition)
+                else if (!type.IsAbstract && !type.IsGenericTypeDefinition)
                 {
-                    registrations.Add(baseType);
+                    yield return type;
+                }
+            }
+
+            foreach (var baseType in implicitDataDef)
+            {
+                foreach (var type in GetImplicitTypes(baseType))
+                {
+                    registrations.Add(type);
+                }
+            }
+
+            foreach (var baseType in implicitDataRecord)
+            {
+                foreach (var type in GetImplicitTypes(baseType))
+                {
+                    records.TryAdd(type, 0);
                 }
             }
 
             Parallel.ForEach(_reflectionManager.FindAllTypes(), type =>
             {
-                foreach (var meansDataDefAttr in meansDataDef)
-                {
-                    if (type.IsDefined(meansDataDefAttr))
-                        registrations.Add(type);
-                }
+                if (meansDataDef.Any(type.IsDefined))
+                    registrations.Add(type);
+
+                if (type.IsDefined(typeof(DataRecordAttribute)) || meansDataRecord.Any(type.IsDefined))
+                    records[type] = 0;
             });
 
             var sawmill = Logger.GetSawmill(LogCategory);
@@ -105,30 +118,57 @@ namespace Robust.Shared.Serialization.Manager
                     return;
                 }
 
-                if (!type.IsValueType && type.GetConstructors(BindingFlags.Instance | BindingFlags.Public)
-                    .FirstOrDefault(m => m.GetParameters().Length == 0) == null)
+                var isRecord = records.ContainsKey(type);
+                if (!type.IsValueType && !isRecord && !type.HasParameterlessConstructor())
                 {
                     sawmill.Debug(
                         $"Skipping registering data definition for type {type} since it has no parameterless ctor");
                     return;
                 }
 
-                DataDefinitions.GetValue(type, t => CreateDataDefinition(t, DependencyCollection));
+                _dataDefinitions.GetValue(type, t => CreateDataDefinition(t, DependencyCollection, isRecord));
             });
 
-            var error = new StringBuilder();
+            var duplicateErrors = new StringBuilder();
+            var invalidIncludes = new StringBuilder();
 
-            foreach (var (type, definition) in DataDefinitions)
+            //check for duplicates
+            var dataDefs = _dataDefinitions.Select(x => x.Key).ToHashSet();
+            var includeTree = new MultiRootInheritanceGraph<Type>();
+            foreach (var (type, definition) in _dataDefinitions)
             {
+                var invalidTypes = new List<string>();
+                foreach (var includedField in definition.BaseFieldDefinitions.Where(x => x.Attribute is IncludeDataFieldAttribute
+                         {
+                             CustomTypeSerializer: null
+                         }))
+                {
+                    if (!dataDefs.Contains(includedField.FieldType))
+                    {
+                        invalidTypes.Add(includedField.ToString());
+                        continue;
+                    }
+
+                    includeTree.Add(includedField.FieldType, type);
+                }
+
+                if (invalidTypes.Count > 0)
+                    invalidIncludes.Append($"{type}: [{string.Join(", ", invalidTypes)}]");
+
                 if (definition.TryGetDuplicates(out var definitionDuplicates))
                 {
-                    error.Append($"{type}: [{string.Join(", ", definitionDuplicates)}]\n");
+                    duplicateErrors.Append($"{type}: [{string.Join(", ", definitionDuplicates)}]\n");
                 }
             }
 
-            if (error.Length > 0)
+            if (duplicateErrors.Length > 0)
             {
-                throw new ArgumentException($"Duplicate data field tags found in:\n{error}");
+                throw new ArgumentException($"Duplicate data field tags found in:\n{duplicateErrors}");
+            }
+
+            if (invalidIncludes.Length > 0)
+            {
+                throw new ArgumentException($"Invalid Types used for include fields:\n{invalidIncludes}");
             }
 
             _copyByRefRegistrations.Add(typeof(Type));
@@ -142,7 +182,9 @@ namespace Robust.Shared.Serialization.Manager
             ConcurrentBag<Type> constantsTypes,
             ConcurrentBag<Type> typeSerializers,
             ConcurrentBag<Type> meansDataDef,
-            ConcurrentBag<Type> implicitDataDefForInheritors)
+            ConcurrentBag<Type> meansDataRecord,
+            ConcurrentBag<Type> implicitDataDef,
+            ConcurrentBag<Type> implicitDataRecord)
         {
             // IsDefined is extremely slow. Great.
             Parallel.ForEach(_reflectionManager.FindAllTypes(), type =>
@@ -159,152 +201,60 @@ namespace Robust.Shared.Serialization.Manager
                 if (type.IsDefined(typeof(MeansDataDefinitionAttribute)))
                     meansDataDef.Add(type);
 
+                if (type.IsDefined(typeof(MeansDataRecordAttribute)))
+                    meansDataRecord.Add(type);
+
                 if (type.IsDefined(typeof(ImplicitDataDefinitionForInheritorsAttribute), true))
-                    implicitDataDefForInheritors.Add(type);
+                    implicitDataDef.Add(type);
+
+                if (type.IsDefined(typeof(ImplicitDataRecordAttribute), true))
+                    implicitDataRecord.Add(type);
 
                 if (type.IsDefined(typeof(CopyByRefAttribute)))
                     _copyByRefRegistrations.Add(type);
             });
         }
 
-        private static DataDefinition CreateDataDefinition(Type t, IDependencyCollection collection)
+        private DataDefinition CreateDataDefinition(Type t, IDependencyCollection collection, bool isRecord)
         {
-            return new(t, collection);
+            return (DataDefinition)typeof(DataDefinition<>).MakeGenericType(t)
+                .GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, new[]
+                    { typeof(SerializationManager), typeof(bool) })!
+                .Invoke(new object[]{this, isRecord});
         }
 
         public void Shutdown()
         {
-            DependencyCollection = null!;
-
             _constantsMapping.Clear();
             _flagsMapping.Clear();
 
-            _genericWriterTypes.Clear();
-            _genericReaderTypes.Clear();
-            _genericCopierTypes.Clear();
-            _genericValidatorTypes.Clear();
-
-            _typeWriters.Clear();
-            _typeReaders.Clear();
-            _typeCopiers.Clear();
-            _typeValidators.Clear();
-
-            DataDefinitions.Clear();
+            _dataDefinitions.Clear();
 
             _copyByRefRegistrations.Clear();
 
             _highestFlagBit.Clear();
 
-            _readers.Clear();
+            _readBoxingDelegates.Clear();
 
             _initialized = false;
         }
 
-        public bool HasDataDefinition(Type type)
+        internal DataDefinition<T>? GetDefinition<T>() where T : notnull
         {
-            if (type.IsGenericTypeDefinition) throw new NotImplementedException($"Cannot yet check data definitions for generic types. ({type})");
-            return DataDefinitions.TryGetValue(type, out _);
-        }
-
-        public ValidationNode ValidateNode(Type type, DataNode node, ISerializationContext? context = null)
-        {
-            var underlyingType = type.EnsureNotNullableType();
-
-            if (underlyingType.IsArray)
-            {
-                if (node is not SequenceDataNode sequenceDataNode) return new ErrorNode(node, "Invalid nodetype for array.", true);
-                var elementType = underlyingType.GetElementType();
-                if (elementType == null)
-                    throw new ArgumentException($"Failed to get elementtype of arraytype {underlyingType}", nameof(underlyingType));
-                var validatedList = new List<ValidationNode>();
-                foreach (var dataNode in sequenceDataNode.Sequence)
-                {
-                    validatedList.Add(ValidateNode(elementType, dataNode, context));
-                }
-
-                return new ValidatedSequenceNode(validatedList);
-            }
-
-            if (underlyingType.IsEnum)
-            {
-                var enumName = node switch
-                {
-                    ValueDataNode valueNode => valueNode.Value,
-                    SequenceDataNode sequenceNode => string.Join(", ", sequenceNode.Sequence),
-                    _ => null
-                };
-
-                if (enumName == null)
-                {
-                    return new ErrorNode(node, $"Invalid node type {node.GetType().Name} for enum {underlyingType}.");
-                }
-
-                if (!Enum.TryParse(underlyingType, enumName, true, out var enumValue))
-                {
-                    return new ErrorNode(node, $"{enumValue} is not a valid enum value of type {underlyingType}", false);
-                }
-
-                return new ValidatedValueNode(node);
-            }
-
-            if (node.Tag?.StartsWith("!type:") == true)
-            {
-                var typeString = node.Tag.Substring(6);
-                try
-                {
-                    underlyingType = ResolveConcreteType(underlyingType, typeString);
-                }
-                catch (InvalidOperationException)
-                {
-                    return new ErrorNode(node, $"Failed to resolve !type tag: {typeString}", false);
-                }
-            }
-
-            if (TryValidateWithTypeValidator(underlyingType, node, DependencyCollection, context, out var valid)) return valid;
-
-            if (typeof(ISelfSerialize).IsAssignableFrom(underlyingType))
-                return node is ValueDataNode valueDataNode ? new ValidatedValueNode(valueDataNode) : new ErrorNode(node, "Invalid nodetype for ISelfSerialize", true);
-
-            if (TryGetDefinition(underlyingType, out var dataDefinition))
-            {
-                return node switch
-                {
-                    ValueDataNode valueDataNode => valueDataNode.Value == "" ? new ValidatedValueNode(valueDataNode) : new ErrorNode(node, "Invalid nodetype for Datadefinition", false),
-                    MappingDataNode mappingDataNode => dataDefinition.Validate(this, mappingDataNode, context),
-                    _ => new ErrorNode(node, "Invalid nodetype for Datadefinition", true)
-                };
-            }
-
-            return new ErrorNode(node, "Failed to read node.", false);
-        }
-
-        public ValidationNode ValidateNode<T>(DataNode node, ISerializationContext? context = null)
-        {
-            return ValidateNode(typeof(T), node, context);
-        }
-
-        public ValidationNode ValidateNodeWith(Type type, Type typeSerializer, DataNode node,
-            ISerializationContext? context = null)
-        {
-            var method =
-                typeof(SerializationManager).GetRuntimeMethods().First(m => m.Name == nameof(ValidateWithSerializer))!.MakeGenericMethod(
-                    type, node.GetType(), typeSerializer);
-            return (ValidationNode)method.Invoke(this, new object?[] {node, context})!;
-        }
-
-        public ValidationNode ValidateNodeWith<TType, TSerializer, TNode>(TNode node,
-            ISerializationContext? context = null)
-            where TSerializer : ITypeValidator<TType, TNode>
-            where TNode: DataNode
-        {
-            return ValidateNodeWith(typeof(TType), typeof(TSerializer), node, context);
+            return GetDefinition(typeof(T)) as DataDefinition<T>;
         }
 
         internal DataDefinition? GetDefinition(Type type)
         {
-            return DataDefinitions.TryGetValue(type, out var dataDefinition)
+            return _dataDefinitions.TryGetValue(type, out var dataDefinition)
                 ? dataDefinition
                 : null;
+        }
+
+        internal bool TryGetDefinition<T>([NotNullWhen(true)] out DataDefinition<T>? dataDefinition) where T : notnull
+        {
+            dataDefinition = GetDefinition<T>();
+            return dataDefinition != null;
         }
 
         internal bool TryGetDefinition(Type type, [NotNullWhen(true)] out DataDefinition? dataDefinition)
@@ -313,234 +263,9 @@ namespace Robust.Shared.Serialization.Manager
             return dataDefinition != null;
         }
 
-        public DataNode WriteValue<T>(T value, bool alwaysWrite = false,
-            ISerializationContext? context = null)
+        private Type ResolveConcreteType(Type baseType, string typeName)
         {
-            return WriteValue(typeof(T), value, alwaysWrite, context);
-        }
-
-        public DataNode WriteValue(Type type, object? value, bool alwaysWrite = false,
-            ISerializationContext? context = null)
-        {
-            var underlyingType = Nullable.GetUnderlyingType(type) ?? type;
-
-            if (value == null) return new MappingDataNode();
-
-            if (underlyingType.IsEnum)
-            {
-                // Enums implement IConvertible.
-                // Need it for the culture overload.
-                var convertible = (IConvertible) value;
-                return new ValueDataNode(convertible.ToString(CultureInfo.InvariantCulture));
-            }
-
-            if (underlyingType.IsArray)
-            {
-                var sequenceNode = new SequenceDataNode();
-                var array = (Array) value;
-
-                foreach (var val in array)
-                {
-                    var serializedVal = WriteValue(val.GetType(), val, alwaysWrite, context);
-                    sequenceNode.Add(serializedVal);
-                }
-
-                return sequenceNode;
-            }
-
-            if (value is ISerializationHooks serHook)
-                serHook.BeforeSerialization();
-
-            if (TryWriteRaw(underlyingType, value, out var node, alwaysWrite, context))
-            {
-                return node;
-            }
-
-            if (typeof(ISelfSerialize).IsAssignableFrom(underlyingType))
-            {
-                var selfSerObj = (ISelfSerialize)value;
-                return new ValueDataNode(selfSerObj.Serialize());
-            }
-
-            var currentType = underlyingType;
-            var mapping = new MappingDataNode();
-            if (underlyingType.IsAbstract || underlyingType.IsInterface)
-            {
-                mapping.Tag = $"!type:{value.GetType().Name}";
-                currentType = value.GetType();
-            }
-
-            if (!TryGetDefinition(currentType, out var dataDef))
-            {
-                throw new InvalidOperationException($"No data definition found for type {type} when writing");
-            }
-
-            if (dataDef.CanCallWith(value) != true)
-            {
-                throw new ArgumentException($"Supplied value does not fit with data definition of {type}.");
-            }
-
-            var newMapping = dataDef.Serialize(value, this, context, alwaysWrite);
-            mapping = mapping.Merge(newMapping);
-
-            return mapping;
-        }
-
-        public DataNode WriteWithTypeSerializer(Type type, Type serializer, object? value, bool alwaysWrite = false,
-            ISerializationContext? context = null)
-        {
-            // TODO Serialization: just return null
-            if (type.IsNullable() && value == null) return new MappingDataNode();
-
-            return WriteWithSerializerRaw(type, serializer, value!, context, alwaysWrite);
-        }
-
-        private object? CopyToTarget(object? source, object? target, ISerializationContext? context = null, bool skipHook = false)
-        {
-            if (source == null || target == null)
-            {
-                return source;
-            }
-
-            var sourceType = source.GetType();
-            var targetType = target.GetType();
-
-            if (sourceType.IsValueType && targetType.IsValueType)
-            {
-                return source;
-            }
-
-            if (sourceType.IsValueType != targetType.IsValueType)
-            {
-                throw new InvalidOperationException(
-                    $"Source and target do not match. Source ({sourceType}) is value type? {sourceType.IsValueType}. Target ({targetType}) is value type? {targetType.IsValueType}");
-            }
-
-            if (sourceType.IsArray && targetType.IsArray)
-            {
-                var sourceArray = (Array) source;
-                var targetArray = (Array) target;
-
-                Array newArray;
-                if(sourceArray.Length == targetArray.Length)
-                {
-                    newArray = targetArray;
-                }
-                else
-                {
-                    newArray = (Array) Activator.CreateInstance(sourceArray.GetType(), sourceArray.Length)!;
-                }
-
-                for (var i = 0; i < sourceArray.Length; i++)
-                {
-                    newArray.SetValue(CreateCopy(sourceArray.GetValue(i), context, skipHook), i);
-                }
-
-                return newArray;
-            }
-
-            if (sourceType.IsArray != targetType.IsArray)
-            {
-                throw new InvalidOperationException(
-                    $"Source and target do not match. Source ({sourceType}) is array type? {sourceType.IsArray}. Target ({targetType}) is array type? {targetType.IsArray}");
-            }
-
-            var commonType = TypeHelpers.SelectCommonType(sourceType, targetType);
-            if (commonType == null)
-            {
-                throw new InvalidOperationException("Could not find common type in Copy!");
-            }
-
-            if (_copyByRefRegistrations.Contains(commonType) || commonType.IsEnum)
-            {
-                return source;
-            }
-
-            if (TryCopyRaw(commonType, source, ref target, skipHook, context))
-            {
-                return target;
-            }
-
-            if (target is IPopulateDefaultValues populateDefaultValues)
-            {
-                populateDefaultValues.PopulateDefaultValues();
-            }
-
-            if (!TryGetDefinition(commonType, out var dataDef))
-            {
-                throw new InvalidOperationException($"No data definition found for type {commonType} when copying");
-            }
-
-            target = dataDef.Copy(source, target, this, context);
-
-            if (!skipHook && target is ISerializationHooks afterHooks)
-            {
-                afterHooks.AfterDeserialization();
-            }
-
-            return target;
-        }
-
-        [MustUseReturnValue]
-        public object? Copy(object? source, object? target, ISerializationContext? context = null, bool skipHook = false)
-        {
-            return CopyToTarget(source, target, context, skipHook);
-        }
-
-        [MustUseReturnValue]
-        public T? Copy<T>(T? source, T? target, ISerializationContext? context = null, bool skipHook = false)
-        {
-            var copy = CopyToTarget(source, target, context, skipHook);
-
-            return copy == null ? default : (T?) copy;
-        }
-
-        [MustUseReturnValue]
-        public object? CopyWithTypeSerializer(Type typeSerializer, object? source, object? target,
-            ISerializationContext? context = null, bool skipHook = false)
-        {
-            if (source == null || target == null) return source;
-
-            return CopyWithSerializerRaw(typeSerializer, source, ref target, skipHook, context);
-        }
-
-        private object? CreateCopyInternal(Type type, object? source, ISerializationContext? context = null, bool skipHook = false)
-        {
-            if (source == null ||
-                type.IsPrimitive ||
-                type.IsEnum ||
-                source is string ||
-                _copyByRefRegistrations.Contains(type))
-            {
-                return source;
-            }
-
-            var target = Activator.CreateInstance(source.GetType())!;
-            return Copy(source, target, context, skipHook);
-        }
-
-        public object? CreateCopy(object? source, ISerializationContext? context = null, bool skipHook = false)
-        {
-            if (source == null) return null;
-            return CreateCopyInternal(source.GetType(), source, context, skipHook);
-        }
-
-        public T? CreateCopy<T>(T? source, ISerializationContext? context = null, bool skipHook = false)
-        {
-            var copy = CreateCopyInternal(typeof(T), source, context, skipHook);
-
-            if (copy == null)
-            {
-                return default;
-            }
-
-            return (T?) copy;
-        }
-
-        private static Type ResolveConcreteType(Type baseType, string typeName)
-        {
-            var reflection = IoCManager.Resolve<IReflectionManager>();
-            var type = reflection.YamlTypeTagLookup(baseType, typeName);
+            var type = ReflectionManager.YamlTypeTagLookup(baseType, typeName);
             if (type == null)
             {
                 throw new InvalidOperationException($"Type '{baseType}' is abstract, but could not find concrete type '{typeName}'.");

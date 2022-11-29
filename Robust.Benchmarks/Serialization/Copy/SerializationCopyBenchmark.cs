@@ -3,7 +3,6 @@ using System.Linq;
 using BenchmarkDotNet.Attributes;
 using Robust.Benchmarks.Serialization.Definitions;
 using Robust.Shared.Analyzers;
-using Robust.Shared.Serialization.Manager;
 using Robust.Shared.Serialization.Markdown;
 using Robust.Shared.Serialization.Markdown.Mapping;
 using Robust.Shared.Serialization.Markdown.Sequence;
@@ -124,30 +123,21 @@ namespace Robust.Benchmarks.Serialization.Copy
         [BenchmarkCategory("flag")]
         public object? CopyFlagZero()
         {
-            return SerializationManager.CopyWithTypeSerializer(
-                typeof(FlagSerializer<BenchmarkFlags>),
-                (int) FlagZero,
-                (int) FlagZero);
+            return SerializationManager.CreateCopy<int, FlagSerializer<BenchmarkFlags>>((int) FlagZero);
         }
 
         [Benchmark]
         [BenchmarkCategory("flag")]
         public object? CopyFlagThirtyOne()
         {
-            return SerializationManager.CopyWithTypeSerializer(
-                typeof(FlagSerializer<BenchmarkFlags>),
-                (int) FlagThirtyOne,
-                (int) FlagThirtyOne);
+            return SerializationManager.CreateCopy<int, FlagSerializer<BenchmarkFlags>>((int) FlagThirtyOne);
         }
 
         [Benchmark]
         [BenchmarkCategory("customTypeSerializer")]
         public object? CopyIntegerCustomSerializer()
         {
-            return SerializationManager.CopyWithTypeSerializer(
-                typeof(BenchmarkIntSerializer),
-                Integer,
-                Integer);
+            return SerializationManager.CreateCopy<int, BenchmarkIntSerializer>(Integer);
         }
     }
 }

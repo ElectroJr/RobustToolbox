@@ -1,5 +1,7 @@
 using System.Linq;
 using NUnit.Framework;
+using Robust.Shared;
+using Robust.Shared.Configuration;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
 using Robust.Shared.Maths;
@@ -10,10 +12,20 @@ namespace Robust.UnitTesting.Shared.Map;
 [TestFixture]
 public sealed class GridSplit_Tests
 {
+    private ISimulation GetSim()
+    {
+        var sim = RobustServerSimulation.NewSimulation().InitializeInstance();
+
+        var config = sim.Resolve<IConfigurationManager>();
+        config.SetCVar(CVars.GridSplitting, true);
+
+        return sim;
+    }
+
     [Test]
     public void SimpleSplit()
     {
-        var sim = RobustServerSimulation.NewSimulation().InitializeInstance();
+        var sim =GetSim();
         var mapManager = sim.Resolve<IMapManager>();
         var mapId = mapManager.CreateMap();
         var grid = mapManager.CreateGrid(mapId);
@@ -34,7 +46,7 @@ public sealed class GridSplit_Tests
     [Test]
     public void DonutSplit()
     {
-        var sim = RobustServerSimulation.NewSimulation().InitializeInstance();
+        var sim =GetSim();
         var mapManager = sim.Resolve<IMapManager>();
         var mapId = mapManager.CreateMap();
         var grid = mapManager.CreateGrid(mapId);
@@ -64,7 +76,7 @@ public sealed class GridSplit_Tests
     [Test]
     public void TriSplit()
     {
-        var sim = RobustServerSimulation.NewSimulation().InitializeInstance();
+        var sim =GetSim();
         var mapManager = sim.Resolve<IMapManager>();
         var mapId = mapManager.CreateMap();
         var grid = mapManager.CreateGrid(mapId);
@@ -90,7 +102,7 @@ public sealed class GridSplit_Tests
     [Test]
     public void ReparentSplit()
     {
-        var sim = RobustServerSimulation.NewSimulation().InitializeInstance();
+        var sim =GetSim();
         var entManager = sim.Resolve<IEntityManager>();
         var mapManager = sim.Resolve<IMapManager>();
         var mapId = mapManager.CreateMap();
@@ -121,11 +133,11 @@ public sealed class GridSplit_Tests
             // Assertions baby
             Assert.That(anchoredXform.Anchored);
             Assert.That(anchoredXform.ParentUid, Is.EqualTo(newGrid.GridEntityId));
-            Assert.That(anchoredXform.GridID, Is.EqualTo(newGrid.Index));
+            Assert.That(anchoredXform.GridUid, Is.EqualTo(newGrid.GridEntityId));
             Assert.That(newGridXform._children, Does.Contain(anchored));
 
             Assert.That(dummyXform.ParentUid, Is.EqualTo(newGrid.GridEntityId));
-            Assert.That(dummyXform.GridID, Is.EqualTo(newGrid.Index));
+            Assert.That(dummyXform.GridUid, Is.EqualTo(newGrid.GridEntityId));
             Assert.That(newGridXform._children, Does.Contain(dummy));
         });
         mapManager.DeleteMap(mapId);

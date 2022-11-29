@@ -15,12 +15,13 @@ using Robust.Shared.Utility;
 namespace Robust.Shared.Serialization.TypeSerializers.Implementations
 {
     [TypeSerializer]
-    public sealed class ResourcePathSerializer : ITypeSerializer<ResourcePath, ValueDataNode>
+    public sealed class ResourcePathSerializer : ITypeSerializer<ResourcePath, ValueDataNode>, ITypeCopyCreator<ResourcePath>
     {
         public ResourcePath Read(ISerializationManager serializationManager, ValueDataNode node,
             IDependencyCollection dependencies,
             bool skipHook,
-            ISerializationContext? context = null, ResourcePath? value = default)
+            ISerializationContext? context = null,
+            ISerializationManager.InstantiationDelegate<ResourcePath>? instanceProvider = null)
         {
             return new ResourcePath(node.Value);
         }
@@ -43,11 +44,21 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
 
             path = path.ToRootedPath();
 
+
             try
             {
-                return dependencies.Resolve<IResourceManager>().ContentFileExists(path)
-                    ? new ValidatedValueNode(node)
-                    : new ErrorNode(node, $"File not found. ({path})");
+                var resourceManager = dependencies.Resolve<IResourceManager>();
+                if(resourceManager.ContentFileExists(path))
+                {
+                    return new ValidatedValueNode(node);
+                }
+
+                if (node.Value.EndsWith(path.Separator) && resourceManager.ContentGetDirectoryEntries(path).Any())
+                {
+                    return new ValidatedValueNode(node);
+                }
+
+                return new ErrorNode(node, $"File not found. ({path})");
             }
             catch (Exception e)
             {
@@ -56,6 +67,7 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
         }
 
         public DataNode Write(ISerializationManager serializationManager, ResourcePath value,
+            IDependencyCollection dependencies,
             bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
@@ -63,7 +75,7 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations
         }
 
         [MustUseReturnValue]
-        public ResourcePath Copy(ISerializationManager serializationManager, ResourcePath source, ResourcePath target,
+        public ResourcePath CreateCopy(ISerializationManager serializationManager, ResourcePath source,
             bool skipHook,
             ISerializationContext? context = null)
         {

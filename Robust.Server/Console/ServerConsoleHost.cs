@@ -133,7 +133,6 @@ namespace Robust.Server.Console
 
         private void HandleRegistrationRequest(INetChannel senderConnection)
         {
-            var netMgr = IoCManager.Resolve<IServerNetManager>();
             var message = new MsgConCmdReg();
 
             var counter = 0;
@@ -149,7 +148,7 @@ namespace Robust.Server.Console
                 };
             }
 
-            netMgr.ServerSendMessage(message, senderConnection);
+            NetManager.ServerSendMessage(message, senderConnection);
         }
 
         private void ProcessCommand(MsgConCmd message)
@@ -208,7 +207,7 @@ namespace Robust.Server.Console
             {
                 // Typing out command name, handle this ourselves.
                 return ValueTask.FromResult(CompletionResult.FromOptions(
-                    RegisteredCommands.Values.Select(c => new CompletionOption(c.Command, c.Description))));
+                    RegisteredCommands.Values.Where(c => ShellCanExecute(shell, c.Command)).Select(c => new CompletionOption(c.Command, c.Description))));
             }
 
             var cmdName = args[0];

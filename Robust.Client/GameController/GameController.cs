@@ -13,6 +13,7 @@ using Robust.Client.Placement;
 using Robust.Client.ResourceManagement;
 using Robust.Client.State;
 using Robust.Client.UserInterface;
+using Robust.Client.UserInterface.Themes;
 using Robust.Client.Utility;
 using Robust.Client.ViewVariables;
 using Robust.Client.WebViewHook;
@@ -39,7 +40,7 @@ namespace Robust.Client
 {
     internal sealed partial class GameController : IGameControllerInternal
     {
-        [Dependency] private readonly IConfigurationManagerInternal _configurationManager = default!;
+        [Dependency] private readonly INetConfigurationManagerInternal _configurationManager = default!;
         [Dependency] private readonly IResourceCacheInternal _resourceCache = default!;
         [Dependency] private readonly IRobustSerializer _serializer = default!;
         [Dependency] private readonly IPrototypeManager _prototypeManager = default!;
@@ -57,7 +58,7 @@ namespace Robust.Client
         [Dependency] private readonly IOverlayManagerInternal _overlayManager = default!;
         [Dependency] private readonly ILogManager _logManager = default!;
         [Dependency] private readonly ITaskManager _taskManager = default!;
-        [Dependency] private readonly IViewVariablesManagerInternal _viewVariablesManager = default!;
+        [Dependency] private readonly IClientViewVariablesManagerInternal _viewVariablesManager = default!;
         [Dependency] private readonly IDiscordRichPresence _discord = default!;
         [Dependency] private readonly IClydeInternal _clyde = default!;
         [Dependency] private readonly IClydeAudioInternal _clydeAudio = default!;
@@ -71,6 +72,7 @@ namespace Robust.Client
         [Dependency] private readonly IParallelManagerInternal _parallelMgr = default!;
         [Dependency] private readonly ProfManager _prof = default!;
         [Dependency] private readonly IRuntimeLog _runtimeLog = default!;
+        [Dependency] private readonly ISerializationManager _serializationManager = default!;
 
         private IWebViewManagerHook? _webViewHook;
 
@@ -123,17 +125,14 @@ namespace Robust.Client
                 _configurationManager.LoadCVarsFromAssembly(loadedModule);
             }
 
-            IoCManager.Resolve<ISerializationManager>().Initialize();
+            _serializationManager.Initialize();
 
             // Call Init in game assemblies.
             _modLoader.BroadcastRunLevel(ModRunLevel.PreInit);
             _modLoader.BroadcastRunLevel(ModRunLevel.Init);
-
             _resourceCache.PreloadTextures();
-            _userInterfaceManager.Initialize();
-            _eyeManager.Initialize();
             _networkManager.Initialize(false);
-            IoCManager.Resolve<INetConfigurationManager>().SetupNetworking();
+            _configurationManager.SetupNetworking();
             _serializer.Initialize();
             _inputManager.Initialize();
             _console.Initialize();
@@ -141,16 +140,18 @@ namespace Robust.Client
             _prototypeManager.LoadDirectory(new ResourcePath("/EnginePrototypes/"));
             _prototypeManager.LoadDirectory(Options.PrototypeDirectory);
             _prototypeManager.ResolveResults();
+            _userInterfaceManager.Initialize();
+            _eyeManager.Initialize();
             _entityManager.Initialize();
             _mapManager.Initialize();
             _gameStateManager.Initialize();
             _placementManager.Initialize();
             _viewVariablesManager.Initialize();
             _scriptClient.Initialize();
-
             _client.Initialize();
             _discord.Initialize();
             _modLoader.BroadcastRunLevel(ModRunLevel.PostInit);
+            _userInterfaceManager.PostInitialize();
 
             if (_commandLineArgs?.Username != null)
             {
@@ -383,6 +384,7 @@ namespace Robust.Client
             }
 
             _clyde.TextEntered += TextEntered;
+            _clyde.TextEditing += TextEditing;
             _clyde.MouseMove += MouseMove;
             _clyde.KeyUp += KeyUp;
             _clyde.KeyDown += KeyDown;
@@ -516,9 +518,16 @@ namespace Robust.Client
             {
                 using (_prof.Group("Entity"))
                 {
-                    // The last real tick is the current tick! This way we won't be in "prediction" mode.
-                    _gameTiming.LastRealTick = _gameTiming.CurTick;
-                    _entityManager.TickUpdate(frameEventArgs.DeltaSeconds, noPredictions: false);
+                    if (ContentEntityTickUpdate != null)
+                    {
+                        ContentEntityTickUpdate.Invoke(frameEventArgs);
+                    }
+                    else
+                    {
+                        // The last real tick is the current tick! This way we won't be in "prediction" mode.
+                        _gameTiming.LastRealTick = _gameTiming.LastProcessedTick = _gameTiming.CurTick;
+                        _entityManager.TickUpdate(frameEventArgs.DeltaSeconds, noPredictions: false);
+                    }
                 }
             }
 
@@ -649,7 +658,7 @@ namespace Robust.Client
                 return Path.Combine(exeDir ?? throw new InvalidOperationException(), "user_data");
             }
 
-            return UserDataDir.GetUserDataDir();
+            return UserDataDir.GetUserDataDir(this);
         }
 
 
@@ -685,5 +694,7 @@ namespace Robust.Client
             string? SplashLogo,
             bool AutoConnect
         );
+
+        public event Action<FrameEventArgs>? ContentEntityTickUpdate;
     }
 }

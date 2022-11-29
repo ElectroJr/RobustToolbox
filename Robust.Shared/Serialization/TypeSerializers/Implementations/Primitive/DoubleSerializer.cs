@@ -6,6 +6,7 @@ using Robust.Shared.Serialization.Markdown;
 using Robust.Shared.Serialization.Markdown.Validation;
 using Robust.Shared.Serialization.Markdown.Value;
 using Robust.Shared.Serialization.TypeSerializers.Interfaces;
+using Robust.Shared.Utility;
 
 namespace Robust.Shared.Serialization.TypeSerializers.Implementations.Primitive
 {
@@ -15,27 +16,23 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations.Primitive
         public ValidationNode Validate(ISerializationManager serializationManager, ValueDataNode node,
             IDependencyCollection dependencies, ISerializationContext? context = null)
         {
-            return double.TryParse(node.Value, out _)
+            return Parse.TryDouble(node.Value, NumberStyles.Any, out _)
                 ? new ValidatedValueNode(node)
                 : new ErrorNode(node, $"Failed parsing double value: {node.Value}");
         }
 
         public double Read(ISerializationManager serializationManager, ValueDataNode node,
-            IDependencyCollection dependencies, bool skipHook, ISerializationContext? context = null, double value = default)
+            IDependencyCollection dependencies, bool skipHook, ISerializationContext? context = null,
+            ISerializationManager.InstantiationDelegate<double>? instanceProvider = null)
         {
-            return double.Parse(node.Value, CultureInfo.InvariantCulture);
+            return Parse.Double(node.Value);
         }
 
-        public DataNode Write(ISerializationManager serializationManager, double value, bool alwaysWrite = false,
+        public DataNode Write(ISerializationManager serializationManager, double value,
+            IDependencyCollection dependencies, bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
             return new ValueDataNode(value.ToString(CultureInfo.InvariantCulture));
-        }
-
-        public double Copy(ISerializationManager serializationManager, double source, double target, bool skipHook,
-            ISerializationContext? context = null)
-        {
-            return source;
         }
     }
 }

@@ -33,8 +33,15 @@ namespace Robust.Shared.Utility
         [Serializable, NetSerializable]
         public sealed class Rsi : SpriteSpecifier
         {
-            public readonly ResourcePath RsiPath;
-            public readonly string RsiState;
+            public ResourcePath RsiPath { get; internal set; }
+            public string RsiState { get; internal set; }
+
+            // For serialization
+            private Rsi()
+            {
+                RsiPath = default!;
+                RsiState = default!;
+            }
 
             public Rsi(ResourcePath rsiPath, string rsiState)
             {
@@ -56,7 +63,13 @@ namespace Robust.Shared.Utility
         [Serializable, NetSerializable]
         public sealed class Texture : SpriteSpecifier
         {
-            public readonly ResourcePath TexturePath;
+            public ResourcePath TexturePath { get; internal set; }
+
+            // For serialization
+            private Texture()
+            {
+                TexturePath = default!;
+            }
 
             public Texture(ResourcePath texturePath)
             {

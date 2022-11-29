@@ -27,6 +27,7 @@ namespace Robust.Client.Console
     {
 #pragma warning disable 649
         [Dependency] private readonly IReflectionManager _reflectionManager = default!;
+        [Dependency] private readonly IDependencyCollection _dependency = default!;
 #pragma warning restore 649
 
         private readonly StringBuilder _inputBuffer = new();
@@ -196,12 +197,10 @@ namespace Robust.Client.Console
         {
             private readonly ScriptConsoleClient _owner;
 
-            [field: Dependency] public override IViewVariablesManager vvm { get; } = default!;
+            [field: Dependency] public override IClientViewVariablesManager vvm { get; } = default!;
 
-            public ScriptGlobalsImpl(ScriptConsoleClient owner)
+            public ScriptGlobalsImpl(ScriptConsoleClient owner) : base(owner._dependency)
             {
-                IoCManager.InjectDependencies(this);
-
                 _owner = owner;
             }
 
@@ -243,9 +242,13 @@ namespace Robust.Client.Console
     [PublicAPI]
     public abstract class ScriptGlobals : ScriptGlobalsShared
     {
-        public abstract IViewVariablesManager vvm { get; }
+        public abstract IClientViewVariablesManager vvm { get; }
 
         public abstract void vv(object a);
+
+        protected ScriptGlobals(IDependencyCollection dependencies) : base(dependencies)
+        {
+        }
     }
 }
 #endif

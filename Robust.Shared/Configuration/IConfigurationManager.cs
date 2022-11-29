@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Robust.Shared.Timing;
 
 namespace Robust.Shared.Configuration
@@ -45,6 +46,13 @@ namespace Robust.Shared.Configuration
         void SaveToFile();
 
         /// <summary>
+        /// Serializes a list of cvars to a toml.
+        /// </summary>
+        void SaveToTomlStream(Stream stream, IEnumerable<string> cvars);
+
+        HashSet<string> LoadFromTomlStream(Stream stream);
+
+        /// <summary>
         /// Register a CVar with the system. This must be done before the CVar is accessed.
         /// </summary>
         /// <param name="name">The name of the CVar. This needs to contain only printable characters.
@@ -62,6 +70,11 @@ namespace Robust.Shared.Configuration
         /// <param name="name">The name of the CVar.</param>
         /// <returns></returns>
         bool IsCVarRegistered(string name);
+
+        /// <summary>
+        /// Get the CVar flags of a registered cvar.
+        /// </summary>
+        CVar GetCVarFlags(string name);
 
         /// <summary>
         /// Gets a list of all registered cvars

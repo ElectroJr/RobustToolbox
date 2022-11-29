@@ -21,21 +21,17 @@ namespace Robust.Shared.Serialization.TypeSerializers.Implementations.Primitive
         }
 
         public byte Read(ISerializationManager serializationManager, ValueDataNode node,
-            IDependencyCollection dependencies, bool skipHook, ISerializationContext? context = null, byte value = default)
+            IDependencyCollection dependencies, bool skipHook, ISerializationContext? context = null,
+            ISerializationManager.InstantiationDelegate<byte>? instanceProvider = null)
         {
             return byte.Parse(node.Value, CultureInfo.InvariantCulture);
         }
 
-        public DataNode Write(ISerializationManager serializationManager, byte value, bool alwaysWrite = false,
+        public DataNode Write(ISerializationManager serializationManager, byte value,
+            IDependencyCollection dependencies, bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
             return new ValueDataNode(value.ToString(CultureInfo.InvariantCulture));
-        }
-
-        public byte Copy(ISerializationManager serializationManager, byte source, byte target, bool skipHook,
-            ISerializationContext? context = null)
-        {
-            return source;
         }
     }
 }

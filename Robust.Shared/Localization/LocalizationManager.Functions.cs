@@ -11,6 +11,7 @@ using Robust.Shared.Enums;
 using Robust.Shared.GameObjects;
 using Robust.Shared.GameObjects.Components.Localization;
 using Robust.Shared.IoC;
+using Robust.Shared.Maths;
 
 namespace Robust.Shared.Localization
 {
@@ -29,6 +30,7 @@ namespace Robust.Shared.Localization
             // Conjugation
             AddCtxFunction(bundle, "CONJUGATE-BE", FuncConjugateBe);
             AddCtxFunction(bundle, "CONJUGATE-HAVE", FuncConjugateHave);
+            AddCtxFunction(bundle, "CONJUGATE-BASIC", FuncConjugateBasic);
 
             // Proper nouns
             AddCtxFunction(bundle, "PROPER", FuncProper);
@@ -241,6 +243,18 @@ namespace Robust.Shared.Localization
             return new LocValueString(GetString("zzzz-conjugate-have", ("ent", args.Args[0])));
         }
 
+        /// <summary>
+        /// Returns the basic conjugated form of a verb. The first string argument is the base verb, the second string argument is the form
+        /// for he/she/it.
+        /// e.g. run -> he runs/she runs/they run/it runs
+        /// </summary>
+        private ILocValue FuncConjugateBasic(LocArgs args)
+        {
+            var first = ((LocValueString)args.Args[1]).Value;
+            var second = ((LocValueString)args.Args[2]).Value;
+            return new LocValueString(GetString("zzzz-conjugate-basic", ("ent", args.Args[0]), ("first", first), ("second", second)));
+        }
+
         private ILocValue FuncAttrib(FluentBundle bundle, LocArgs args)
         {
             if (args.Args.Count < 2) return new LocValueString("other");
@@ -289,11 +303,14 @@ namespace Robust.Shared.Localization
         private void AddCtxFunction(FluentBundle ctx, string name, LocFunction function)
         {
             ctx.AddFunction(name, (args, options)
-                => CallFunction(function, args, options), out _, InsertBehavior.Overriding);
+                => CallFunction(function, ctx, args, options), out _, InsertBehavior.Overriding);
         }
 
-        private IFluentType CallFunction(LocFunction function,
-            IList<IFluentType> positionalArgs, IDictionary<string, IFluentType> namedArgs)
+        private IFluentType CallFunction(
+            LocFunction function,
+            FluentBundle bundle,
+            IList<IFluentType> positionalArgs,
+            IDictionary<string, IFluentType> namedArgs)
         {
             var args = new ILocValue[positionalArgs.Count];
             for (var i = 0; i < args.Length; i++)
@@ -308,7 +325,7 @@ namespace Robust.Shared.Localization
             }
 
             var argStruct = new LocArgs(args, options);
-            return function.Invoke(argStruct).FluentFromVal();
+            return function.Invoke(argStruct).FluentFromVal(new LocContext(bundle));
         }
 
         public void AddFunction(CultureInfo culture, string name, LocFunction function)
@@ -316,22 +333,24 @@ namespace Robust.Shared.Localization
             var bundle = _contexts[culture];
 
             bundle.AddFunction(name, (args, options)
-                => CallFunction(function, args, options), out _, InsertBehavior.Overriding);
+                => CallFunction(function, bundle, args, options), out _, InsertBehavior.Overriding);
         }
     }
 
     internal sealed class FluentLocWrapperType : IFluentType
     {
         public readonly ILocValue WrappedValue;
+        private readonly LocContext _context;
 
-        public FluentLocWrapperType(ILocValue wrappedValue)
+        public FluentLocWrapperType(ILocValue wrappedValue, LocContext context)
         {
             WrappedValue = wrappedValue;
+            _context = context;
         }
 
         public string AsString()
         {
-            return WrappedValue.Format(new LocContext());
+            return WrappedValue.Format(_context);
         }
 
         public IFluentType Copy()
@@ -354,14 +373,15 @@ namespace Robust.Shared.Localization
             };
         }
 
-        public static IFluentType FluentFromObject(this object obj)
+        public static IFluentType FluentFromObject(this object obj, LocContext context)
         {
             return obj switch
             {
-                ILocValue wrap => new FluentLocWrapperType(wrap),
-                EntityUid entity => new FluentLocWrapperType(new LocValueEntity(entity)),
-                DateTime dateTime => new FluentLocWrapperType(new LocValueDateTime(dateTime)),
-                TimeSpan timeSpan => new FluentLocWrapperType(new LocValueTimeSpan(timeSpan)),
+                ILocValue wrap => new FluentLocWrapperType(wrap, context),
+                EntityUid entity => new FluentLocWrapperType(new LocValueEntity(entity), context),
+                DateTime dateTime => new FluentLocWrapperType(new LocValueDateTime(dateTime), context),
+                TimeSpan timeSpan => new FluentLocWrapperType(new LocValueTimeSpan(timeSpan), context),
+                Color color => (FluentString)color.ToHex(),
                 bool or Enum => (FluentString)obj.ToString()!.ToLowerInvariant(),
                 string str => (FluentString)str,
                 byte num => (FluentNumber)num,
@@ -378,14 +398,14 @@ namespace Robust.Shared.Localization
             };
         }
 
-        public static IFluentType FluentFromVal(this ILocValue locValue)
+        public static IFluentType FluentFromVal(this ILocValue locValue, LocContext context)
         {
             return locValue switch
             {
                 LocValueNone => FluentNone.None,
                 LocValueNumber number => (FluentNumber)number.Value,
                 LocValueString str => (FluentString)str.Value,
-                _ => new FluentLocWrapperType(locValue),
+                _ => new FluentLocWrapperType(locValue, context),
             };
         }
     }

@@ -3,129 +3,161 @@ using System.Linq;
 using JetBrains.Annotations;
 using Robust.Shared.Audio;
 using Robust.Shared.GameObjects;
-using Robust.Shared.IoC;
 using Robust.Shared.Map;
 using Robust.Shared.Player;
 using Robust.Shared.Players;
 
-namespace Robust.Server.GameObjects
+namespace Robust.Server.GameObjects;
+[UsedImplicitly]
+public sealed class AudioSystem : SharedAudioSystem
 {
-    [UsedImplicitly]
-    public sealed class AudioSystem : SharedAudioSystem, IAudioSystem
+    private uint _streamIndex;
+
+    private sealed class AudioSourceServer : IPlayingAudioStream
     {
-        [Dependency] private readonly IEntityManager _entityManager = default!;
+        private readonly uint _id;
+        private readonly AudioSystem _audioSystem;
+        private readonly IEnumerable<ICommonSession>? _sessions;
 
-        private uint _streamIndex;
-
-        private sealed class AudioSourceServer : IPlayingAudioStream
+        internal AudioSourceServer(AudioSystem parent, uint identifier, IEnumerable<ICommonSession>? sessions = null)
         {
-            private readonly uint _id;
-            private readonly AudioSystem _audioSystem;
-            private readonly IEnumerable<ICommonSession>? _sessions;
-
-            internal AudioSourceServer(AudioSystem parent, uint identifier, IEnumerable<ICommonSession>? sessions = null)
-            {
-                _audioSystem = parent;
-                _id = identifier;
-                _sessions = sessions;
-            }
-            public void Stop()
-            {
-                _audioSystem.InternalStop(_id, _sessions);
-            }
+            _audioSystem = parent;
+            _id = identifier;
+            _sessions = sessions;
         }
-
-        /// <inheritdoc />
-        public override void Initialize()
+        public void Stop()
         {
-            SubscribeLocalEvent<SoundSystem.QueryAudioSystem>((ev => ev.Audio = this));
+            _audioSystem.InternalStop(_id, _sessions);
         }
+    }
 
-        private void InternalStop(uint id, IEnumerable<ICommonSession>? sessions = null)
+    private void InternalStop(uint id, IEnumerable<ICommonSession>? sessions = null)
+    {
+        var msg = new StopAudioMessageClient
         {
-            var msg = new StopAudioMessageClient
-            {
-                Identifier = id
-            };
+            Identifier = id
+        };
 
-            if (sessions == null)
-                RaiseNetworkEvent(msg);
-            else
+        if (sessions == null)
+            RaiseNetworkEvent(msg);
+        else
+        {
+            foreach (var session in sessions)
             {
-                foreach (var session in sessions)
-                {
-                    RaiseNetworkEvent(msg, session.ConnectedClient);
-                }
+                RaiseNetworkEvent(msg, session.ConnectedClient);
             }
         }
+    }
 
-        private uint CacheIdentifier()
+    private uint CacheIdentifier()
+    {
+        return unchecked(_streamIndex++);
+    }
+
+    /// <inheritdoc />
+    public override IPlayingAudioStream? PlayGlobal(string filename, Filter playerFilter, bool recordReplay, AudioParams? audioParams = null)
+    {
+        var id = CacheIdentifier();
+        var msg = new PlayAudioGlobalMessage
         {
-            return unchecked(_streamIndex++);
-        }
+            FileName = filename,
+            AudioParams = audioParams ?? AudioParams.Default,
+            Identifier = id
+        };
 
-        /// <inheritdoc />
-        public int OcclusionCollisionMask { get; set; }
+        RaiseNetworkEvent(msg, playerFilter, recordReplay);
 
-        /// <inheritdoc />
-        public IPlayingAudioStream Play(Filter playerFilter, string filename, AudioParams? audioParams = null)
+        return new AudioSourceServer(this, id, playerFilter.Recipients.ToArray());
+    }
+
+    public override IPlayingAudioStream? Play(string filename, Filter playerFilter, EntityUid uid, bool recordReplay, AudioParams? audioParams = null)
+    {
+        if(!EntityManager.TryGetComponent<TransformComponent>(uid, out var transform))
+            return null;
+
+        var id = CacheIdentifier();
+
+        var fallbackCoordinates = GetFallbackCoordinates(transform.MapPosition);
+
+        var msg = new PlayAudioEntityMessage
         {
-            var id = CacheIdentifier();
-            var msg = new PlayAudioGlobalMessage
-            {
-                FileName = filename,
-                AudioParams = audioParams ?? AudioParams.Default,
-                Identifier = id
-            };
+            FileName = filename,
+            Coordinates = transform.Coordinates,
+            FallbackCoordinates = fallbackCoordinates,
+            EntityUid = uid,
+            AudioParams = audioParams ?? AudioParams.Default,
+            Identifier = id,
+        };
 
-            RaiseNetworkEvent(msg, playerFilter);
+        RaiseNetworkEvent(msg, playerFilter, recordReplay);
 
-            return new AudioSourceServer(this, id, playerFilter.Recipients.ToArray());
-        }
+        return new AudioSourceServer(this, id, playerFilter.Recipients.ToArray());
+    }
 
-        public IPlayingAudioStream? Play(Filter playerFilter, string filename, EntityUid uid, AudioParams? audioParams = null)
+    /// <inheritdoc />
+    public override IPlayingAudioStream? Play(string filename, Filter playerFilter, EntityCoordinates coordinates, bool recordReplay, AudioParams? audioParams = null)
+    {
+        var id = CacheIdentifier();
+
+        var fallbackCoordinates = GetFallbackCoordinates(coordinates.ToMap(EntityManager));
+
+        var msg = new PlayAudioPositionalMessage
         {
-            if(!EntityManager.TryGetComponent<TransformComponent>(uid, out var transform))
-                return null;
+            FileName = filename,
+            Coordinates = coordinates,
+            FallbackCoordinates = fallbackCoordinates,
+            AudioParams = audioParams ?? AudioParams.Default,
+            Identifier = id
+        };
 
-            var id = CacheIdentifier();
+        RaiseNetworkEvent(msg, playerFilter, recordReplay);
 
-            var fallbackCoordinates = GetFallbackCoordinates(transform.MapPosition);
+        return new AudioSourceServer(this, id, playerFilter.Recipients.ToArray());
+    }
 
-            var msg = new PlayAudioEntityMessage
-            {
-                FileName = filename,
-                Coordinates = transform.Coordinates,
-                FallbackCoordinates = fallbackCoordinates,
-                EntityUid = uid,
-                AudioParams = audioParams ?? AudioParams.Default,
-                Identifier = id,
-            };
+    /// <inheritdoc />
+    public override IPlayingAudioStream? PlayPredicted(SoundSpecifier? sound, EntityUid source, EntityUid? user, AudioParams? audioParams = null)
+    {
+        if (sound == null)
+            return null;
 
-            RaiseNetworkEvent(msg, playerFilter);
+        var filter = Filter.Pvs(source, entityManager: EntityManager, playerManager: PlayerManager, cfgManager: CfgManager).RemoveWhereAttachedEntity(e => e == user);
+        return Play(sound, filter, source, true, audioParams);
+    }
 
-            return new AudioSourceServer(this, id, playerFilter.Recipients.ToArray());
-        }
+    public override IPlayingAudioStream? PlayGlobal(string filename, ICommonSession recipient, AudioParams? audioParams = null)
+    {
+        return PlayGlobal(filename, Filter.SinglePlayer(recipient), false, audioParams);
+    }
 
-        /// <inheritdoc />
-        public IPlayingAudioStream Play(Filter playerFilter, string filename, EntityCoordinates coordinates, AudioParams? audioParams = null)
-        {
-            var id = CacheIdentifier();
+    public override IPlayingAudioStream? PlayGlobal(string filename, EntityUid recipient, AudioParams? audioParams = null)
+    {
+        if (TryComp(recipient, out ActorComponent? actor))
+            return PlayGlobal(filename, actor.PlayerSession, audioParams);
+        return null;
+    }
 
-            var fallbackCoordinates = GetFallbackCoordinates(coordinates.ToMap(_entityManager));
+    public override IPlayingAudioStream? PlayEntity(string filename, ICommonSession recipient, EntityUid uid, AudioParams? audioParams = null)
+    {
+        return Play(filename, Filter.SinglePlayer(recipient), uid, false, audioParams);
+    }
 
-            var msg = new PlayAudioPositionalMessage
-            {
-                FileName = filename,
-                Coordinates = coordinates,
-                FallbackCoordinates = fallbackCoordinates,
-                AudioParams = audioParams ?? AudioParams.Default,
-                Identifier = id
-            };
+    public override IPlayingAudioStream? PlayEntity(string filename, EntityUid recipient, EntityUid uid, AudioParams? audioParams = null)
+    {
+        if (TryComp(recipient, out ActorComponent? actor))
+            return PlayEntity(filename, actor.PlayerSession, uid, audioParams);
+        return null;
+    }
 
-            RaiseNetworkEvent(msg, playerFilter);
+    public override IPlayingAudioStream? PlayStatic(string filename, ICommonSession recipient, EntityCoordinates coordinates, AudioParams? audioParams = null)
+    {
+        return Play(filename, Filter.SinglePlayer(recipient), coordinates, false, audioParams);
+    }
 
-            return new AudioSourceServer(this, id, playerFilter.Recipients.ToArray());
-        }
+    public override IPlayingAudioStream? PlayStatic(string filename, EntityUid recipient, EntityCoordinates coordinates, AudioParams? audioParams = null)
+    {
+        if (TryComp(recipient, out ActorComponent? actor))
+            return PlayStatic(filename, actor.PlayerSession, coordinates, audioParams);
+        return null;
     }
 }

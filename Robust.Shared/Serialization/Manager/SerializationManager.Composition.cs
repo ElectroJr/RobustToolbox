@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using Robust.Shared.Serialization.Manager.Attributes;
 using Robust.Shared.Serialization.Manager.Definition;
 using Robust.Shared.Serialization.Markdown;
 using Robust.Shared.Serialization.Markdown.Mapping;
@@ -45,29 +47,26 @@ public partial class SerializationManager
             var (node, instance) = vfArgument;
 
             var instanceConst = Expression.Constant(instance);
-            var dependencyCollectionConst = Expression.Constant(instance.DependencyCollection);
 
             var typeParam = Expression.Parameter(typeof(Type), "type");
             var parentParam = Expression.Parameter(typeof(DataNode), "parent");
             var childParam = Expression.Parameter(typeof(DataNode), "child");
-            //todo paul serializers in the context should also override default serializers for array etc
             var contextParam = Expression.Parameter(typeof(ISerializationContext), "context");
 
             Expression expression;
 
-            if (instance.TryGetTypeInheritanceHandler(value, nodeType, out var handler))
+            if (instance._regularSerializerProvider.TryGetTypeNodeSerializer(typeof(ITypeInheritanceHandler<,>), value, nodeType, out var handler))
             {
                 var readerType = typeof(ITypeInheritanceHandler<,>).MakeGenericType(value, nodeType);
                 var readerConst = Expression.Constant(handler, readerType);
 
                 expression = Expression.Call(
-                    readerConst,
-                    "PushInheritance",
-                    Type.EmptyTypes,
                     instanceConst,
-                    Expression.Convert(childParam, nodeType),
+                    nameof(PushInheritance),
+                    new []{value, nodeType},
+                    readerConst,
                     Expression.Convert(parentParam, nodeType),
-                    dependencyCollectionConst,
+                    Expression.Convert(childParam, nodeType),
                     contextParam);
             }
             else if (nodeType == typeof(MappingDataNode) && instance.TryGetDefinition(value, out var dataDefinition))
@@ -81,6 +80,7 @@ public partial class SerializationManager
                     Expression.Convert(childParam, nodeType),
                     Expression.Convert(parentParam, nodeType),
                     definitionConst,
+                    instanceConst,
                     contextParam);
             }
             else
@@ -123,31 +123,62 @@ public partial class SerializationManager
     }
 
     private MappingDataNode PushInheritanceDefinition(MappingDataNode child, MappingDataNode parent,
-        DataDefinition definition, ISerializationContext? context = null)
+        DataDefinition definition, SerializationManager serializationManager, ISerializationContext? context = null)
     {
         var newMapping = child.Copy();
-        foreach (var field in definition.BaseFieldDefinitions)
+        var processedTags = new HashSet<string>();
+        var fieldQueue = new Queue<FieldDefinition>(definition.BaseFieldDefinitions);
+        while (fieldQueue.TryDequeue(out var field))
         {
             if (field.InheritanceBehavior == InheritanceBehavior.Never) continue;
 
-            var key = new ValueDataNode(field.Attribute.Tag);
-            if (parent.TryGetValue(key, out var parentValue))
+            if (field.Attribute is DataFieldAttribute dfa)
             {
-                if (newMapping.TryGetValue(key, out var childValue))
+                if(!processedTags.Add(dfa.Tag)) continue; //tag was already processed, probably because we are using the same tag in an include
+                var key = new ValueDataNode(dfa.Tag);
+                if (parent.TryGetValue(key, out var parentValue))
                 {
-                    if (field.InheritanceBehavior == InheritanceBehavior.Always)
+                    if (newMapping.TryGetValue(key, out var childValue))
                     {
-                        newMapping[key] = PushComposition(field.FieldType, new[] { parentValue }, childValue, context);
+                        if (field.InheritanceBehavior == InheritanceBehavior.Always)
+                        {
+                            newMapping[key] = PushComposition(field.FieldType, new[] { parentValue }, childValue, context);
+                        }
+                    }
+                    else
+                    {
+                        newMapping.Add(key, parentValue);
                     }
                 }
-                else
+            }
+            else
+            {
+                //there is a definition garantueed to be present for this type since the fields are validated in initialize
+                //therefore we can silence nullability here
+                var def = serializationManager.GetDefinition(field.FieldType)!;
+                foreach (var includeFieldDef in def.BaseFieldDefinitions)
                 {
-                    newMapping.Add(key, parentValue);
+                    fieldQueue.Enqueue(includeFieldDef);
                 }
             }
         }
 
         return newMapping;
+    }
+
+    public TNode PushInheritance<TType, TNode>(ITypeInheritanceHandler<TType, TNode> inheritanceHandler,
+        TNode parent, TNode child,
+        ISerializationContext? context = null) where TNode : DataNode
+    {
+        return inheritanceHandler.PushInheritance(this, child, parent, DependencyCollection, context);
+    }
+
+    public TNode PushInheritance<TType, TNode, TInheritanceHandler>(TNode parent, TNode child,
+        ISerializationContext? context = null) where TNode : DataNode
+        where TInheritanceHandler : ITypeInheritanceHandler<TType, TNode>
+    {
+        return PushInheritance<TType, TNode>(GetOrCreateCustomTypeSerializer<TInheritanceHandler>(), parent, child,
+            context);
     }
 
 }

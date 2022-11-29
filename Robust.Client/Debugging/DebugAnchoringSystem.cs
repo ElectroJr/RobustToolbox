@@ -17,10 +17,11 @@ namespace Robust.Client.Debugging
         [Dependency] private readonly IEyeManager _eyeManager = default!;
         [Dependency] private readonly IInputManager _inputManager = default!;
         [Dependency] private readonly IMapManager _mapManager = default!;
+        [Dependency] private readonly IUserInterfaceManager _userInterface = default!;
 
         private Label? _label;
 
-        private (GridId GridId, TileRef Tile)? _hovered;
+        private (EntityUid GridId, TileRef Tile)? _hovered;
 
         public bool Enabled
         {
@@ -34,11 +35,11 @@ namespace Robust.Client.Debugging
                 if (_enabled)
                 {
                     _label = new Label();
-                    IoCManager.Resolve<IUserInterfaceManager>().StateRoot.AddChild(_label);
+                    _userInterface.StateRoot.AddChild(_label);
                 }
                 else
                 {
-                    IoCManager.Resolve<IUserInterfaceManager>().StateRoot.RemoveChild(_label!);
+                    _userInterface.StateRoot.RemoveChild(_label!);
                     _label = null;
                     _hovered = null;
                 }
@@ -71,9 +72,9 @@ namespace Robust.Client.Debugging
             var tile = grid.GetTileRef(spot);
             _label.Position = mouseSpot.Position + new Vector2(32, 0);
 
-            if (_hovered?.GridId == grid.Index && _hovered?.Tile == tile) return;
+            if (_hovered?.GridId == grid.GridEntityId && _hovered?.Tile == tile) return;
 
-            _hovered = (grid.Index, tile);
+            _hovered = (grid.GridEntityId, tile);
 
             var text = new StringBuilder();
 

@@ -37,6 +37,8 @@ namespace Robust.Client.Graphics.Clyde
 
         public ClydeHeadless()
         {
+            Configuration.Default.PreferContiguousImageBuffers = true;
+
             var mainRt = new DummyRenderWindow(this);
             var window = new DummyWindow(mainRt) {Id = new WindowId(1)};
 
@@ -48,7 +50,8 @@ namespace Robust.Client.Graphics.Clyde
         public IClydeDebugInfo DebugInfo { get; } = new DummyDebugInfo();
         public IClydeDebugStats DebugStats { get; } = new DummyDebugStats();
 
-        public event Action<TextEventArgs>? TextEntered { add { } remove { } }
+        public event Action<TextEnteredEventArgs>? TextEntered { add { } remove { } }
+        public event Action<TextEditingEventArgs>? TextEditing { add { } remove { } }
         public event Action<MouseMoveEventArgs>? MouseMove { add { } remove { } }
         public event Action<MouseEnterLeaveEventArgs>? MouseEnterLeave { add { } remove { } }
         public event Action<KeyEventArgs>? KeyUp { add { } remove { } }
@@ -226,6 +229,21 @@ namespace Robust.Client.Graphics.Clyde
             return window;
         }
 
+        public void TextInputSetRect(UIBox2i rect)
+        {
+            // Nada.
+        }
+
+        public void TextInputStart()
+        {
+            // Nada.
+        }
+
+        public void TextInputStop()
+        {
+            // Nada.
+        }
+
         public ClydeHandle LoadShader(ParsedShader shader, string? name = null, Dictionary<string,string>? defines = null)
         {
             return default;
@@ -287,6 +305,8 @@ namespace Robust.Client.Graphics.Clyde
                 // Nada.
             }
 
+            public bool IsGlobal { get; }
+
             public bool SetPosition(Vector2 position)
             {
                 return true;
@@ -307,7 +327,7 @@ namespace Robust.Client.Graphics.Clyde
                 // Nada.
             }
 
-            public void SetVolumeDirect(float scale)
+            public void SetVolumeDirect(float gain)
             {
                 // Nada.
             }
@@ -577,6 +597,8 @@ namespace Robust.Client.Graphics.Clyde
             {
                 return default;
             }
+
+            public Matrix3 GetWorldToLocalMatrix() => default;
 
             public Vector2 WorldToLocal(Vector2 point)
             {

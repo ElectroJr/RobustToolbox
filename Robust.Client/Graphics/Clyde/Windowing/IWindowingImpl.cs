@@ -57,11 +57,16 @@ namespace Robust.Client.Graphics.Clyde
             // OpenGL-related stuff.
             // Note: you should probably go through GLContextBase instead, which calls these functions.
             void GLMakeContextCurrent(WindowReg? reg);
-            void GLSwapInterval(int interval);
+            void GLSwapInterval(WindowReg reg, int interval);
             unsafe void* GLGetProcAddress(string procName);
 
             // Misc
             void RunOnWindowThread(Action a);
+
+            // IME
+            void TextInputSetRect(UIBox2i rect);
+            void TextInputStart();
+            void TextInputStop();
         }
     }
 }

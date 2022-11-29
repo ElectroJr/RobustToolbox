@@ -34,7 +34,7 @@ namespace Robust.Client.GameObjects
             {
                 if (_enabled == value) return;
                 base.Enabled = value;
-                _entityManager.EventBus.RaiseLocalEvent(Owner, new PointLightUpdateEvent());
+                _entityManager.EventBus.RaiseLocalEvent(Owner, new PointLightUpdateEvent(), true);
             }
         }
 
@@ -47,7 +47,7 @@ namespace Robust.Client.GameObjects
                 if (_containerOccluded == value) return;
 
                 _containerOccluded = value;
-                _entityManager.EventBus.RaiseLocalEvent(Owner, new PointLightUpdateEvent());
+                _entityManager.EventBus.RaiseLocalEvent(Owner, new PointLightUpdateEvent(), true);
             }
         }
 
@@ -102,12 +102,6 @@ namespace Robust.Client.GameObjects
             get => _visibleNested;
             set => _visibleNested = value;
         }
-
-        /// <summary>
-        ///     Whether this pointlight should cast shadows
-        /// </summary>
-        [DataField("castShadows")]
-        public bool CastShadows = true;
 
         [DataField("nestedvisible")]
         private bool _visibleNested = true;

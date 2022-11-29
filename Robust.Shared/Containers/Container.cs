@@ -4,6 +4,7 @@ using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Serialization;
 using Robust.Shared.Serialization.Manager.Attributes;
+using Robust.Shared.Utility;
 
 namespace Robust.Shared.Containers
 {
@@ -36,34 +37,39 @@ namespace Robust.Shared.Containers
         public override string ContainerType => ClassName;
 
         /// <inheritdoc />
-        protected override void InternalInsert(EntityUid toinsert, IEntityManager entMan, MetaDataComponent? meta = null)
+        protected override void InternalInsert(EntityUid toInsert, IEntityManager entMan)
         {
-            _containerList.Add(toinsert);
-            base.InternalInsert(toinsert, entMan, meta);
+            DebugTools.Assert(!_containerList.Contains(toInsert));
+            _containerList.Add(toInsert);
         }
 
         /// <inheritdoc />
-        protected override void InternalRemove(EntityUid toremove, IEntityManager entMan, MetaDataComponent? meta = null)
+        protected override void InternalRemove(EntityUid toRemove, IEntityManager entMan)
         {
-            _containerList.Remove(toremove);
-            base.InternalRemove(toremove, entMan, meta);
+            _containerList.Remove(toRemove);
         }
 
         /// <inheritdoc />
         public override bool Contains(EntityUid contained)
         {
-            return _containerList.Contains(contained);
+            if (!_containerList.Contains(contained))
+                return false;
+
+            var flags = IoCManager.Resolve<IEntityManager>().GetComponent<MetaDataComponent>(contained).Flags;
+            DebugTools.Assert((flags & MetaDataFlags.InContainer) != 0);
+
+            return true;
         }
 
         /// <inheritdoc />
-        public override void Shutdown()
+        protected override void InternalShutdown(IEntityManager entMan, bool isClient)
         {
-            base.Shutdown();
-
-            var entMan = IoCManager.Resolve<IEntityManager>();
-            foreach (var entity in _containerList)
+            foreach (var entity in _containerList.ToArray())
             {
-                entMan.DeleteEntity(entity);
+                if (!isClient)
+                    entMan.DeleteEntity(entity);
+                else if (entMan.EntityExists(entity))
+                    Remove(entity, entMan, reparent: false, force: true);
             }
         }
     }

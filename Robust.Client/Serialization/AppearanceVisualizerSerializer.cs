@@ -19,37 +19,26 @@ namespace Robust.Client.Serialization
         public AppearanceVisualizer Read(ISerializationManager serializationManager, MappingDataNode node,
             IDependencyCollection dependencies,
             bool skipHook,
-            ISerializationContext? context = null, AppearanceVisualizer? value = null)
+            ISerializationContext? context = null, ISerializationManager.InstantiationDelegate<AppearanceVisualizer>? instanceProvider = null)
         {
             Type? type = null;
             if (!node.TryGet("type", out var typeNode))
             {
-                if (value == null)
-                    throw new InvalidMappingException("No type specified for AppearanceVisualizer!");
-
-                type = value.GetType();
+                throw new InvalidMappingException("No type specified for AppearanceVisualizer!");
             }
-            else
-            {
-                if (typeNode is not ValueDataNode typeValueDataNode)
-                    throw new InvalidMappingException("Type node not a value node for AppearanceVisualizer!");
 
-                type = IoCManager.Resolve<IReflectionManager>()
-                    .YamlTypeTagLookup(typeof(AppearanceVisualizer), typeValueDataNode.Value);
-                if (type == null)
-                    throw new InvalidMappingException(
-                        $"Invalid type {typeValueDataNode.Value} specified for AppearanceVisualizer!");
+            if (typeNode is not ValueDataNode typeValueDataNode)
+                throw new InvalidMappingException("Type node not a value node for AppearanceVisualizer!");
 
-                if(value != null && !type.IsInstanceOfType(value))
-                {
-                    throw new InvalidMappingException(
-                        $"Specified Type does not match type of provided Value for AppearanceVisualizer! (TypeOfValue: {value.GetType()}, ProvidedValue: {type})");
-                }
-            }
+            type = dependencies.Resolve<IReflectionManager>()
+                .YamlTypeTagLookup(typeof(AppearanceVisualizer), typeValueDataNode.Value);
+            if (type == null)
+                throw new InvalidMappingException(
+                    $"Invalid type {typeValueDataNode.Value} specified for AppearanceVisualizer!");
 
             var newNode = node.Copy();
             newNode.Remove("type");
-            return (AppearanceVisualizer) serializationManager.Read(type, newNode, context, skipHook, value)!;
+            return (AppearanceVisualizer) serializationManager.Read(type, newNode, context, skipHook)!;
         }
 
         public ValidationNode Validate(ISerializationManager serializationManager, MappingDataNode node,
@@ -61,7 +50,7 @@ namespace Robust.Client.Serialization
                 return new ErrorNode(node, "Missing/Invalid type", true);
             }
 
-            var reflectionManager = IoCManager.Resolve<IReflectionManager>();
+            var reflectionManager = dependencies.Resolve<IReflectionManager>();
             var type = reflectionManager.YamlTypeTagLookup(typeof(AppearanceVisualizer), valueNode.Value);
 
             if (type == null)
@@ -72,18 +61,13 @@ namespace Robust.Client.Serialization
             return serializationManager.ValidateNode(type, node.CopyCast<MappingDataNode>().Remove("type"));
         }
 
-        public DataNode Write(ISerializationManager serializationManager, AppearanceVisualizer value, bool alwaysWrite = false,
+        public DataNode Write(ISerializationManager serializationManager, AppearanceVisualizer value,
+            IDependencyCollection dependencies, bool alwaysWrite = false,
             ISerializationContext? context = null)
         {
             var mapping = serializationManager.WriteValueAs<MappingDataNode>(value.GetType(), value, alwaysWrite, context);
             mapping.Add("type", new ValueDataNode(value.GetType().Name));
             return mapping;
-        }
-
-        public AppearanceVisualizer Copy(ISerializationManager serializationManager, AppearanceVisualizer source,
-            AppearanceVisualizer target, bool skipHook, ISerializationContext? context = null)
-        {
-            return serializationManager.Copy(source, target, context)!;
         }
     }
 }

@@ -1,19 +1,21 @@
 using System;
+using Robust.Server.GameObjects;
 using Robust.Shared.Console;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Maths;
 using Robust.Shared.Physics;
 using Robust.Shared.Physics.Collision.Shapes;
+using Robust.Shared.Physics.Systems;
 
 namespace Robust.Server.Console.Commands;
 
-public sealed class ScaleCommand : IConsoleCommand
+public sealed class ScaleCommand : LocalizedCommands
 {
-    public string Command => "scale";
-    public string Description => "Increases or decreases an entity's size naively";
-    public string Help => $"{Command} <entityUid> <float>";
-    public void Execute(IConsoleShell shell, string argStr, string[] args)
+    [Dependency] private readonly IEntityManager _entityManager = default!;
+
+    public override string Command => "scale";
+    public override void Execute(IConsoleShell shell, string argStr, string[] args)
     {
         if (args.Length != 2)
         {
@@ -41,23 +43,20 @@ public sealed class ScaleCommand : IConsoleCommand
 
         // Event for content to use
         // We'll just set engine stuff here
+        _entityManager.EnsureComponent<ScaleVisualsComponent>(uid);
         var @event = new ScaleEntityEvent();
-        var entManager = IoCManager.Resolve<IEntityManager>();
-        entManager.EventBus.RaiseLocalEvent(uid, ref @event);
+        _entityManager.EventBus.RaiseLocalEvent(uid, ref @event);
 
-        if (entManager.TryGetComponent(uid, out AppearanceComponent? appearanceComponent))
-        {
-            if (!appearanceComponent.TryGetData<Vector2>(ScaleVisuals.Scale, out var oldScale))
-                oldScale = Vector2.One;
+        var appearanceComponent = _entityManager.EnsureComponent<ServerAppearanceComponent>(uid);
+        if (!appearanceComponent.TryGetData<Vector2>(ScaleVisuals.Scale, out var oldScale))
+            oldScale = Vector2.One;
 
-            appearanceComponent.SetData(ScaleVisuals.Scale, oldScale * scale);
-        }
+        appearanceComponent.SetData(ScaleVisuals.Scale, oldScale * scale);
 
-        if (entManager.TryGetComponent(uid, out FixturesComponent? manager))
+        if (_entityManager.TryGetComponent(uid, out FixturesComponent? manager))
         {
             foreach (var (_, fixture) in manager.Fixtures)
             {
-                // TODO: May be worthwhile to swap to density like box2d? Either way mass is unchanged for now.
                 switch (fixture.Shape)
                 {
                     case EdgeShape edge:
@@ -85,7 +84,7 @@ public sealed class ScaleCommand : IConsoleCommand
                 }
             }
 
-            EntitySystem.Get<FixtureSystem>().FixtureUpdate(manager);
+            _entityManager.EntitySysManager.GetEntitySystem<FixtureSystem>().FixtureUpdate(manager);
         }
     }
 

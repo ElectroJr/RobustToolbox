@@ -28,6 +28,11 @@ namespace Robust.Shared.GameObjects
         /// </summary>
         void Cleanup();
 
+        /// <summary>
+        ///     Deletes all entities.
+        /// </summary>
+        void FlushEntities();
+
         /// <param name="noPredictions">
         /// Only run systems with <see cref="EntitySystem.UpdatesOutsidePrediction"/> set true.
         /// </param>
@@ -59,6 +64,8 @@ namespace Robust.Shared.GameObjects
 
         EntityUid CreateEntityUninitialized(string? prototypeName, MapCoordinates coordinates);
 
+        void InitializeAndStartEntity(EntityUid entity, MapId? mapId = null);
+
         /// <summary>
         /// Spawns an initialized entity at the default location, using the given prototype.
         /// </summary>
@@ -86,9 +93,9 @@ namespace Robust.Shared.GameObjects
         /// <returns></returns>
         IEnumerable<EntityUid> GetEntities();
 
-        public void Dirty(EntityUid uid);
+        public void DirtyEntity(EntityUid uid, MetaDataComponent? metadata = null);
 
-        public void Dirty(Component component);
+        public void Dirty(Component component, MetaDataComponent? metadata = null);
 
         public void QueueDeleteEntity(EntityUid uid);
 
@@ -128,5 +135,10 @@ namespace Robust.Shared.GameObjects
         EntityStringRepresentation ToPrettyString(EntityUid uid);
 
         #endregion Entity Management
+
+        /// <summary>
+        ///     Sends a networked message to the server, while also repeatedly raising it locally for every time this tick gets re-predicted.
+        /// </summary>
+        void RaisePredictiveEvent<T>(T msg) where T : EntityEventArgs;
     }
 }

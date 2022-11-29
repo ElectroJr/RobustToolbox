@@ -1,20 +1,23 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using Robust.Shared.Collections;
 using Robust.Shared.Containers;
 using Robust.Shared.GameObjects;
 using Robust.Shared.GameStates;
 using Robust.Shared.IoC;
-using Robust.Shared.Log;
 using Robust.Shared.Map;
+using Robust.Shared.Network;
 using Robust.Shared.Serialization;
+using Robust.Shared.Utility;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using static Robust.Shared.Containers.ContainerManagerComponent;
 
 namespace Robust.Client.GameObjects
 {
     public sealed class ContainerSystem : SharedContainerSystem
     {
+        [Dependency] private readonly INetManager _netMan = default!;
         [Dependency] private readonly IRobustSerializer _serializer = default!;
         [Dependency] private readonly IDynamicTypeFactoryInternal _dynFactory = default!;
 
@@ -32,12 +35,15 @@ namespace Robust.Client.GameObjects
             UpdatesBefore.Add(typeof(SpriteSystem));
         }
 
+        protected override void ValidateMissingEntity(EntityUid uid, IContainer cont, EntityUid missing)
+        {
+            DebugTools.Assert(ExpectedEntities.TryGetValue(missing, out var expectedContainer) && expectedContainer == cont && cont.ExpectedEntities.Contains(missing));
+        }
+
         private void HandleEntityInitialized(EntityInitializedMessage ev)
         {
-            if (!ExpectedEntities.TryGetValue(ev.Entity, out var container))
+            if (!RemoveExpectedEntity(ev.Entity, out var container))
                 return;
-
-            RemoveExpectedEntity(ev.Entity);
 
             if (container.Deleted)
                 return;
@@ -54,18 +60,12 @@ namespace Robust.Client.GameObjects
             var toDelete = new ValueList<string>();
             foreach (var (id, container) in component.Containers)
             {
-                // TODO: This is usually O(n^2) to the amount of containers.
-                foreach (var stateContainer in cast.ContainerSet)
-                {
-                    if (stateContainer.Id == id)
-                        goto skip;
-                }
+                if (cast.Containers.ContainsKey(id))
+                    continue;
 
-                container.EmptyContainer(true, entMan: EntityManager);
-                container.Shutdown();
+                EmptyContainer(container, true, null, false, EntityManager);
+                container.Shutdown(EntityManager, _netMan);
                 toDelete.Add(id);
-
-                skip: ;
             }
 
             foreach (var dead in toDelete)
@@ -75,7 +75,7 @@ namespace Robust.Client.GameObjects
 
             // Add new containers and update existing contents.
 
-            foreach (var (containerType, id, showEnts, occludesLight, entityUids) in cast.ContainerSet)
+            foreach (var (containerType, id, showEnts, occludesLight, entityUids) in cast.Containers.Values)
             {
                 if (!component.Containers.TryGetValue(id, out var container))
                 {
@@ -114,13 +114,13 @@ namespace Robust.Client.GameObjects
 
                 foreach (var entityUid in removedExpected)
                 {
-                    RemoveExpectedEntity(entityUid);
+                    RemoveExpectedEntity(entityUid, out _);
                 }
 
                 // Add new entities.
                 foreach (var entity in entityUids)
                 {
-                    if (!EntityManager.EntityExists(entity))
+                    if (!EntityManager.TryGetComponent(entity, out MetaDataComponent? meta))
                     {
                         AddExpectedEntity(entity, container);
                         continue;
@@ -133,14 +133,17 @@ namespace Robust.Client.GameObjects
                     // from the container. It would then subsequently be parented to the container without ever being
                     // re-inserted, leading to the client seeing what should be hidden entities attached to
                     // containers/players.
-                    if (Transform(entity).MapID == MapId.Nullspace)
+                    if ((meta.Flags & MetaDataFlags.Detached) != 0)
                     {
                         AddExpectedEntity(entity, container);
                         continue;
                     }
 
-                    if (!container.ContainedEntities.Contains(entity))
-                        container.Insert(entity);
+                    if (container.Contains(entity))
+                        continue;
+
+                    RemoveExpectedEntity(entity, out _);
+                    container.Insert(entity);
                 }
             }
         }
@@ -149,7 +152,7 @@ namespace Robust.Client.GameObjects
         {
             base.OnParentChanged(ref message);
 
-            var xform = Transform(message.Entity);
+            var xform = message.Transform;
 
             if (xform.MapID != MapId.Nullspace)
                 _updateQueue.Add(message.Entity);
@@ -158,7 +161,7 @@ namespace Robust.Client.GameObjects
             if (message.OldParent != null && message.OldParent.Value.IsValid())
                 return;
 
-            if (!ExpectedEntities.TryGetValue(message.Entity, out var container))
+            if (!RemoveExpectedEntity(message.Entity, out var container))
                 return;
 
             if (xform.ParentUid != container.Owner)
@@ -167,8 +170,6 @@ namespace Robust.Client.GameObjects
                 // Ah well, the sever should send a new container state that updates expected entities so just ignore it for now.
                 return;
             }
-
-            RemoveExpectedEntity(message.Entity);
 
             if (container.Deleted)
                 return;
@@ -189,20 +190,35 @@ namespace Robust.Client.GameObjects
 
         public void AddExpectedEntity(EntityUid uid, IContainer container)
         {
-            if (ExpectedEntities.ContainsKey(uid))
-                return;
+            DebugTools.Assert(!TryComp(uid, out MetaDataComponent? meta) ||
+                (meta.Flags & ( MetaDataFlags.Detached | MetaDataFlags.InContainer) ) == MetaDataFlags.Detached,
+                $"Adding entity {ToPrettyString(uid)} to list of expected entities for container {container.ID} in {ToPrettyString(container.Owner)}, despite it already being in a container.");
 
-            ExpectedEntities.Add(uid, container);
+            if (!ExpectedEntities.TryAdd(uid, container))
+            {
+                // It is possible that we were expecting this entity in one container, but it has now moved to another
+                // container, and this entity's state is just being applied before the old container is getting updated.
+                var oldContainer = ExpectedEntities[uid];
+                ExpectedEntities[uid] = container;
+                DebugTools.Assert(oldContainer.ExpectedEntities.Contains(uid),
+                    $"Entity {ToPrettyString(uid)} is expected, but not expected in the given container? Container: {oldContainer.ID} in {ToPrettyString(oldContainer.Owner)}");
+                oldContainer.ExpectedEntities.Remove(uid);
+            }
+
+            DebugTools.Assert(!container.ExpectedEntities.Contains(uid),
+                $"Contained entity {ToPrettyString(uid)} was not yet expected by the system, but was already expected by the container: {container.ID} in {ToPrettyString(container.Owner)}");
             container.ExpectedEntities.Add(uid);
         }
 
-        public void RemoveExpectedEntity(EntityUid uid)
+        public bool RemoveExpectedEntity(EntityUid uid, [NotNullWhen(true)] out IContainer? container)
         {
-            if (!ExpectedEntities.TryGetValue(uid, out var container))
-                return;
+            if (!ExpectedEntities.Remove(uid, out container))
+                return false;
 
-            ExpectedEntities.Remove(uid);
+            DebugTools.Assert(container.ExpectedEntities.Contains(uid),
+                $"While removing expected contained entity {ToPrettyString(uid)}, the entity was missing from the container expected set. Container: {container.ID} in {ToPrettyString(container.Owner)}");
             container.ExpectedEntities.Remove(uid);
+            return true;
         }
 
         public override void FrameUpdate(float frameTime)

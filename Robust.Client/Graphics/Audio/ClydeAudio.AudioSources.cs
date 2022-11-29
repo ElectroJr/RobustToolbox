@@ -5,9 +5,9 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using OpenToolkit.Audio.OpenAL;
-using OpenToolkit.Audio.OpenAL.Extensions.Creative.EFX;
-using OpenToolkit.Mathematics;
+using OpenTK.Audio.OpenAL;
+using OpenTK.Audio.OpenAL.Extensions.Creative.EFX;
+using OpenTK.Mathematics;
 using Robust.Client.Audio;
 using Robust.Shared;
 using Robust.Shared.Configuration;
@@ -84,6 +84,17 @@ namespace Robust.Client.Graphics.Audio
                 }
             }
 
+            public bool IsGlobal
+            {
+                get
+                {
+                    _checkDisposed();
+                    AL.GetSource(SourceHandle, ALSourceb.SourceRelative, out var value);
+                    _master._checkAlError();
+                    return value;
+                }
+            }
+
             public void SetGlobal()
             {
                 _checkDisposed();
@@ -105,7 +116,7 @@ namespace Robust.Client.Graphics.Audio
                 _master._checkAlError();
             }
 
-            public void SetVolumeDirect(float scale)
+            public void SetVolumeDirect(float gain)
             {
                 _checkDisposed();
                 var priorOcclusion = 1f;
@@ -114,7 +125,7 @@ namespace Robust.Client.Graphics.Audio
                     AL.GetSource(SourceHandle, ALSourcef.Gain, out var priorGain);
                     priorOcclusion = priorGain / _gain;
                 }
-                _gain = scale;
+                _gain = gain;
                 AL.Source(SourceHandle, ALSourcef.Gain, _gain * priorOcclusion);
                 _master._checkAlError();
             }
@@ -373,7 +384,7 @@ namespace Robust.Client.Graphics.Audio
                 _master._checkAlError();
             }
 
-            public void SetVolumeDirect(float scale)
+            public void SetVolumeDirect(float gain)
             {
                 _checkDisposed();
                 var priorOcclusion = 1f;
@@ -382,7 +393,7 @@ namespace Robust.Client.Graphics.Audio
                     AL.GetSource(SourceHandle!.Value, ALSourcef.Gain, out var priorGain);
                     priorOcclusion = priorGain / _gain;
                 }
-                _gain = scale;
+                _gain = gain;
                 AL.Source(SourceHandle!.Value, ALSourcef.Gain, _gain * priorOcclusion);
                 _master._checkAlError();
             }
@@ -444,6 +455,17 @@ namespace Robust.Client.Graphics.Audio
                 // ReSharper disable once PossibleInvalidOperationException
                 AL.Source(SourceHandle!.Value, ALSourcef.SecOffset, seconds);
                 _master._checkAlError();
+            }
+
+            public bool IsGlobal
+            {
+                get
+                {
+                    _checkDisposed();
+                    AL.GetSource(SourceHandle!.Value, ALSourceb.SourceRelative, out var value);
+                    _master._checkAlError();
+                    return value;
+                }
             }
 
             public bool SetPosition(Vector2 position)

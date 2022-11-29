@@ -5,6 +5,7 @@ using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
 using Robust.Shared.Map;
+using Robust.Shared.Map.Components;
 using Robust.Shared.Maths;
 
 namespace Robust.Client.Graphics.Clyde
@@ -13,7 +14,7 @@ namespace Robust.Client.Graphics.Clyde
     {
         [Dependency] private readonly IEntityManager _entityManager = default!;
 
-        private readonly Dictionary<GridId, Dictionary<Vector2i, MapChunkData>> _mapChunkData =
+        private readonly Dictionary<EntityUid, Dictionary<Vector2i, MapChunkData>> _mapChunkData =
             new();
 
         private int _verticesPerChunk(MapChunk chunk) => chunk.ChunkSize * chunk.ChunkSize * 4;
@@ -40,30 +41,22 @@ namespace Robust.Client.Graphics.Clyde
 
             foreach (var mapGrid in _mapManager.FindGridsIntersecting(mapId, worldBounds))
             {
-                var grid = (IMapGridInternal) mapGrid;
-
-                if (!_mapChunkData.ContainsKey(grid.Index))
-                {
+                if (!_mapChunkData.ContainsKey(mapGrid.GridEntityId))
                     continue;
-                }
 
-                var transform = _entityManager.GetComponent<TransformComponent>(grid.GridEntityId);
+                var transform = _entityManager.GetComponent<TransformComponent>(mapGrid.GridEntityId);
                 gridProgram.SetUniform(UniIModelMatrix, transform.WorldMatrix);
-                var enumerator = grid.GetMapChunks(worldBounds);
+                var enumerator = mapGrid.GetMapChunks(worldBounds);
 
                 while (enumerator.MoveNext(out var chunk))
                 {
-                    if (_isChunkDirty(grid, chunk))
-                    {
-                        _updateChunkMesh(grid, chunk);
-                    }
+                    if (_isChunkDirty(mapGrid, chunk))
+                        _updateChunkMesh(mapGrid, chunk);
 
-                    var datum = _mapChunkData[grid.Index][chunk.Indices];
+                    var datum = _mapChunkData[mapGrid.GridEntityId][chunk.Indices];
 
                     if (datum.TileCount == 0)
-                    {
                         continue;
-                    }
 
                     BindVertexArray(datum.VAO);
                     CheckGlError();
@@ -75,9 +68,9 @@ namespace Robust.Client.Graphics.Clyde
             }
         }
 
-        private void _updateChunkMesh(IMapGrid grid, MapChunk chunk)
+        private void _updateChunkMesh(MapGridComponent grid, MapChunk chunk)
         {
-            var data = _mapChunkData[grid.Index];
+            var data = _mapChunkData[grid.GridEntityId];
 
             if (!data.TryGetValue(chunk.Indices, out var datum))
             {
@@ -135,7 +128,7 @@ namespace Robust.Client.Graphics.Clyde
             datum.TileCount = i;
         }
 
-        private unsafe MapChunkData _initChunkBuffers(IMapGrid grid, MapChunk chunk)
+        private unsafe MapChunkData _initChunkBuffers(MapGridComponent grid, MapChunk chunk)
         {
             var vao = GenVertexArray();
             BindVertexArray(vao);
@@ -145,11 +138,11 @@ namespace Robust.Client.Graphics.Clyde
             var eboSize = _indicesPerChunk(chunk) * sizeof(ushort);
 
             var vbo = new GLBuffer(this, BufferTarget.ArrayBuffer, BufferUsageHint.DynamicDraw,
-                vboSize, $"Grid {grid.Index} chunk {chunk.Indices} VBO");
+                vboSize, $"Grid {grid.GridEntityId} chunk {chunk.Indices} VBO");
             var ebo = new GLBuffer(this, BufferTarget.ElementArrayBuffer, BufferUsageHint.DynamicDraw,
-                eboSize, $"Grid {grid.Index} chunk {chunk.Indices} EBO");
+                eboSize, $"Grid {grid.GridEntityId} chunk {chunk.Indices} EBO");
 
-            ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, vao, $"Grid {grid.Index} chunk {chunk.Indices} VAO");
+            ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, vao, $"Grid {grid.GridEntityId} chunk {chunk.Indices} VAO");
             SetupVAOLayout();
             CheckGlError();
 
@@ -163,19 +156,19 @@ namespace Robust.Client.Graphics.Clyde
                 Dirty = true
             };
 
-            _mapChunkData[grid.Index].Add(chunk.Indices, datum);
+            _mapChunkData[grid.GridEntityId].Add(chunk.Indices, datum);
             return datum;
         }
 
-        private bool _isChunkDirty(IMapGrid grid, MapChunk chunk)
+        private bool _isChunkDirty(MapGridComponent grid, MapChunk chunk)
         {
-            var data = _mapChunkData[grid.Index];
+            var data = _mapChunkData[grid.GridEntityId];
             return !data.TryGetValue(chunk.Indices, out var datum) || datum.Dirty;
         }
 
-        public void _setChunkDirty(IMapGrid grid, Vector2i chunk)
+        public void _setChunkDirty(MapGridComponent grid, Vector2i chunk)
         {
-            var data = _mapChunkData[grid.Index];
+            var data = _mapChunkData[grid.GridEntityId];
             if (data.TryGetValue(chunk, out var datum))
             {
                 datum.Dirty = true;
@@ -195,22 +188,20 @@ namespace Robust.Client.Graphics.Clyde
 
         private void _updateTileMapOnUpdate(TileChangedEvent args)
         {
-            var grid = _mapManager.GetGrid(args.NewTile.GridIndex);
+            var grid = _mapManager.GetGrid(args.NewTile.GridUid);
             var chunk = grid.GridTileToChunkIndices(new Vector2i(args.NewTile.X, args.NewTile.Y));
             _setChunkDirty(grid, chunk);
         }
 
         private void _updateOnGridCreated(GridStartupEvent ev)
         {
-            var gridId = ev.GridId;
-            Logger.DebugS("grid", $"Adding {gridId} to grid renderer");
+            var gridId = ev.EntityUid;
             _mapChunkData.Add(gridId, new Dictionary<Vector2i, MapChunkData>());
         }
 
         private void _updateOnGridRemoved(GridRemovalEvent ev)
         {
-            var gridId = ev.GridId;
-            Logger.DebugS("grid", $"Removing {gridId} from grid renderer");
+            var gridId = ev.EntityUid;
 
             var data = _mapChunkData[gridId];
             foreach (var chunkDatum in data.Values)

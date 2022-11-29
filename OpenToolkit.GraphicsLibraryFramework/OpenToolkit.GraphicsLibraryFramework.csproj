@@ -5,7 +5,7 @@
     <!-- Work around https://github.com/dotnet/project-system/issues/4314 -->
     <TargetFramework>$(TargetFramework)</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <LangVersion>7.3</LangVersion>
+    <LangVersion>9.0</LangVersion>
   </PropertyGroup>
 
   <Import Project="..\MSBuild\Robust.DefineConstants.targets" />
@@ -14,7 +14,4 @@
     <PackageReference Condition="'$(TargetFramework)' == 'net472'" Include="System.Memory" Version="4.5.3" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Robust.Shared\Robust.Shared.csproj" />
-  </ItemGroup>
 </Project>

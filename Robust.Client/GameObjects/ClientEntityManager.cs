@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Prometheus;
 using Robust.Client.GameStates;
 using Robust.Client.Player;
+using Robust.Client.Timing;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Network;
 using Robust.Shared.Network.Messages;
-using Robust.Shared.Timing;
 using Robust.Shared.Utility;
 
 namespace Robust.Client.GameObjects
@@ -19,8 +20,9 @@ namespace Robust.Client.GameObjects
     {
         [Dependency] private readonly IPlayerManager _playerManager = default!;
         [Dependency] private readonly IClientNetManager _networkManager = default!;
-        [Dependency] private readonly IClientGameStateManager _gameStateManager = default!;
-        [Dependency] private readonly IGameTiming _gameTiming = default!;
+        [Dependency] private readonly IClientGameTiming _gameTiming = default!;
+        [Dependency] private readonly IClientGameStateManager _stateMan = default!;
+        [Dependency] private readonly IBaseClient _client = default!;
 
         protected override int NextEntityUid { get; set; } = EntityUid.ClientUid + 1;
 
@@ -30,6 +32,12 @@ namespace Robust.Client.GameObjects
             ReceivedSystemMessage += (_, systemMsg) => EventBus.RaiseEvent(EventSource.Network, systemMsg);
 
             base.Initialize();
+        }
+
+        public override void FlushEntities()
+        {
+            using var _ = _gameTiming.StartStateApplicationArea();
+            base.FlushEntities();
         }
 
         EntityUid IClientEntityManagerInternal.CreateEntity(string? prototypeName, EntityUid uid)
@@ -45,6 +53,45 @@ namespace Robust.Client.GameObjects
         void IClientEntityManagerInternal.StartEntity(EntityUid entity)
         {
             base.StartEntity(entity);
+        }
+
+        /// <inheritdoc />
+        public override void DirtyEntity(EntityUid uid, MetaDataComponent? meta = null)
+        {
+            //  Client only dirties during prediction
+            if (_gameTiming.InPrediction)
+                base.DirtyEntity(uid, meta);
+        }
+
+        /// <inheritdoc />
+        public override void Dirty(Component component, MetaDataComponent? meta = null)
+        {
+            //  Client only dirties during prediction
+            if (_gameTiming.InPrediction)
+                base.Dirty(component, meta);
+        }
+
+        public override EntityStringRepresentation ToPrettyString(EntityUid uid)
+        {
+            if (_playerManager.LocalPlayer?.ControlledEntity == uid)
+                return base.ToPrettyString(uid) with { Session = _playerManager.LocalPlayer.Session };
+            else
+                return base.ToPrettyString(uid);
+        }
+
+        public override void RaisePredictiveEvent<T>(T msg)
+        {
+            var localPlayer = _playerManager.LocalPlayer;
+            DebugTools.AssertNotNull(localPlayer);
+
+            var sequence = _stateMan.SystemMessageDispatched(msg);
+            EntityNetManager?.SendSystemNetworkMessage(msg, sequence);
+
+            DebugTools.Assert(!_stateMan.IsPredictionEnabled || _gameTiming.InPrediction && _gameTiming.IsFirstTimePredicted || _client.RunLevel != ClientRunLevel.Connected);
+
+            var eventArgs = new EntitySessionEventArgs(localPlayer!.Session);
+            EventBus.RaiseEvent(EventSource.Local, msg);
+            EventBus.RaiseEvent(EventSource.Local, new EntitySessionMessage<T>(eventArgs, msg));
         }
 
         #region IEntityNetworkManager impl
@@ -67,11 +114,11 @@ namespace Robust.Client.GameObjects
         {
             using (histogram?.WithLabels("EntityNet").NewTimer())
             {
-                while (_queue.Count != 0 && _queue.Peek().msg.SourceTick <= _gameStateManager.CurServerTick)
+                while (_queue.Count != 0 && _queue.Peek().msg.SourceTick <= _gameTiming.LastRealTick)
                 {
                     var (_, msg) = _queue.Take();
                     // Logger.DebugS("net.ent", "Dispatching: {0}: {1}", seq, msg);
-                    DispatchMsgEntity(msg);
+                    DispatchReceivedNetworkMsg(msg);
                 }
             }
 
@@ -79,7 +126,7 @@ namespace Robust.Client.GameObjects
         }
 
         /// <inheritdoc />
-        public void SendSystemNetworkMessage(EntityEventArgs message)
+        public void SendSystemNetworkMessage(EntityEventArgs message, bool recordReplay = true)
         {
             SendSystemNetworkMessage(message, default(uint));
         }
@@ -103,9 +150,9 @@ namespace Robust.Client.GameObjects
 
         private void HandleEntityNetworkMessage(MsgEntity message)
         {
-            if (message.SourceTick <= _gameStateManager.CurServerTick)
+            if (message.SourceTick <= _gameTiming.LastRealTick)
             {
-                DispatchMsgEntity(message);
+                DispatchReceivedNetworkMsg(message);
                 return;
             }
 
@@ -115,18 +162,22 @@ namespace Robust.Client.GameObjects
             _queue.Add((++_incomingMsgSequence, message));
         }
 
-        private void DispatchMsgEntity(MsgEntity message)
+        private void DispatchReceivedNetworkMsg(MsgEntity message)
         {
             switch (message.Type)
             {
                 case EntityMessageType.SystemMessage:
-                    var msg = message.SystemMessage;
-                    var sessionType = typeof(EntitySessionMessage<>).MakeGenericType(msg.GetType());
-                    var sessionMsg = Activator.CreateInstance(sessionType, new EntitySessionEventArgs(_playerManager.LocalPlayer!.Session), msg)!;
-                    ReceivedSystemMessage?.Invoke(this, msg);
-                    ReceivedSystemMessage?.Invoke(this, sessionMsg);
+                    DispatchReceivedNetworkMsg(message.SystemMessage);
                     return;
             }
+        }
+
+        public void DispatchReceivedNetworkMsg(EntityEventArgs msg)
+        {
+            var sessionType = typeof(EntitySessionMessage<>).MakeGenericType(msg.GetType());
+            var sessionMsg = Activator.CreateInstance(sessionType, new EntitySessionEventArgs(_playerManager.LocalPlayer!.Session), msg)!;
+            ReceivedSystemMessage?.Invoke(this, msg);
+            ReceivedSystemMessage?.Invoke(this, sessionMsg);
         }
 
         private sealed class MessageTickComparer : IComparer<(uint seq, MsgEntity msg)>

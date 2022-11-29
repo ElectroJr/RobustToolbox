@@ -2,14 +2,14 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using Robust.Shared.GameObjects;
 using Robust.Shared.GameStates;
 using Robust.Shared.IoC;
+using Robust.Shared.Map;
+using Robust.Shared.Maths;
+using Robust.Shared.Network;
 using Robust.Shared.Serialization;
-using Robust.Shared.Serialization.Manager;
 using Robust.Shared.Serialization.Manager.Attributes;
-using Robust.Shared.ViewVariables;
 
 namespace Robust.Shared.Containers
 {
@@ -22,17 +22,22 @@ namespace Robust.Shared.Containers
     public sealed class ContainerManagerComponent : Component, IContainerManager, ISerializationHooks
     {
         [Dependency] private readonly IDynamicTypeFactoryInternal _dynFactory = default!;
+        [Dependency] private readonly IEntityManager _entMan = default!;
+        [Dependency] private readonly INetManager _netMan = default!;
 
-        [ViewVariables]
         [DataField("containers")]
         public Dictionary<string, IContainer> Containers = new();
 
         void ISerializationHooks.AfterDeserialization()
         {
-            foreach (var (_, container) in Containers)
+            // TODO remove ISerializationHooks I guess the IDs can be set by a custom serializer for the dictionary? But
+            // the component??? Maybe other systems need to stop assuming that containers have been initialized during
+            // their own init.
+            foreach (var (id, container) in Containers)
             {
                 var baseContainer = (BaseContainer) container;
                 baseContainer.Manager = this;
+                baseContainer.ID = id;
             }
         }
 
@@ -41,33 +46,19 @@ namespace Robust.Shared.Containers
         {
             base.OnRemove();
 
-            // IContainer.Shutdown modifies the _containers collection
-            foreach (var container in Containers.Values.ToArray())
+            foreach (var container in Containers.Values)
             {
-                container.Shutdown();
+                container.Shutdown(_entMan, _netMan);
             }
 
             Containers.Clear();
         }
 
         /// <inheritdoc />
-        protected override void Initialize()
-        {
-            base.Initialize();
-
-            foreach (var container in Containers)
-            {
-                var baseContainer = (BaseContainer)container.Value;
-                baseContainer.Manager = this;
-                baseContainer.ID = container.Key;
-            }
-        }
-
-        /// <inheritdoc />
         public override ComponentState GetComponentState()
         {
             // naive implementation that just sends the full state of the component
-            List<ContainerManagerComponentState.ContainerData> containerSet = new(Containers.Count);
+            Dictionary<string, ContainerManagerComponentState.ContainerData> containerSet = new(Containers.Count);
 
             foreach (var container in Containers.Values)
             {
@@ -79,7 +70,7 @@ namespace Robust.Shared.Containers
                 }
 
                 var sContainer = new ContainerManagerComponentState.ContainerData(container.ContainerType, container.ID, container.ShowContents, container.OccludesLight, uidArr);
-                containerSet.Add(sContainer);
+                containerSet.Add(container.ID, sContainer);
             }
 
             return new ContainerManagerComponentState(containerSet);
@@ -140,26 +131,18 @@ namespace Robust.Shared.Containers
         }
 
         /// <inheritdoc />
-        public void ForceRemove(EntityUid entity)
-        {
-            foreach (var container in Containers.Values)
-            {
-                if (container.Contains(entity)) container.ForceRemove(entity);
-            }
-        }
-
-        /// <inheritdoc />
-        public void InternalContainerShutdown(IContainer container)
-        {
-            Containers.Remove(container.ID);
-        }
-
-        /// <inheritdoc />
-        public bool Remove(EntityUid entity)
+        public bool Remove(EntityUid toremove,
+            TransformComponent? xform = null,
+            MetaDataComponent? meta = null,
+            bool reparent = true,
+            bool force = false,
+            EntityCoordinates? destination = null,
+            Angle? localRotation = null)
         {
             foreach (var containers in Containers.Values)
             {
-                if (containers.Contains(entity)) return containers.Remove(entity);
+                if (containers.Contains(toremove))
+                    return containers.Remove(toremove, _entMan, xform, meta, reparent, force, destination, localRotation);
             }
 
             return true; // If we don't contain the entity, it will always be removed
@@ -186,11 +169,11 @@ namespace Robust.Shared.Containers
         [Serializable, NetSerializable]
         internal sealed class ContainerManagerComponentState : ComponentState
         {
-            public List<ContainerData> ContainerSet;
+            public Dictionary<string, ContainerData> Containers;
 
-            public ContainerManagerComponentState(List<ContainerData> containers)
+            public ContainerManagerComponentState(Dictionary<string, ContainerData> containers)
             {
-                ContainerSet = containers;
+                Containers = containers;
             }
 
             [Serializable, NetSerializable]
@@ -223,23 +206,19 @@ namespace Robust.Shared.Containers
         }
 
         [DataDefinition]
-        private struct ContainerPrototypeData : IPopulateDefaultValues
+        private struct ContainerPrototypeData
         {
-            [DataField("entities")]
-            public List<EntityUid> Entities;
+            [DataField("entities")] public List<EntityUid> Entities = new ();
 
-            [DataField("type")]
-            public string? Type;
+            [DataField("type")] public string? Type = null;
+
+            // explicit parameterless constructor is required.
+            public ContainerPrototypeData() { }
 
             public ContainerPrototypeData(List<EntityUid> entities, string type)
             {
                 Entities = entities;
                 Type = type;
-            }
-
-            public void PopulateDefaultValues()
-            {
-                Entities = new List<EntityUid>();
             }
         }
 

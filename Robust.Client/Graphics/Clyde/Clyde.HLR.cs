@@ -14,7 +14,6 @@ using Robust.Shared;
 using Robust.Shared.Enums;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Profiling;
-using OGLTextureWrapMode = OpenToolkit.Graphics.OpenGL.TextureWrapMode;
 using Robust.Shared.Physics;
 
 namespace Robust.Client.Graphics.Clyde
@@ -96,7 +95,7 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             // Clear screen to correct color.
-            ClearFramebuffer(_userInterfaceManager.GetMainClearColor());
+            ClearFramebuffer(ConvertClearFromSrgb(_userInterfaceManager.GetMainClearColor()));
 
             using (DebugGroup("UI"))
             using (_prof.Group("UI"))
@@ -124,20 +123,25 @@ namespace Robust.Client.Graphics.Clyde
             }
         }
 
-        private void RenderSingleOverlay(Overlay overlay, Viewport vp, OverlaySpace space, in Box2 worldBox, in Box2Rotated worldBounds)
+        private void RenderSingleWorldOverlay(Overlay overlay, Viewport vp, OverlaySpace space, in Box2 worldBox, in Box2Rotated worldBounds)
         {
+            DebugTools.Assert(space != OverlaySpace.ScreenSpaceBelowWorld && space != OverlaySpace.ScreenSpace);
+
+            var args = new OverlayDrawArgs(space, null, vp, _renderHandle.DrawingHandleWorld, new UIBox2i((0, 0), vp.Size), vp.Eye!.Position.MapId, worldBox, worldBounds);
+
+            if (!overlay.BeforeDraw(args))
+                return;
+
             if (overlay.RequestScreenTexture)
             {
                 FlushRenderQueue();
-                UpdateOverlayScreenTexture(space, vp.RenderTarget);
+                overlay.ScreenTexture = CopyScreenTexture(vp.RenderTarget);
             }
 
-            if (overlay.OverwriteTargetFrameBuffer())
-            {
+            if (overlay.OverwriteTargetFrameBuffer)
                 ClearFramebuffer(default);
-            }
 
-            overlay.ClydeRender(_renderHandle, space, null, vp, new UIBox2i((0, 0), vp.Size), worldBox, worldBounds);
+            overlay.Draw(args);
         }
 
         private void RenderOverlays(Viewport vp, OverlaySpace space, in Box2 worldBox, in Box2Rotated worldBounds)
@@ -146,7 +150,7 @@ namespace Robust.Client.Graphics.Clyde
             {
                 foreach (var overlay in GetOverlaysForSpace(space))
                 {
-                    RenderSingleOverlay(overlay, vp, space, worldBox, worldBounds);
+                    RenderSingleWorldOverlay(overlay, vp, space, worldBox, worldBounds);
                 }
 
                 FlushRenderQueue();
@@ -164,8 +168,9 @@ namespace Robust.Client.Graphics.Clyde
 
             var list = GetOverlaysForSpace(space);
 
-            var worldAABB = CalcWorldAABB(vp);
             var worldBounds = CalcWorldBounds(vp);
+            var worldAABB = worldBounds.CalcBoundingBox();
+
             var args = new OverlayDrawArgs(space, vpControl, vp, handle, bounds, vp.Eye!.Position.MapId, worldAABB, worldBounds);
 
             foreach (var overlay in list)
@@ -198,47 +203,26 @@ namespace Robust.Client.Graphics.Clyde
         /// <summary>
         ///    Sends SCREEN_TEXTURE to all overlays in the given OverlaySpace that request it.
         /// </summary>
-        private bool UpdateOverlayScreenTexture(OverlaySpace space, RenderTexture texture)
+        private Texture? CopyScreenTexture(RenderTexture texture)
         {
             //This currently does NOT consider viewports and just grabs the current screen framebuffer. This will need to be improved upon in the future.
-            List<Overlay> oTargets = new List<Overlay>();
-            foreach (var overlay in _overlayManager.AllOverlays)
+
+            if (ScreenBufferTexture == null)
+                return null;
+
+            if (lastFrameSize != texture.Size)
             {
-                if (overlay.RequestScreenTexture && overlay.Space == space)
-                {
-                    oTargets.Add(overlay);
-                }
+                GL.BindTexture(TextureTarget.Texture2D, screenBufferHandle.Handle);
+
+                GL.TexImage2D(TextureTarget.Texture2D, 0,
+                    _hasGLSrgb ? PixelInternalFormat.Srgb8Alpha8 : PixelInternalFormat.Rgba8, texture.Size.X,
+                    texture.Size.Y, 0,
+                    PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
             }
 
-            if (oTargets.Count > 0 && ScreenBufferTexture != null)
-            {
-                if (lastFrameSize != texture.Size)
-                {
-                    GL.BindTexture(TextureTarget.Texture2D, screenBufferHandle.Handle);
-
-                    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS,
-                        (int)OGLTextureWrapMode.MirroredRepeat);
-                    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT,
-                        (int)OGLTextureWrapMode.MirroredRepeat);
-
-                    GL.TexImage2D(TextureTarget.Texture2D, 0,
-                        _hasGLSrgb ? PixelInternalFormat.Srgb8Alpha8 : PixelInternalFormat.Rgba8, texture.Size.X,
-                        texture.Size.Y, 0,
-                        PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero);
-                }
-
-                lastFrameSize = texture.Size;
-                CopyRenderTextureToTexture(texture, ScreenBufferTexture);
-                foreach (Overlay overlay in oTargets)
-                {
-                    overlay.ScreenTexture = ScreenBufferTexture;
-                }
-
-                oTargets.Clear();
-                return true;
-            }
-
-            return false;
+            lastFrameSize = texture.Size;
+            CopyRenderTextureToTexture(texture, ScreenBufferTexture);
+            return ScreenBufferTexture;
         }
 
         private void DrawEntities(Viewport viewport, Box2Rotated worldBounds, Box2 worldAABB, IEye eye)
@@ -274,10 +258,9 @@ namespace Robust.Client.Graphics.Clyde
             {
                 ref var entry = ref _drawingSpriteList[indexList[i]];
 
-                for (var j = overlayIndex; j < worldOverlays.Count; j++)
+                for (; overlayIndex < worldOverlays.Count; overlayIndex++)
                 {
-                    overlayIndex = j;
-                    var overlay = worldOverlays[j];
+                    var overlay = worldOverlays[overlayIndex];
 
                     if (overlay.ZIndex > entry.sprite.DrawDepth)
                     {
@@ -291,14 +274,14 @@ namespace Robust.Client.Graphics.Clyde
                         flushed = true;
                     }
 
-                    RenderSingleOverlay(overlay, viewport, OverlaySpace.WorldSpaceEntities, worldAABB, worldBounds);
+                    RenderSingleWorldOverlay(overlay, viewport, OverlaySpace.WorldSpaceEntities, worldAABB, worldBounds);
                 }
 
                 Vector2i roundedPos = default;
                 if (entry.sprite.PostShader != null)
                 {
                     // get the size of the sprite on screen, scaled slightly to allow for shaders that increase the final sprite size.
-                    var screenSpriteSize = (Vector2i) (entry.spriteScreenBB.Size * PostShadeScale).Rounded();
+                    var screenSpriteSize = (Vector2i)(entry.spriteScreenBB.Size * PostShadeScale).Rounded();
 
                     // I'm not 100% sure why it works, but without it post-shader
                     // can be lower or upper by 1px than original sprite depending on sprite rotation or scale
@@ -308,8 +291,19 @@ namespace Robust.Client.Graphics.Clyde
                     if (screenSpriteSize.Y % 2 != 0)
                         screenSpriteSize.Y++;
 
+                    bool exit = false;
+                    if (entry.sprite.GetScreenTexture)
+                    {
+                        FlushRenderQueue();
+                        var tex = CopyScreenTexture(viewport.RenderTarget);
+                        if (tex == null)
+                            exit = true;
+                        else
+                            entry.sprite.PostShader.SetParameter("SCREEN_TEXTURE", tex);
+                    }
+
                     // check that sprite size is valid
-                    if (screenSpriteSize.X > 0 && screenSpriteSize.Y > 0)
+                    if (!exit && screenSpriteSize.X > 0 && screenSpriteSize.Y > 0)
                     {
                         // This is really bare-bones render target re-use logic. One problem is that if it ever draws a
                         // single large entity in a frame, the render target may be way to big for every subsequent
@@ -331,9 +325,9 @@ namespace Robust.Client.Graphics.Clyde
                                 new RenderTargetFormatParameters(RenderTargetColorFormat.Rgba8Srgb, true),
                                 name: nameof(entityPostRenderTarget));
                         }
-                        
+
                         _renderHandle.UseRenderTarget(entityPostRenderTarget);
-                        _renderHandle.Clear(new Color());
+                        _renderHandle.Clear(default, 0, ClearBufferMask.ColorBufferBit | ClearBufferMask.StencilBufferBit);
 
                         // Calculate viewport so that the entity thinks it's drawing to the same position,
                         // which is necessary for light application,
@@ -342,6 +336,10 @@ namespace Robust.Client.Graphics.Clyde
                         var flippedPos = new Vector2i(roundedPos.X, screenSize.Y - roundedPos.Y);
                         flippedPos -= entityPostRenderTarget.Size / 2;
                         _renderHandle.Viewport(Box2i.FromDimensions(-flippedPos, screenSize));
+
+                        if (entry.sprite.RaiseShaderEvent)
+                            _entityManager.EventBus.RaiseLocalEvent(entry.sprite.Owner,
+                                new BeforePostShaderRenderEvent(entry.sprite, viewport), false);
                     }
                 }
 
@@ -374,7 +372,7 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             // draw remainder of overlays
-            for (var j = overlayIndex; j < worldOverlays.Count; j++)
+            for (; overlayIndex < worldOverlays.Count; overlayIndex++)
             {
                 if (!flushed)
                 {
@@ -382,7 +380,7 @@ namespace Robust.Client.Graphics.Clyde
                     flushed = true;
                 }
 
-                RenderSingleOverlay(worldOverlays[j], viewport, OverlaySpace.WorldSpaceEntities, worldAABB, worldBounds);
+                RenderSingleWorldOverlay(worldOverlays[overlayIndex], viewport, OverlaySpace.WorldSpaceEntities, worldAABB, worldBounds);
             }
 
             ArrayPool<int>.Shared.Return(indexList);
@@ -399,29 +397,28 @@ namespace Robust.Client.Graphics.Clyde
             var xforms = _entityManager.GetEntityQuery<TransformComponent>();
             var xformSys = _entityManager.EntitySysManager.GetEntitySystem<TransformSystem>();
 
-            // Construct a matrix equivalent for Viewport.WorldToLocal()
-            eye.GetViewMatrix(out var viewMatrix, view.RenderScale);
-            var uiProjmatrix = Matrix3.Identity;
-            uiProjmatrix.R0C0 = EyeManager.PixelsPerMeter;
-            uiProjmatrix.R1C1 = -EyeManager.PixelsPerMeter;
-            uiProjmatrix.R0C2 = view.Size.X / 2f;
-            uiProjmatrix.R1C2 = view.Size.Y / 2f;
-            var worldToLocal = viewMatrix * uiProjmatrix;
+            // matrix equivalent for Viewport.WorldToLocal()
+            var worldToLocal = view.GetWorldToLocalMatrix();
+            var spriteState = (list, xformSys, xforms, eye, worldToLocal);
 
             foreach (var comp in _entitySystemManager.GetEntitySystem<RenderingTreeSystem>().GetRenderTrees(map, worldBounds))
             {
                 var bounds = xforms.GetComponent(comp.Owner).InvWorldMatrix.TransformBox(worldBounds);
 
-                comp.SpriteTree.QueryAabb(ref list, (
-                    ref RefList<(SpriteComponent sprite, Vector2 worldPos, Angle worldRot, Box2 spriteScreenBB)> state,
+                comp.SpriteTree.QueryAabb(ref spriteState, static
+                (ref (RefList<(SpriteComponent sprite, Vector2 worldPos, Angle worldRot, Box2 spriteScreenBB)> list,
+                        TransformSystem xformSys,
+                        EntityQuery<TransformComponent> xforms,
+                        IEye eye,
+                        Matrix3 worldToLocal) state,
                     in ComponentTreeEntry<SpriteComponent> value) =>
                 {
-                    ref var entry = ref state.AllocAdd();
+                    ref var entry = ref state.list.AllocAdd();
                     entry.sprite = value.Component;
-                    (entry.worldPos, entry.worldRot) = xformSys.GetWorldPositionRotation(value.Transform, xforms);
+                    (entry.worldPos, entry.worldRot) = state.xformSys.GetWorldPositionRotation(value.Transform, state.xforms);
 
-                    var spriteWorldBB = entry.sprite.CalculateRotatedBoundingBox(entry.worldPos, entry.worldRot, eye);
-                    entry.spriteScreenBB = worldToLocal.TransformBox(spriteWorldBB);
+                    var spriteWorldBB = entry.sprite.CalculateRotatedBoundingBox(entry.worldPos, entry.worldRot, state.eye);
+                    entry.spriteScreenBB = state.worldToLocal.TransformBox(spriteWorldBB);
                     return true;
 
                 }, bounds, true);
@@ -457,7 +454,8 @@ namespace Robust.Client.Graphics.Clyde
             {
                 BindRenderTargetFull(RtToLoaded(rt));
                 if (clearColor is not null)
-                    ClearFramebuffer(clearColor.Value);
+                    ClearFramebuffer(ConvertClearFromSrgb(clearColor.Value));
+
                 SetViewportImmediate(Box2i.FromDimensions(Vector2i.Zero, rt.Size));
                 _updateUniformConstants(rt.Size);
                 CalcScreenMatrices(rt.Size, out var proj, out var view);
@@ -502,8 +500,8 @@ namespace Robust.Client.Graphics.Clyde
                 SetProjViewFull(proj, view);
 
                 // Calculate world-space AABB for camera, to cull off-screen things.
-                var worldAABB = CalcWorldAABB(viewport);
                 var worldBounds = CalcWorldBounds(viewport);
+                var worldAABB = worldBounds.CalcBoundingBox();
 
                 if (_eyeManager.CurrentMap != MapId.Nullspace)
                 {
@@ -574,16 +572,6 @@ namespace Robust.Client.Graphics.Clyde
 
                 _currentViewport = oldVp;
             }, viewport.ClearColor);
-        }
-
-        private static Box2 CalcWorldAABB(Viewport viewport)
-        {
-            var eye = viewport.Eye;
-            if (eye == null)
-                return default;
-
-            // Will be larger than the actual viewport due to rotation.
-            return CalcWorldBounds(viewport).CalcBoundingBox();
         }
 
         private static Box2 GetAABB(IEye eye, Viewport viewport)

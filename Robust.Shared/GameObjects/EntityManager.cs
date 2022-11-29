@@ -1,15 +1,16 @@
-using System;
-using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using Prometheus;
 using Robust.Shared.IoC;
+using Robust.Shared.Log;
 using Robust.Shared.Map;
 using Robust.Shared.Profiling;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.Manager;
 using Robust.Shared.Timing;
 using Robust.Shared.Utility;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 
 namespace Robust.Shared.GameObjects
 {
@@ -27,6 +28,10 @@ namespace Robust.Shared.GameObjects
         [Dependency] private readonly IGameTiming _gameTiming = default!;
         [Dependency] private readonly ISerializationManager _serManager = default!;
         [Dependency] private readonly ProfManager _prof = default!;
+
+        // I feel like PJB might shed me for putting a system dependency here, but its required for setting entity
+        // positions on spawn....
+        private SharedTransformSystem _xforms = default!;
 
         #endregion Dependencies
 
@@ -88,6 +93,8 @@ namespace Robust.Shared.GameObjects
 
         public virtual void Startup()
         {
+            if(!Initialized)
+                throw new InvalidOperationException("Startup() called without Initialized");
             if (Started)
                 throw new InvalidOperationException("Startup() called multiple times");
 
@@ -95,6 +102,7 @@ namespace Robust.Shared.GameObjects
             _entitySystemManager.Initialize();
             Started = true;
             _eventBus.CalcOrdering();
+            _xforms = _entitySystemManager.GetEntitySystem<SharedTransformSystem>();
         }
 
         public virtual void Shutdown()
@@ -103,16 +111,15 @@ namespace Robust.Shared.GameObjects
             _eventBus.ClearEventTables();
             _entitySystemManager.Shutdown();
             ClearComponents();
-            Initialized = false;
             Started = false;
         }
 
-        public void Cleanup()
+        public virtual void Cleanup()
         {
-            QueuedDeletions.Clear();
-            QueuedDeletionsSet.Clear();
+            _componentFactory.ComponentAdded -= OnComponentAdded;
+            _componentFactory.ComponentReferenceAdded -= OnComponentReferenceAdded;
+            FlushEntities();
             _entitySystemManager.Clear();
-            Entities.Clear();
             _eventBus.Dispose();
             _eventBus = null!;
             ClearComponents();
@@ -178,7 +185,7 @@ namespace Robust.Shared.GameObjects
 
             if (coordinates.IsValid(this))
             {
-                GetComponent<TransformComponent>(newEntity).Coordinates = coordinates;
+                _xforms.SetCoordinates(GetComponent<TransformComponent>(newEntity), coordinates, unanchor: false);
             }
 
             return newEntity;
@@ -189,13 +196,36 @@ namespace Robust.Shared.GameObjects
         {
             var newEntity = CreateEntity(prototypeName);
             var transform = GetComponent<TransformComponent>(newEntity);
-            transform.AttachParent(_mapManager.GetMapEntityId(coordinates.MapId));
 
-            // TODO: Look at this bullshit. Please code a way to force-move an entity regardless of anchoring.
-            var oldAnchored = transform.Anchored;
-            transform.Anchored = false;
-            transform.WorldPosition = coordinates.Position;
-            transform.Anchored = oldAnchored;
+            var mapEnt = _mapManager.GetMapEntityId(coordinates.MapId);
+            TryGetComponent(mapEnt, out TransformComponent? mapXform);
+
+            // If the entity is being spawned in null-space, we will parent the entity to the null-map, IF it exists.
+            // For whatever reason, tests create and expect null-space to have a map entity, and it does on the client, but it
+            // intentionally doesn't on the server??
+            if (coordinates.MapId == MapId.Nullspace &&
+                mapXform == null)
+            {
+                transform._parent = EntityUid.Invalid;
+                transform.Anchored = false;
+                return newEntity;
+            }
+
+            if (mapXform == null)
+                throw new ArgumentException($"Attempted to spawn entity on an invalid map. Coordinates: {coordinates}");
+
+            EntityCoordinates coords;
+            if (transform.Anchored && _mapManager.TryFindGridAt(coordinates, out var grid))
+            {
+                coords = new(grid.GridEntityId, grid.WorldToLocal(coordinates.Position));
+                _xforms.SetCoordinates(transform, coords, unanchor: false);
+            }
+            else
+            {
+                coords = new EntityCoordinates(mapEnt, coordinates.Position);
+                _xforms.SetCoordinates(transform, coords, null, newParent: mapXform);
+            }
+
             return newEntity;
         }
 
@@ -230,19 +260,23 @@ namespace Robust.Shared.GameObjects
         /// <remarks>
         /// Calling Dirty on a component will call this directly.
         /// </remarks>
-        public void Dirty(EntityUid uid)
+        public virtual void DirtyEntity(EntityUid uid, MetaDataComponent? metadata = null)
         {
-            var currentTick = CurrentTick;
-
             // We want to retrieve MetaDataComponent even if its Deleted flag is set.
-            if (!_entTraitArray[CompIdx.ArrayIndex<MetaDataComponent>()].TryGetValue(uid, out var component))
-                throw new KeyNotFoundException($"Entity {uid} does not exist, cannot dirty it.");
+            if (metadata == null)
+            {
+                if (!_entTraitArray[CompIdx.ArrayIndex<MetaDataComponent>()].TryGetValue(uid, out var component))
+                    throw new KeyNotFoundException($"Entity {uid} does not exist, cannot dirty it.");
+                metadata = (MetaDataComponent)component;
+            }
+            else
+            {
+                DebugTools.Assert(metadata.Owner == uid);
+            }
 
-            var metadata = (MetaDataComponent)component;
+            if (metadata.EntityLastModifiedTick == _gameTiming.CurTick) return;
 
-            if (metadata.EntityLastModifiedTick == currentTick) return;
-
-            metadata.EntityLastModifiedTick = currentTick;
+            metadata.EntityLastModifiedTick = _gameTiming.CurTick;
 
             if (metadata.EntityLifeStage > EntityLifeStage.Initializing)
             {
@@ -250,7 +284,7 @@ namespace Robust.Shared.GameObjects
             }
         }
 
-        public void Dirty(Component component)
+        public virtual void Dirty(Component component, MetaDataComponent? meta = null)
         {
             var owner = component.Owner;
 
@@ -262,7 +296,7 @@ namespace Robust.Shared.GameObjects
             if (!component.NetSyncEnabled)
                 return;
 
-            Dirty(owner);
+            DirtyEntity(owner, meta);
             component.LastModifiedTick = CurrentTick;
         }
 
@@ -272,61 +306,147 @@ namespace Robust.Shared.GameObjects
         /// <param name="e">Entity to remove</param>
         public virtual void DeleteEntity(EntityUid e)
         {
+            // Some UIs get disposed after entity-manager has shut down and already deleted all entities.
+            if (!Started)
+                return;
+
+            var metaQuery = GetEntityQuery<MetaDataComponent>();
+            var xformQuery = GetEntityQuery<TransformComponent>();
+            var xformSys = EntitySysManager.GetEntitySystem<SharedTransformSystem>();
+
             // Networking blindly spams entities at this function, they can already be
             // deleted from being a child of a previously deleted entity
             // TODO: Why does networking need to send deletes for child entities?
-            if (!_entTraitArray[CompIdx.ArrayIndex<MetaDataComponent>()].TryGetValue(e, out var comp)
+            if (!metaQuery.TryGetComponent(e, out var comp)
                 || comp is not MetaDataComponent meta || meta.EntityDeleted)
                 return;
 
             if (meta.EntityLifeStage == EntityLifeStage.Terminating)
+            {
+                var msg = $"Called Delete on an entity already being deleted. Entity: {ToPrettyString(meta.Owner)}";
 #if !EXCEPTION_TOLERANCE
-                throw new InvalidOperationException("Called Delete on an entity already being deleted.");
+                throw new InvalidOperationException(msg);
 #else
-                return;
+                Logger.Error($"{msg}. Trace: {Environment.StackTrace}");
 #endif
+            }
 
-            RecursiveDeleteEntity(e);
+            // Notify all entities they are being terminated prior to detaching & deleting
+            RecursiveFlagEntityTermination(meta, metaQuery, xformQuery, xformSys);
+
+            // Then actually delete them
+            RecursiveDeleteEntity(meta, metaQuery, xformQuery, xformSys);
         }
 
-        private void RecursiveDeleteEntity(EntityUid uid)
+        private void RecursiveFlagEntityTermination(MetaDataComponent metadata, EntityQuery<MetaDataComponent> metaQuery, EntityQuery<TransformComponent> xformQuery, SharedTransformSystem xformSys)
         {
-            if (!TryGetComponent(uid, out MetaDataComponent? metadata) || metadata.EntityDeleted)
-                return; //TODO: Why was this still a child if it was already deleted?
-
-            var transform = GetComponent<TransformComponent>(uid);
+            var uid = metadata.Owner;
+            var transform = xformQuery.GetComponent(uid);
             metadata.EntityLifeStage = EntityLifeStage.Terminating;
-            var ev = new EntityTerminatingEvent(uid);
-            EventBus.RaiseLocalEvent(uid, ref ev, false);
 
-            // DeleteEntity modifies our _children collection, we must cache the collection to iterate properly
-            foreach (var child in transform._children.ToArray())
+            try
             {
-                // Recursion Alert
-                RecursiveDeleteEntity(child);
+                var ev = new EntityTerminatingEvent(uid);
+                EventBus.RaiseLocalEvent(uid, ref ev, true);
             }
+            catch (Exception e)
+            {
+                Logger.Error($"Caught exception while raising event {nameof(EntityTerminatingEvent)} on entity {ToPrettyString(uid, metadata)}\n{e}");
+            }
+
+            foreach (var child in transform._children)
+            {
+                if (!metaQuery.TryGetComponent(child, out var childMeta) || childMeta.EntityDeleted)
+                {
+                    Logger.Error($"A deleted entity was still the transform child of another entity. Parent: {ToPrettyString(uid, metadata)}.");
+                    transform._children.Remove(child);
+                    continue;
+                }
+
+                RecursiveFlagEntityTermination(childMeta, metaQuery, xformQuery, xformSys);
+            }
+        }
+
+        private void RecursiveDeleteEntity(MetaDataComponent metadata, EntityQuery<MetaDataComponent> metaQuery, EntityQuery<TransformComponent> xformQuery, SharedTransformSystem xformSys)
+        {
+            // Note about this method: #if EXCEPTION_TOLERANCE is not used here because we're gonna it in the future...
+
+            var uid = metadata.Owner;
+            var transform = xformQuery.GetComponent(uid);
+
+            // Detach the base entity to null before iterating over children
+            // This also ensures that the entity-lookup updates don't have to be re-run for every child (which recurses up the transform hierarchy).
+            if (transform.ParentUid != EntityUid.Invalid)
+            {
+                try
+                {
+                    xformSys.DetachParentToNull(transform, xformQuery, metaQuery);
+                }
+                catch (Exception e)
+                {
+                    Logger.Error($"Caught exception while trying to detach parent of entity '{ToPrettyString(uid, metadata)}' to null.\n{e}");
+                }
+            }
+
+            foreach (var child in transform._children)
+            {
+                try
+                {
+                    RecursiveDeleteEntity(metaQuery.GetComponent(child), metaQuery, xformQuery, xformSys);
+                }
+                catch(Exception e)
+                {
+                    Logger.Error($"Caught exception while trying to recursively delete child entity '{ToPrettyString(child)}' of '{ToPrettyString(uid, metadata)}'\n{e}");
+                }
+            }
+
+            if (transform._children.Count != 0)
+                Logger.Error($"Failed to delete all children of entity: {ToPrettyString(uid)}");
 
             // Shut down all components.
             foreach (var component in InSafeOrder(_entCompIndex[uid]))
             {
-                if(component.Running)
-                    component.LifeShutdown(this);
-            }
-
-            // map does not have a parent node, everything else needs to be detached
-            if (transform.ParentUid != EntityUid.Invalid)
-            {
-                // Detach from my parent, if any
-                transform.DetachParentToNull();
+                if (component.Running)
+                {
+                    try
+                    {
+                        component.LifeShutdown(this);
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.Error($"Caught exception while trying to call shutdown on component of entity '{ToPrettyString(uid, metadata)}'\n{e}");
+                    }
+                }
             }
 
             // Dispose all my components, in a safe order so transform is available
             DisposeComponents(uid);
-
             metadata.EntityLifeStage = EntityLifeStage.Deleted;
-            EntityDeleted?.Invoke(uid);
+
+            try
+            {
+                EntityDeleted?.Invoke(uid);
+            }
+            catch (Exception e)
+            {
+                Logger.Error($"Caught exception while invoking event {nameof(EntityDeleted)} on '{ToPrettyString(uid, metadata)}'\n{e}");
+            }
+
             _eventBus.OnEntityDeleted(uid);
-            EventBus.RaiseEvent(EventSource.Local, new EntityDeletedMessage(uid));
+
+            // Another try-catch, so quickly after the other one?!
+            // Yes. Both of these are try-catch blocks for *events*, which take our precious execution flow away from
+            // us and into whatever spooky code subscribed to this. We don't want an exception in user code suddenly
+            // fucking up entity deletion and leaving us with a frankesteintity, now do we?
+            try
+            {
+                EventBus.RaiseEvent(EventSource.Local, new EntityDeletedMessage(uid));
+            }
+            catch (Exception e)
+            {
+                Logger.Error($"Caught exception while raising {nameof(EntityDeletedMessage)} on '{ToPrettyString(uid, metadata)}'\n{e}");
+            }
+
             Entities.Remove(uid);
         }
 
@@ -361,12 +481,17 @@ namespace Robust.Shared.GameObjects
         /// <summary>
         /// Disposes all entities and clears all lists.
         /// </summary>
-        public void FlushEntities()
+        public virtual void FlushEntities()
         {
-            foreach (var e in GetEntities())
+            QueuedDeletions.Clear();
+            QueuedDeletionsSet.Clear();
+            foreach (var e in GetEntities().ToArray())
             {
                 DeleteEntity(e);
             }
+
+            if (Entities.Count != 0)
+                Logger.Error("Entities were spawned while flushing entities.");
         }
 
         /// <summary>
@@ -387,7 +512,7 @@ namespace Robust.Shared.GameObjects
             var entity = AllocEntity(out metadata, uid);
 
             metadata._entityPrototype = prototype;
-            Dirty(metadata);
+            Dirty(metadata, metadata);
 
             return entity;
         }
@@ -434,7 +559,7 @@ namespace Robust.Shared.GameObjects
             var entity = AllocEntity(prototypeName, out var metadata, uid);
             try
             {
-                EntityPrototype.LoadEntity(metadata.EntityPrototype, entity, ComponentFactory, PrototypeManager, this, _serManager, null);
+                EntityPrototype.LoadEntity(metadata.EntityPrototype, entity, ComponentFactory, this, _serManager, null);
                 return entity;
             }
             catch (Exception e)
@@ -448,10 +573,15 @@ namespace Robust.Shared.GameObjects
 
         private protected void LoadEntity(EntityUid entity, IEntityLoadContext? context)
         {
-            EntityPrototype.LoadEntity(GetComponent<MetaDataComponent>(entity).EntityPrototype, entity, ComponentFactory, PrototypeManager, this, _serManager, context);
+            EntityPrototype.LoadEntity(GetComponent<MetaDataComponent>(entity).EntityPrototype, entity, ComponentFactory, this, _serManager, context);
         }
 
-        private void InitializeAndStartEntity(EntityUid entity, MapId mapId)
+        private protected void LoadEntity(EntityUid entity, IEntityLoadContext? context, EntityPrototype? prototype)
+        {
+            EntityPrototype.LoadEntity(prototype, entity, ComponentFactory, this, _serManager, context);
+        }
+
+        public void InitializeAndStartEntity(EntityUid entity, MapId? mapId = null)
         {
             try
             {
@@ -460,7 +590,7 @@ namespace Robust.Shared.GameObjects
                 StartEntity(entity);
 
                 // If the map we're initializing the entity on is initialized, run map init on it.
-                if (_mapManager.IsMapInitialized(mapId))
+                if (_mapManager.IsMapInitialized(mapId ?? GetComponent<TransformComponent>(entity).MapID))
                     RunMapInit(entity, meta);
             }
             catch (Exception e)
@@ -502,12 +632,24 @@ namespace Robust.Shared.GameObjects
 
             var metadata = (MetaDataComponent) component;
 
+            return ToPrettyString(uid, metadata);
+        }
+
+        private EntityStringRepresentation ToPrettyString(EntityUid uid, MetaDataComponent metadata)
+        {
             return new EntityStringRepresentation(uid, metadata.EntityDeleted, metadata.EntityName, metadata.EntityPrototype?.ID);
         }
 
-#endregion Entity Management
+        #endregion Entity Management
 
-/// <summary>
+        public virtual void RaisePredictiveEvent<T>(T msg) where T : EntityEventArgs
+        {
+            // Part of shared the EntityManager so that systems can have convenient proxy methods, but the
+            // server should never be calling this.
+            DebugTools.Assert("Why are you raising predictive events on the server?");
+        }
+
+        /// <summary>
         ///     Factory for generating a new EntityUid for an entity currently being created.
         /// </summary>
         /// <inheritdoc />

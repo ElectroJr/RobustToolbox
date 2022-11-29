@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Map;
+using Robust.Shared.Prototypes;
 
 namespace Robust.Server.Bql
 {
@@ -186,7 +187,7 @@ namespace Robust.Server.Bql
             var map = IoCManager.Resolve<IMapManager>();
             if (tileTy.TileId == 0)
             {
-                return input.Where(e => entityManager.TryGetComponent<TransformComponent>(e, out var transform) && (transform.GridID == GridId.Invalid) ^ isInverted);
+                return input.Where(e => entityManager.TryGetComponent<TransformComponent>(e, out var transform) && (transform.GridUid is null) ^ isInverted);
             }
             else
             {
@@ -194,8 +195,7 @@ namespace Robust.Server.Bql
                 {
                     if (!entityManager.TryGetComponent<TransformComponent>(e, out var transform)) return isInverted;
 
-                    var gridId = transform.GridID;
-                    if (!map.TryGetGrid(gridId, out var grid))
+                    if (!map.TryGetGrid(transform.GridUid, out var grid))
                         return isInverted;
 
                     return (grid.GetTileRef(transform.Coordinates).Tile.TypeId == tileTy.TileId) ^ isInverted;
@@ -216,8 +216,8 @@ namespace Robust.Server.Bql
         public override IEnumerable<EntityUid> DoSelection(IEnumerable<EntityUid> input, IReadOnlyList<object> arguments, bool isInverted, IEntityManager entityManager)
         {
             // TODO: Probably easier and significantly faster to just iterate the grid's children.
-            var grid = new GridId((int) arguments[0]);
-            return input.Where(e => (entityManager.TryGetComponent<TransformComponent>(e, out var transform) && transform.GridID == grid) ^ isInverted);
+            var grid = new EntityUid((int) arguments[0]);
+            return input.Where(e => (entityManager.TryGetComponent<TransformComponent>(e, out var transform) && transform.GridUid == grid) ^ isInverted);
         }
     }
 
@@ -268,7 +268,9 @@ namespace Robust.Server.Bql
                 if ((metaData.EntityPrototype?.ID == name) ^ isInverted)
                     return true;
 
-                return (metaData.EntityPrototype?.Parent == name) ^ isInverted; // Damn, can't actually do recursive check here.
+                var prototypeManager = IoCManager.Resolve<IPrototypeManager>();
+
+                return metaData.EntityPrototype != null && prototypeManager.EnumerateParents<EntityPrototype>(metaData.EntityPrototype.ID).Any(x => x.Name == name) ^ isInverted;
             });
         }
     }

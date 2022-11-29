@@ -6,12 +6,16 @@ using Robust.Server.Player;
 using Robust.Shared;
 using Robust.Shared.Configuration;
 using Robust.Shared.Enums;
+#if EXCEPTION_TOLERANCE
+using Robust.Shared.Exceptions;
+#endif
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
 using Robust.Shared.Network;
 using Robust.Shared.Network.Messages;
 using Robust.Shared.Prototypes;
+using Robust.Shared.Replays;
 using Robust.Shared.Timing;
 using Robust.Shared.Utility;
 
@@ -27,10 +31,14 @@ namespace Robust.Server.GameObjects
             "robust_entities_count",
             "Amount of alive entities.");
 
+        [Dependency] private readonly IReplayRecordingManager _replay = default!;
         [Dependency] private readonly IServerNetManager _networkManager = default!;
         [Dependency] private readonly IGameTiming _gameTiming = default!;
         [Dependency] private readonly IPlayerManager _playerManager = default!;
         [Dependency] private readonly IConfigurationManager _configurationManager = default!;
+#if EXCEPTION_TOLERANCE
+        [Dependency] private readonly IRuntimeLog _runtimeLog = default!;
+#endif
 
         protected override int NextEntityUid { get; set; } = (int) EntityUid.FirstUid;
 
@@ -50,6 +58,11 @@ namespace Robust.Server.GameObjects
         void IServerEntityManagerInternal.FinishEntityLoad(EntityUid entity, IEntityLoadContext? context)
         {
             LoadEntity(entity, context);
+        }
+
+        void IServerEntityManagerInternal.FinishEntityLoad(EntityUid entity, EntityPrototype? prototype, IEntityLoadContext? context)
+        {
+            LoadEntity(entity, context, prototype);
         }
 
         void IServerEntityManagerInternal.FinishEntityInitialization(EntityUid entity, MetaDataComponent? meta)
@@ -107,8 +120,6 @@ namespace Robust.Server.GameObjects
         private readonly Dictionary<IPlayerSession, uint> _lastProcessedSequencesCmd =
             new();
 
-        private readonly Dictionary<EntityUid, List<(GameTick tick, ushort netId)>> _componentDeletionHistory = new();
-
         private bool _logLateMsgs;
 
         /// <inheritdoc />
@@ -117,7 +128,6 @@ namespace Robust.Server.GameObjects
             _networkManager.RegisterNetMessage<MsgEntity>(HandleEntityNetworkMessage);
 
             // For syncing component deletions.
-            EntityDeleted += OnEntityRemoved;
             ComponentRemoved += OnComponentRemoved;
 
             _playerManager.PlayerStatusChanged += OnPlayerStatusChanged;
@@ -146,72 +156,25 @@ namespace Robust.Server.GameObjects
             return _lastProcessedSequencesCmd[session];
         }
 
-        private void OnEntityRemoved(EntityUid e)
-        {
-            if (_componentDeletionHistory.ContainsKey(e))
-                _componentDeletionHistory.Remove(e);
-        }
-
         private void OnComponentRemoved(RemovedComponentEventArgs e)
         {
-            var reg = ComponentFactory.GetRegistration(e.BaseArgs.Component.GetType());
-
-            // We only keep track of networked components being removed.
-            if (reg.NetID is not {} netId)
+            if (e.Terminating || !e.BaseArgs.Component.NetSyncEnabled)
                 return;
 
-            var uid = e.BaseArgs.Owner;
-
-            if (!_componentDeletionHistory.TryGetValue(uid, out var list))
-            {
-                list = new List<(GameTick tick, ushort netId)>();
-                _componentDeletionHistory[uid] = list;
-            }
-
-            list.Add((_gameTiming.CurTick, netId));
-        }
-
-        public List<ushort> GetDeletedComponents(EntityUid uid, GameTick fromTick)
-        {
-            // TODO: Maybe make this a struct enumerator? Right now it's a list for consistency...
-            var list = new List<ushort>();
-
-            if (!_componentDeletionHistory.TryGetValue(uid, out var history))
-                return list;
-
-            foreach (var (tick, id) in history)
-            {
-                if (tick >= fromTick) list.Add(id);
-            }
-
-            return list;
-        }
-
-        public void CullDeletionHistory(GameTick oldestAck)
-        {
-            var remQueue = new RemQueue<EntityUid>();
-
-            foreach (var (uid, list) in _componentDeletionHistory)
-            {
-                list.RemoveAll(hist => hist.tick < oldestAck);
-
-                if(list.Count == 0)
-                    remQueue.Add(uid);
-            }
-
-            foreach (var uid in remQueue)
-            {
-                _componentDeletionHistory.Remove(uid);
-            }
+            if (TryGetComponent(e.BaseArgs.Owner, out MetaDataComponent? meta))
+                meta.LastComponentRemoved = _gameTiming.CurTick;
         }
 
         /// <inheritdoc />
-        public void SendSystemNetworkMessage(EntityEventArgs message)
+        public void SendSystemNetworkMessage(EntityEventArgs message, bool recordReplay = true)
         {
             var newMsg = new MsgEntity();
             newMsg.Type = EntityMessageType.SystemMessage;
             newMsg.SystemMessage = message;
             newMsg.SourceTick = _gameTiming.CurTick;
+
+            if (recordReplay)
+                _replay.QueueReplayMessage(message);
 
             _networkManager.ServerSendToAll(newMsg);
         }
@@ -284,7 +247,7 @@ namespace Robust.Server.GameObjects
 #if EXCEPTION_TOLERANCE
             catch (Exception e)
             {
-                Logger.ErrorS("net.ent", $"Caught exception while dispatching {message.Type}: {e}");
+                _runtimeLog.LogException(e, $"{nameof(DispatchEntityNetworkMessage)}({message.Type})");
             }
 #endif
         }
