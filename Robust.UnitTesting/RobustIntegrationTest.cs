@@ -8,6 +8,7 @@ using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Castle.Core;
 using Moq;
 using NUnit.Framework;
 using Robust.Client;
@@ -349,14 +350,14 @@ namespace Robust.UnitTesting
             /// <exception cref="Exception">
             ///     Thrown if <paramref name="throwOnUnhandled"/> is true and the instance shuts down on an unhandled exception.
             /// </exception>
-            public Task WaitIdleAsync(bool throwOnUnhandled = true, CancellationToken cancellationToken = default)
+            public Task WaitIdleAsync()
             {
                 if (Options?.Asynchronous == true)
                 {
-                    return WaitIdleImplAsync(throwOnUnhandled, cancellationToken);
+                    return WaitIdleImplAsync(true, default);
                 }
 
-                WaitIdleImplSync(throwOnUnhandled);
+                WaitIdleImplSync(default);
                 return Task.CompletedTask;
             }
 
@@ -372,6 +373,9 @@ namespace Robust.UnitTesting
                     catch(OperationCanceledException ex)
                     {
                         _unhandledException = ex;
+
+                        await TestContext.Out.WriteLineAsync(
+                            $"{nameof(WaitIdleImplAsync)}: Test was canceled. AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.");
                         _isAlive = false;
                         break;
                     }
@@ -1024,6 +1028,17 @@ namespace Robust.UnitTesting
         {
             public ShutDownMessage(Exception? unhandledException)
             {
+                if (unhandledException == null)
+                {
+                    TestContext.Out.WriteLine(
+                        $"Sending shutdown message because ??? Trace: {Environment.StackTrace}");
+                }
+                else
+                {
+                    TestContext.Out.WriteLine(
+                        $"Sending shutdown message because of some exception. Trace: {Environment.StackTrace}");
+                }
+
                 UnhandledException = unhandledException;
             }
 
