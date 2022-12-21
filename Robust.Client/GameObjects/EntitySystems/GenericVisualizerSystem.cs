@@ -19,9 +19,10 @@ public sealed class GenericVisualizerSystem : VisualizerSystem<GenericVisualizer
 
         foreach (var (appearanceKey, layerDict) in component.Visuals)
         {
-            if (!_appearanceSys.TryGetData<string?>(uid, appearanceKey, out var appearanceValue, args.Component))
+            if (!_appearanceSys.TryGetData(uid, appearanceKey, out var obj, args.Component))
                 continue;
 
+            var appearanceValue = obj.ToString();
             if (string.IsNullOrEmpty(appearanceValue))
                 continue;
 
