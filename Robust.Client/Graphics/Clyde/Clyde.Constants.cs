@@ -14,7 +14,8 @@ namespace Robust.Client.Graphics.Clyde
         private const int UniITexturePixelSize = 2;
         private const int UniIMainTexture = 3;
         private const int UniILightTexture = 4;
-        private const int UniCount = 5;
+        private const int UniIEnableLight = 5;
+        private const int UniCount = 6;
 
         private const string UniModUV = "modifyUV";
         private const string UniModelMatrix = "modelMatrix";
@@ -23,6 +24,7 @@ namespace Robust.Client.Graphics.Clyde
         private const string UniLightTexture = "lightMap";
         private const string UniProjViewMatrices = "projectionViewMatrices";
         private const string UniUniformConstants = "uniformConstants";
+        private const string UniEnableLight = "enableLight";
 
         private const int BindingIndexProjView = 0;
         private const int BindingIndexUniformConstants = 1;

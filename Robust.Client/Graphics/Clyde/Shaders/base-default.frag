@@ -3,6 +3,7 @@ varying highp vec2 Pos;
 varying highp vec4 VtxModulate;
 
 uniform sampler2D lightMap;
+uniform int enableLight;
 
 // [SHADER_HEADER_CODE]
 
@@ -14,7 +15,13 @@ void main()
 
     // [SHADER_CODE]
 
-    lowp vec3 lightSample = texture2D(lightMap, Pos).rgb;
-
-    gl_FragColor = zAdjustResult(COLOR * VtxModulate * vec4(lightSample, 1.0));
+    if (enableLight == 0)
+    {
+        gl_FragColor = zAdjustResult(COLOR * VtxModulate);
+    }
+    else
+    {
+        lowp vec3 lightSample = texture2D(lightMap, Pos).rgb;
+        gl_FragColor = zAdjustResult(COLOR * VtxModulate * vec4(lightSample, 1.0));
+    }
 }

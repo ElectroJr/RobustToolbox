@@ -190,6 +190,9 @@ namespace Robust.Client.Graphics.Clyde
                     case UniITexturePixelSize:
                         name = UniTexturePixelSize;
                         break;
+                    case UniIEnableLight:
+                        name = UniEnableLight;
+                        break;
                     default:
                         throw new ArgumentOutOfRangeException();
                 }
@@ -520,6 +523,15 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             public void SetUniformMaybe(string uniformName, int value)
+            {
+                if (TryGetUniform(uniformName, out var slot))
+                {
+                    GL.Uniform1(slot, value);
+                    _clyde.CheckGlError();
+                }
+            }
+
+            public void SetUniformMaybe(int uniformName, int value)
             {
                 if (TryGetUniform(uniformName, out var slot))
                 {

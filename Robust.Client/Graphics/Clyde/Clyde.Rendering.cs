@@ -224,9 +224,10 @@ namespace Robust.Client.Graphics.Clyde
             GL.BindTexture(TextureTarget.Texture2D, loadedTexture.OpenGLObject.Handle);
             CheckGlError();
 
-            if (_lightingReady && loaded.HasLighting)
+            if (_lightingReady)
             {
                 SetTexture(TextureUnit.Texture1, _currentViewport!.LightRenderTarget.Texture);
+                program.SetUniformMaybe(UniIEnableLight, loaded.HasLighting ? 1 : 0);
             }
             else
             {
