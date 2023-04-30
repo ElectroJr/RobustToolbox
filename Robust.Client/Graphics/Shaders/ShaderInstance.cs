@@ -1,5 +1,7 @@
 using System;
 using Robust.Shared.Maths;
+using Robust.Shared.Serialization.Manager.Attributes;
+using Robust.Shared.ViewVariables;
 
 namespace Robust.Client.Graphics
 {
@@ -20,97 +22,27 @@ namespace Robust.Client.Graphics
     /// </remarks>
     public abstract class ShaderInstance : IDisposable
     {
-        private bool _stencilTestEnabled;
-        private int _stencilRef;
-        private int _stencilReadMask;
-        private int _stencilWriteMask;
-        private StencilFunc _stencilFunc = StencilFunc.Always;
-        private StencilOp _stencilOp = StencilOp.Keep;
+        public bool Disposed { get; protected set; }
 
-        public bool Disposed { get; private set; }
+        private StencilParameters _stencil;
+
+        public StencilParameters Stencil
+        {
+            get => _stencil;
+            set
+            {
+                EnsureAlive();
+                EnsureMutable();
+                _stencil = value;
+                SetStencilImpl(_stencil);
+            }
+        }
 
         /// <summary>
         ///     Whether this shader is mutable. An immutable shader can no longer be edited and is ideal for sharing.
         /// </summary>
+        [ViewVariables]
         public bool Mutable { get; private set; } = true;
-
-        public bool StencilTestEnabled
-        {
-            get => _stencilTestEnabled;
-            set
-            {
-                EnsureAlive();
-                EnsureMutable();
-
-                _stencilTestEnabled = value;
-                SetStencilTestEnabledImpl(value);
-            }
-        }
-
-        public int StencilRef
-        {
-            get => _stencilRef;
-            set
-            {
-                EnsureAlive();
-                EnsureMutable();
-
-                _stencilRef = value;
-                SetStencilRefImpl(value);
-            }
-        }
-
-        public int StencilWriteMask
-        {
-            get => _stencilWriteMask;
-            set
-            {
-                EnsureAlive();
-                EnsureMutable();
-
-                _stencilWriteMask = value;
-                SetStencilWriteMaskImpl(value);
-            }
-        }
-
-        public int StencilReadMask
-        {
-            get => _stencilReadMask;
-            set
-            {
-                EnsureAlive();
-                EnsureMutable();
-
-                _stencilReadMask = value;
-                SetStencilReadMaskRefImpl(value);
-            }
-        }
-
-        public StencilFunc StencilFunc
-        {
-            get => _stencilFunc;
-            set
-            {
-                EnsureAlive();
-                EnsureMutable();
-
-                _stencilFunc = value;
-                SetStencilFuncImpl(value);
-            }
-        }
-
-        public StencilOp StencilOp
-        {
-            get => _stencilOp;
-            set
-            {
-                EnsureAlive();
-                EnsureMutable();
-
-                _stencilOp = value;
-                SetStencilOpImpl(value);
-            }
-        }
 
         public void SetParameter(string name, float value)
         {
@@ -222,11 +154,7 @@ namespace Robust.Client.Graphics
             return DuplicateImpl();
         }
 
-#pragma warning disable CA1816
-        public virtual void Dispose()
-#pragma warning restore CA1816
-        {
-        }
+        public abstract void Dispose();
 
         private void EnsureMutable()
         {
@@ -260,12 +188,21 @@ namespace Robust.Client.Graphics
         private protected abstract void SetParameterImpl(string name, in Matrix3 value);
         private protected abstract void SetParameterImpl(string name, in Matrix4 value);
         private protected abstract void SetParameterImpl(string name, Texture value);
+        private protected abstract void SetStencilImpl(StencilParameters value);
+    }
 
-        private protected abstract void SetStencilOpImpl(StencilOp op);
-        private protected abstract void SetStencilFuncImpl(StencilFunc func);
-        private protected abstract void SetStencilTestEnabledImpl(bool enabled);
-        private protected abstract void SetStencilRefImpl(int @ref);
-        private protected abstract void SetStencilWriteMaskImpl(int mask);
-        private protected abstract void SetStencilReadMaskRefImpl(int mask);
+    [DataDefinition]
+    public struct StencilParameters
+    {
+        public StencilParameters()
+        {
+        }
+
+        [ViewVariables] public bool Enabled = false;
+        [DataField("ref")] public int Ref = 0;
+        [DataField("writeMask")] public int WriteMask = unchecked((int)uint.MaxValue);
+        [DataField("readMask")] public int ReadMask = unchecked((int)uint.MaxValue);
+        [DataField("op")] public StencilOp Op = StencilOp.Keep;
+        [DataField("func")] public StencilFunc Func  = StencilFunc.Always;
     }
 }
