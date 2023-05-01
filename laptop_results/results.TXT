@@ -1,0 +1,64 @@
+
+Full release, mapping, aghost, lights on, ui on, rm other maps
+fullscreen, FOV on, zoom 1.1
+
+
+Desktop tickrate is 60. 
+No vsync
+High lighting
+Prediction on.
+default paralax
+
+[FPS, Batches]
+
+Desktop - Vertex data
+
+1024_base - [850, 102]
+1024_test - [650, 101]
+2048_test - [350, 102]
+
+
+Desktop - uniform
+
+1024_base - [850, 102]
+1024_test - [500, 2150]
+2048_test - [350, 2150]
+
+
+Desktop - master
+
+1024_base - [570, 107] # why is this even worse??? it shouldn't it be the same?
+1024_test - [128, 2150]
+2048_test - [115, 2150]
+
+
+Laptop:
+tickrate 20
+predict on
+low lightings
+simple paralax
+
+
+
+Laptop - Vertex data
+
+1024_base - [135, ]
+1024_test - [125, ]
+2048_test - [101, ]
+med light - default paralax - 67
+
+
+Laptop - uniform
+
+1024_base - [135, ]
+1024_test - [103, ]
+2048_test - [85, ]
+med light - default paralax - 64
+
+
+Laptop - master
+
+1024_base - [135, 102]
+1024_test - [85]
+2048_test - [73]
+med light - default paralax - 50
