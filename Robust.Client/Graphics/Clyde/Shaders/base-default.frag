@@ -14,7 +14,16 @@ void main()
 
     // [SHADER_CODE]
 
-    lowp vec3 lightSample = texture2D(lightMap, Pos).rgb;
-
-    gl_FragColor = zAdjustResult(COLOR * VtxModulate * vec4(lightSample, 1.0));
+    if (VtxModulate.x < -1)
+    {
+        // Negative modulation implies unshaded/no lighting.
+        // Faster than swapping textures and easier than swapping batches in clyde.
+        // 3.0 is arbitrary and matches the 
+        gl_FragColor = zAdjustResult(COLOR * (3.0 +  VtxModulate));
+    }
+    else
+    {
+        lowp vec3 lightSample = texture2D(lightMap, Pos).rgb;
+        gl_FragColor = zAdjustResult(COLOR * VtxModulate * vec4(lightSample, 1.0));
+    }
 }

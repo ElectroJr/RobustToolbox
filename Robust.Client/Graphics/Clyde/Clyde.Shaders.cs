@@ -18,8 +18,9 @@ namespace Robust.Client.Graphics.Clyde
 
         private string _shaderLibrary = default!;
 
-        private string _shaderWrapCodeDefaultFrag = default!;
-        private string _shaderWrapCodeDefaultVert = default!;
+        private string _shaderWrapCodeDefaultFrag => ReadEmbeddedShader("base-default.frag");
+        private string _shaderWrapCodeDefaultVert => ReadEmbeddedShader("base-default.vert");
+
 
         private string _shaderWrapCodeRawFrag = default!;
         private string _shaderWrapCodeRawVert = default!;
@@ -139,9 +140,6 @@ namespace Robust.Client.Graphics.Clyde
         private void LoadStockShaders()
         {
             _shaderLibrary = ReadEmbeddedShader("z-library.glsl");
-
-            _shaderWrapCodeDefaultFrag = ReadEmbeddedShader("base-default.frag");
-            _shaderWrapCodeDefaultVert = ReadEmbeddedShader("base-default.vert");
 
             _shaderWrapCodeRawVert = ReadEmbeddedShader("base-raw.vert");
             _shaderWrapCodeRawFrag = ReadEmbeddedShader("base-raw.frag");

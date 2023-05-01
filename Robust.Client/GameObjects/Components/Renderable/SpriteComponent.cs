@@ -761,12 +761,22 @@ namespace Robust.Client.GameObjects
                 if (layerDatum.Shader == string.Empty)
                 {
                     layer.ShaderPrototype = null;
+                    layer.UnShaded = false;
                     layer.Shader = null;
                 }
                 else if (prototypes.TryIndex<ShaderPrototype>(layerDatum.Shader, out var prototype))
                 {
                     layer.ShaderPrototype = layerDatum.Shader;
-                    layer.Shader = prototype.Instance();
+                    if (layerDatum.Shader == "unshaded")
+                    {
+                        layer.UnShaded = true;
+                        layer.Shader = null;
+                    }
+                    else
+                    {
+                        layer.Shader = prototype.Instance();
+                        layer.UnShaded = false;
+                    }
                 }
                 else
                 {
@@ -827,11 +837,25 @@ namespace Robust.Client.GameObjects
             if (!TryGetLayer(layer, out var theLayer, true))
                 return;
 
+            if (shader == null)
+            {
+                theLayer.UnShaded = false;
+                theLayer.Shader = null;
+                theLayer.ShaderPrototype = null;
+            }
+            else if (prototype == "unshaded")
+            {
+                theLayer.UnShaded = true;
+                theLayer.ShaderPrototype = prototype;
+                theLayer.Shader = null;
+            }
+
+            theLayer.UnShaded = false;
             theLayer.Shader = shader;
             theLayer.ShaderPrototype = prototype;
         }
 
-        public void LayerSetShader(object layerKey, ShaderInstance shader, string? prototype = null)
+        public void LayerSetShader(object layerKey, ShaderInstance? shader, string? prototype = null)
         {
             if (!LayerMapTryGet(layerKey, out var layer, true))
                 return;
@@ -1459,6 +1483,7 @@ namespace Robust.Client.GameObjects
         public sealed class Layer : ISpriteLayer, ISerializationHooks
         {
             [ViewVariables] private readonly SpriteComponent _parent;
+            [ViewVariables] public bool UnShaded;
 
             [ViewVariables] public string? ShaderPrototype;
             [ViewVariables] public ShaderInstance? Shader;
@@ -1607,6 +1632,7 @@ namespace Robust.Client.GameObjects
                 if (toClone.Shader != null)
                 {
                     Shader = toClone.Shader.Mutable ? toClone.Shader.Duplicate() : toClone.Shader;
+                    UnShaded = toClone.UnShaded;
                     ShaderPrototype = toClone.ShaderPrototype;
                 }
                 Texture = toClone.Texture;
@@ -1982,9 +2008,19 @@ namespace Robust.Client.GameObjects
             private void RenderTexture(DrawingHandleWorld drawingHandle, Texture texture)
             {
                 if (Shader != null)
+                {
                     drawingHandle.UseShader(Shader);
+                }
 
                 var layerColor = _parent.color * Color;
+
+                if (UnShaded)
+                {
+                    DebugTools.Assert(Shader == null, "Shader is not null");
+                    DebugTools.Assert(layerColor.R >= 0 && layerColor.G >= 0 && layerColor.B >= 0 && layerColor.A >= 0);
+                    layerColor -= 3;
+                }
+
                 var textureSize = texture.Size / (float)EyeManager.PixelsPerMeter;
                 var quad = Box2.FromDimensions(textureSize/-2, textureSize);
 

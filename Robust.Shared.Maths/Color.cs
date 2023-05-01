@@ -1000,6 +1000,18 @@ namespace Robust.Shared.Maths
             return new(a.R * b.R, a.G * b.G, a.B * b.B, a.A * b.A);
         }
 
+        public static Color operator *(Color a, float b)
+        {
+            return new(a.R * b, a.G * b, a.B * b, a.A * b);
+        }
+
+        public static Color operator +(Color a, float b)
+        {
+            return new(a.R + b, a.G + b, a.B + b, a.A + b);
+        }
+
+        public static Color operator -(Color a, float b) => a + -b;
+
         public readonly string ToHex()
         {
             var hexColor = 0;
