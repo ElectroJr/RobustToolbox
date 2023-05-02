@@ -21,13 +21,20 @@ bool doesOcclude(highp vec2 diff, sampler2D shadowMap, highp float mapOffsetY, h
 // Use this for VSM shadow casting stuff.
 highp float ChebyshevUpperBound(highp vec2 moments, highp float t)
 {
-    // One-tailed inequality valid if t > Moments.x
-    highp float p = float(t <= moments.x);
     // Compute variance.
     highp float variance = moments.y - (moments.x * moments.x);
     variance = max(variance, g_MinVariance);
-    // Compute probabilistic upper bound.
-    highp float d = t - moments.x;
-    highp float p_max = variance / (variance + d*d);
-    return max(p, p_max);
+
+    // One-tailed inequality valid if t > Moments.x
+    highp float d = max(t - moments.x, 0);
+
+    // Compute probabilistic upper bound.;
+    return variance / (variance + d*d);
+}
+
+highp vec4 SimdChebyshevUpperBound(highp vec4 mu, highp vec4 moment, highp vec4 t)
+{
+    highp vec4 variance = max(moment - mu * mu, g_MinVariance);
+    highp vec4 d = max(t - mu, 0);
+    return variance / (variance + d*d);
 }
