@@ -606,6 +606,7 @@ namespace Robust.Shared.Serialization
 
             il.Emit(OpCodes.Ldarg_1);
             il.Emit(OpCodes.Ldarg_2);
+            il.Emit(OpCodes.Ldarg_3);
             il.EmitCall(OpCodes.Callvirt, method, null);
 
             il.Emit(OpCodes.Ret);
@@ -633,19 +634,20 @@ namespace Robust.Shared.Serialization
 
             il.Emit(OpCodes.Ldarg_1);
             il.Emit(OpCodes.Ldarg_2);
+            il.Emit(OpCodes.Ldarg_3);
             il.EmitCall(OpCodes.Callvirt, method, null);
 
             il.Emit(OpCodes.Ret);
         }
 
-        private void WriteMappedString(Stream stream, string? value)
+        private void WriteMappedString(Stream stream, string? value, SerializationContext ctx)
         {
-            _dict.WriteMappedString(stream, value);
+            _dict.WriteMappedString(stream, value, ctx);
         }
 
-        private void ReadMappedString(Stream stream, out string? value)
+        private void ReadMappedString(Stream stream, out string? value, SerializationContext ctx)
         {
-            _dict.ReadMappedString(stream, out value);
+            _dict.ReadMappedString(stream, out value, ctx);
         }
 
         /// <summary>

@@ -98,10 +98,10 @@ namespace Robust.Shared.Serialization
 
         public Dictionary<Type, uint> GetTypeMap() => _serializer.GetTypeMap();
 
-        public void Serialize(Stream stream, object toSerialize)
+        public void Serialize(Stream stream, object toSerialize, SerializationContext? ctx = null)
         {
             var start = stream.Position;
-            _serializer.Serialize(stream, toSerialize);
+            _serializer.Serialize(stream, toSerialize, ctx);
             var end = stream.Position;
             var byteCount = end - start;
 
@@ -120,13 +120,13 @@ namespace Robust.Shared.Serialization
             }
         }
 
-        public void SerializeDirect<T>(Stream stream, T toSerialize)
+        public void SerializeDirect<T>(Stream stream, T toSerialize, SerializationContext? ctx = null)
         {
             DebugTools.Assert(toSerialize == null || typeof(T) == toSerialize.GetType(),
                 "Object must be of exact type specified in the generic parameter.");
 
             var start = stream.Position;
-            _serializer.SerializeDirect(stream, toSerialize);
+            _serializer.SerializeDirect(stream, toSerialize, ctx);
             var end = stream.Position;
             var byteCount = end - start;
 
@@ -145,13 +145,13 @@ namespace Robust.Shared.Serialization
             }
         }
 
-        public T Deserialize<T>(Stream stream)
-            => (T) Deserialize(stream);
+        public T Deserialize<T>(Stream stream, SerializationContext? ctx = null)
+            => (T) Deserialize(stream, ctx);
 
-        public void DeserializeDirect<T>(Stream stream, out T value)
+        public void DeserializeDirect<T>(Stream stream, out T value, SerializationContext? ctx = null)
         {
             var start = stream.Position;
-            _serializer.DeserializeDirect(stream, out value);
+            _serializer.DeserializeDirect(stream, out value, ctx);
             var end = stream.Position;
             var byteCount = end - start;
 
@@ -168,10 +168,10 @@ namespace Robust.Shared.Serialization
             }
         }
 
-        public object Deserialize(Stream stream)
+        public object Deserialize(Stream stream, SerializationContext? ctx = null)
         {
             var start = stream.Position;
-            var result = _serializer.Deserialize(stream);
+            var result = _serializer.Deserialize(stream, ctx);
             var end = stream.Position;
             var byteCount = end - start;
 

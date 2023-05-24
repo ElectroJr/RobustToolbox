@@ -81,6 +81,8 @@ Types:
       All: True
     NetOutgoingMessage:
       All: True
+  NetSerializer:
+    SerializationContext: { }
   Nett:
     CommentLocation: { } # Enum
     Toml:

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using NetSerializer;
 using Robust.Shared.Network;
 
 namespace Robust.Shared.Serialization
@@ -9,7 +10,7 @@ namespace Robust.Shared.Serialization
     public interface IRobustSerializer
     {
         void Initialize();
-        void Serialize(Stream stream, object toSerialize);
+        void Serialize(Stream stream, object toSerialize, SerializationContext? ctx = null);
 
         /// <summary>
         /// Serializes an object with exact known type to skip a type ID header.
@@ -25,8 +26,8 @@ namespace Robust.Shared.Serialization
         /// The object MUST have the exact type of <typeparamref name="T"/>
         /// </param>
         /// <typeparam name="T">The type of object to serialize.</typeparam>
-        void SerializeDirect<T>(Stream stream, T toSerialize);
-        T Deserialize<T>(Stream stream);
+        void SerializeDirect<T>(Stream stream, T toSerialize, SerializationContext? ctx = null);
+        T Deserialize<T>(Stream stream, SerializationContext? ctx = null);
 
         /// <summary>
         /// Deserialize side of <see cref="DeserializeDirect{T}"/>.
@@ -34,8 +35,8 @@ namespace Robust.Shared.Serialization
         /// <param name="stream">Stream to read from.</param>
         /// <param name="value">Value that was deserialized.</param>
         /// <typeparam name="T">Exact type of object to deserialize.</typeparam>
-        void DeserializeDirect<T>(Stream stream, out T value);
-        object Deserialize(Stream stream);
+        void DeserializeDirect<T>(Stream stream, out T value, SerializationContext? ctx = null);
+        object Deserialize(Stream stream, SerializationContext? ctx = null);
         bool CanSerialize(Type type);
 
         /// <summary>

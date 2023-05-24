@@ -151,10 +151,10 @@ namespace Robust.UnitTesting.Shared.Serialization
         public void TestString(string? str)
         {
             var stream = new MemoryStream();
-            Primitives.WritePrimitive(stream, str);
+            Primitives.WritePrimitive(stream, str, SerializationContext.Default);
             stream.Position = 0;
 
-            Primitives.ReadPrimitive(stream, out string? deserialized);
+            Primitives.ReadPrimitive(stream, out string? deserialized, SerializationContext.Default);
             Assert.That(deserialized, Is.EqualTo(str));
         }
 
@@ -166,7 +166,7 @@ namespace Robust.UnitTesting.Shared.Serialization
             Primitives.WritePrimitive(stream, (uint)1000);
 
             stream.Position = 0;
-            Assert.That(() => Primitives.ReadPrimitive(stream, out string _), Throws.TypeOf<EndOfStreamException>());
+            Assert.That(() => Primitives.ReadPrimitive(stream, out string _, SerializationContext.Default), Throws.TypeOf<EndOfStreamException>());
         }
 
         [Test]
@@ -175,10 +175,10 @@ namespace Robust.UnitTesting.Shared.Serialization
             var stream = new MemoryStream();
             Primitives.WritePrimitive(stream, (uint)2000);
             Primitives.WritePrimitive(stream, (uint)5);
-            Primitives.WritePrimitive(stream, new byte[2000]);
+            Primitives.WritePrimitive(stream, new byte[2000], SerializationContext.Default);
 
             stream.Position = 0;
-            Assert.That(() => Primitives.ReadPrimitive(stream, out string _), Throws.TypeOf<InvalidDataException>());
+            Assert.That(() => Primitives.ReadPrimitive(stream, out string _, SerializationContext.Default), Throws.TypeOf<InvalidDataException>());
         }
     }
 }

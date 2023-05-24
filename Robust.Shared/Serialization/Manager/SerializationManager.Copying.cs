@@ -316,18 +316,22 @@ public sealed partial class SerializationManager
         return true;
     }
 
-    private T[] CreateArrayCopy<T>(T[] source, SerializationHookContext hookCtx, ISerializationContext context)
+    private T[] CreateArrayCopy<T>(T[] source, SerializationHookContext hookCtx, ISerializationContext ctx)
     {
         var copy = new T[source.Length];
         for (int i = 0; i < source.Length; i++)
         {
-            copy[i] = CreateCopy(source[i], hookCtx, context);
+            copy[i] = CreateCopy(source[i], hookCtx, ctx);
         }
 
         return copy;
     }
 
-    private T CreateCopyInternal<T>(T source, SerializationHookContext hookCtx, ISerializationContext context, DataDefinition<T>? definition) where T : notnull
+    private T CreateCopyInternal<T>(
+        T source,
+        SerializationHookContext hookCtx,
+        ISerializationContext ctx,
+        DataDefinition<T>? definition) where T : notnull
     {
         if (ShouldReturnSource(typeof(T)))
             return source;
@@ -338,7 +342,7 @@ public sealed partial class SerializationManager
         var isRecord = definition?.IsRecord ?? false;
         var target = GetOrCreateInstantiator<T>(isRecord)();
 
-        if (!GetOrCreateCopyToGenericDelegate<T>(source)(source, ref target, hookCtx, context))
+        if (!GetOrCreateCopyToGenericDelegate<T>(source)(source, ref target, hookCtx, ctx))
         {
             throw new CopyToFailedException<T>();
         }

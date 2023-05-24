@@ -409,7 +409,7 @@ namespace Robust.Shared.Serialization
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void WriteMappedString(Stream stream, string? value)
+            public void WriteMappedString(Stream stream, string? value, SerializationContext ctx)
             {
                 DebugTools.Assert(Locked);
 
@@ -436,13 +436,13 @@ namespace Robust.Shared.Serialization
 
                 // indicate not mapped
                 Primitives.WritePrimitive(stream, UnmappedString);
-                Primitives.WritePrimitive(stream, value);
+                Primitives.WritePrimitive(stream, value, ctx);
                 StringsMissMetric.Inc();
                 StringsMissCharsMetric.Inc(value.Length);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void ReadMappedString(Stream stream, out string? value)
+            public void ReadMappedString(Stream stream, out string? value, SerializationContext ctx)
             {
                 DebugTools.Assert(Locked);
 
@@ -456,7 +456,7 @@ namespace Robust.Shared.Serialization
                 if (mapIndex == UnmappedString)
                 {
                     // not mapped
-                    Primitives.ReadPrimitive(stream, out value);
+                    Primitives.ReadPrimitive(stream, out value, ctx);
                     return;
                 }
 
