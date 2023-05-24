@@ -62,6 +62,7 @@ namespace Robust.Client.Console
         /// <inheritdoc />
         public void Initialize()
         {
+            NetManager.RegisterNetMessage<MsgConCmdRequest>();
             NetManager.RegisterNetMessage<MsgConCmdReg>(HandleConCmdReg);
             NetManager.RegisterNetMessage<MsgConCmdAck>(HandleConCmdAck);
             NetManager.RegisterNetMessage<MsgConCmd>(ProcessCommand);
@@ -260,7 +261,7 @@ namespace Robust.Client.Console
             if (!NetManager.IsConnected)
                 return;
 
-            var msg = new MsgConCmdReg();
+            var msg = new MsgConCmdRequest();
             NetManager.ClientSendMessage(msg);
 
             _requestedCommands = true;

@@ -86,7 +86,8 @@ namespace Robust.Server.Console
             NetManager.RegisterNetMessage<MsgConCmd>(ProcessCommand);
             NetManager.RegisterNetMessage<MsgConCmdAck>();
 
-            NetManager.RegisterNetMessage<MsgConCmdReg>(message => HandleRegistrationRequest(message.MsgChannel));
+            NetManager.RegisterNetMessage<MsgConCmdReg>();
+            NetManager.RegisterNetMessage<MsgConCmdRequest>(message => HandleRegistrationRequest(message.MsgChannel));
             NetManager.RegisterNetMessage<MsgConCompletion>(HandleConCompletions);
             NetManager.RegisterNetMessage<MsgConCompletionResp>();
         }

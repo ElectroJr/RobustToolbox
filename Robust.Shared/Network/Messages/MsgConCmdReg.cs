@@ -36,9 +36,6 @@ namespace Robust.Shared.Network.Messages
 
         public override void WriteToBuffer(NetOutgoingMessage buffer, IRobustSerializer serializer)
         {
-            if(Commands == null) // client leaves comands as null to request from server
-                Commands = new Command[0];
-
             buffer.Write((UInt16)Commands.Length);
             foreach (var command in Commands)
             {
@@ -46,6 +43,23 @@ namespace Robust.Shared.Network.Messages
                 buffer.Write(command.Description);
                 buffer.Write(command.Help);
             }
+        }
+    }
+
+    /// <summary>
+    ///     Requests a <see cref="MsgConCmdReg"/> message from the server
+    /// </summary>
+    public sealed class MsgConCmdRequest : NetMessage
+    {
+        public override MsgGroups MsgGroup => MsgGroups.String;
+
+        public override void ReadFromBuffer(NetIncomingMessage buffer, IRobustSerializer serializer)
+        {
+
+        }
+
+        public override void WriteToBuffer(NetOutgoingMessage buffer, IRobustSerializer serializer)
+        {
         }
     }
 }
