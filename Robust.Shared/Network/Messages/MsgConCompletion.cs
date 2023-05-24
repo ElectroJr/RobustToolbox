@@ -1,3 +1,4 @@
+using System;
 using Lidgren.Network;
 using Robust.Shared.Serialization;
 
@@ -7,6 +8,7 @@ namespace Robust.Shared.Network.Messages;
 
 public sealed class MsgConCompletion : NetMessage
 {
+    public const int MaxCompletions = 100;
     public override MsgGroups MsgGroup => MsgGroups.Command;
 
     public int Seq { get; set; }
@@ -16,7 +18,7 @@ public sealed class MsgConCompletion : NetMessage
     {
         Seq = buffer.ReadInt32();
 
-        var len = buffer.ReadVariableInt32();
+        var len = Math.Min(buffer.ReadVariableInt32(), MaxCompletions);
         Args = new string[len];
         for (var i = 0; i < len; i++)
         {
@@ -28,10 +30,11 @@ public sealed class MsgConCompletion : NetMessage
     {
         buffer.Write(Seq);
 
-        buffer.WriteVariableInt32(Args.Length);
-        foreach (var arg in Args)
+        var len = Math.Min(Args.Length, MaxCompletions);
+        buffer.WriteVariableInt32(len);
+        for (var i = 0; i < len; i++)
         {
-            buffer.Write(arg);
+            buffer.Write(Args[i]);
         }
     }
 }
