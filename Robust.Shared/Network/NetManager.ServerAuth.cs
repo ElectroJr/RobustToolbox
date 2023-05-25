@@ -64,7 +64,7 @@ namespace Robust.Shared.Network
 
                 if (canAuth && Auth != AuthMode.Disabled)
                 {
-                    var verifyToken = new byte[4];
+                    var verifyToken = new byte[VerifyTokenLength];
                     RandomNumberGenerator.Fill(verifyToken);
                     var msgEncReq = new MsgEncryptionRequest
                     {

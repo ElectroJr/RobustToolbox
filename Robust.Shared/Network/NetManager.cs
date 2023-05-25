@@ -40,6 +40,8 @@ namespace Robust.Shared.Network
     public sealed partial class NetManager : IClientNetManager, IServerNetManager
     {
         internal const int SharedKeyLength = CryptoAeadXChaCha20Poly1305Ietf.KeyBytes; // 32 bytes
+        internal const int VerifyTokenLength = 4;
+        internal const int EncryptionResponseLength = CryptoBox.SealBytes + VerifyTokenLength + SharedKeyLength;
 
         [Dependency] private readonly IRobustSerializer _serializer = default!;
 

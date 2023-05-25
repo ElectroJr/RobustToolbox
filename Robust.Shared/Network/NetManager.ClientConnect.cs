@@ -182,7 +182,7 @@ namespace Robust.Shared.Network
                 }
 
                 // Data is [shared]+[verify]
-                var data = new byte[sharedSecret.Length + encRequest.VerifyToken.Length];
+                var data = new byte[SharedKeyLength + VerifyTokenLength];
                 sharedSecret.CopyTo(data.AsSpan());
                 encRequest.VerifyToken.CopyTo(data.AsSpan(sharedSecret.Length));
 
