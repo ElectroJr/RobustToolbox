@@ -66,6 +66,7 @@ public sealed class NetworkResourceManager : SharedNetworkResourceManager
     /// <exception cref="NotImplementedException"></exception>
     protected override void ResourceUploadMsg(NetworkResourceUploadMessage msg)
     {
+        // ReSharper disable once ConditionIsAlwaysTrueOrFalse
         if (msg.Data == null || !CanUpload(msg.Data.Length))
             return;
 

@@ -1,4 +1,3 @@
-using System;
 using Lidgren.Network;
 using Robust.Shared.IoC;
 using Robust.Shared.Network;
@@ -12,7 +11,7 @@ public sealed class NetworkResourceUploadMessage : NetMessage
     public override NetDeliveryMethod DeliveryMethod => NetDeliveryMethod.ReliableUnordered;
     public override MsgGroups MsgGroup => MsgGroups.Command;
 
-    public byte[]? Data;
+    public byte[] Data = default!;
     public ResPath RelativePath { get; set; } = ResPath.Self;
 
     public override void ReadFromBuffer(NetIncomingMessage buffer, IRobustSerializer serializer)
