@@ -45,6 +45,11 @@ public abstract class SharedNetworkResourceManager : IDisposable
         ContentRoot.Dispose();
     }
 
+    public virtual bool CanUpload(int numBytes)
+    {
+        return true;
+    }
+
     [Serializable, NetSerializable]
     public sealed class ReplayResourceUploadMsg
     {

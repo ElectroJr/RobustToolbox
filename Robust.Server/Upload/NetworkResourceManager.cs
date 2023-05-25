@@ -45,6 +45,20 @@ public sealed class NetworkResourceManager : SharedNetworkResourceManager
         }
     }
 
+    public override bool CanUpload(int numBytes)
+    {
+        // Do not allow uploading any new resources if it has been disabled.
+        // Note: Any resources uploaded before being disabled will still be kept and sent.
+        if (!Enabled)
+            return false;
+
+        // Ensure the data is under the current size limit, if it's currently enabled.
+        if (SizeLimit > 0f && numBytes * BytesToMegabytes > SizeLimit)
+            return false;
+
+        return true;
+    }
+
     /// <summary>
     ///     Callback for when a client attempts to upload a resource.
     /// </summary>
@@ -52,19 +66,13 @@ public sealed class NetworkResourceManager : SharedNetworkResourceManager
     /// <exception cref="NotImplementedException"></exception>
     protected override void ResourceUploadMsg(NetworkResourceUploadMessage msg)
     {
-        // Do not allow uploading any new resources if it has been disabled.
-        // Note: Any resources uploaded before being disabled will still be kept and sent.
-        if (!Enabled)
+        if (msg.Data == null || !CanUpload(msg.Data.Length))
             return;
 
         if (!_playerManager.TryGetSessionByChannel(msg.MsgChannel, out var session))
             return;
 
         if (!_controller.CanCommand(session, "uploadfile"))
-            return;
-
-        // Ensure the data is under the current size limit, if it's currently enabled.
-        if (SizeLimit > 0f && msg.Data.Length * BytesToMegabytes > SizeLimit)
             return;
 
         ContentRoot.AddOrUpdateFile(msg.RelativePath, msg.Data);
