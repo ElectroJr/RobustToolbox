@@ -5,8 +5,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using Robust.Shared.Configuration;
 using Robust.Shared.Log;
 using Robust.Shared.Maths;
+using Robust.Shared.Network;
 using Robust.Shared.Reflection;
 using Robust.Shared.Utility;
 
@@ -17,15 +19,18 @@ namespace Robust.Shared.Serialization
         [Dependency] private readonly IReflectionManager _reflectionManager = default!;
         [Dependency] protected readonly IRobustMappedStringSerializer MappedStringSerializer = default!;
         [Dependency] private readonly ILogManager _logManager = default!;
+        [Dependency] private readonly IConfigurationManager _confMan = default!;
+        [Dependency] private readonly INetManager _netMan = default!;
 
         private readonly Dictionary<Type, Dictionary<string, Type?>> _cachedSerialized = new();
 
         private ISawmill LogSzr = default!;
 
-
         private Serializer _serializer = default!;
 
         private HashSet<Type> _serializableTypes = default!;
+
+        public SerializationContext DefaultContext = default!;
 
         private static Type[] AlwaysNetSerializable => new[]
         {
@@ -89,6 +94,25 @@ namespace Robust.Shared.Serialization
             _serializer = new Serializer(types, settings);
             _serializableTypes = new HashSet<Type>(_serializer.GetTypeMap().Keys);
             LogSzr.Info($"Serializer Types Hash: {_serializer.GetSHA256()}");
+
+
+            _confMan.OnValueChanged(CVars.NetMaxSerializationSize, OnMaxSizeChanged, true);
+        }
+
+        private void OnMaxSizeChanged(int value)
+        {
+            DefaultContext = new()
+            {
+                // Deserialization
+                ByteDeserializationLimit = _netMan.IsServer ? value : int.MaxValue,
+                StringDeserializationLimit = _netMan.IsServer ? value : int.MaxValue,
+                CollectionDeserializationLimit = _netMan.IsServer ? value : int.MaxValue,
+
+                // Serialization
+                ByteSerializationLimit = _netMan.IsServer ? int.MaxValue : value,
+                StringSerializationLimit = _netMan.IsServer ? int.MaxValue : value,
+                CollectionSerializationLimit = _netMan.IsServer ? int.MaxValue : value,
+            };
         }
 
         public byte[] GetSerializableTypesHash() => Convert.FromHexString(_serializer.GetSHA256());
@@ -101,7 +125,7 @@ namespace Robust.Shared.Serialization
         public void Serialize(Stream stream, object toSerialize, SerializationContext? ctx = null)
         {
             var start = stream.Position;
-            _serializer.Serialize(stream, toSerialize, ctx);
+            _serializer.Serialize(stream, toSerialize, ctx ?? DefaultContext);
             var end = stream.Position;
             var byteCount = end - start;
 
@@ -126,7 +150,7 @@ namespace Robust.Shared.Serialization
                 "Object must be of exact type specified in the generic parameter.");
 
             var start = stream.Position;
-            _serializer.SerializeDirect(stream, toSerialize, ctx);
+            _serializer.SerializeDirect(stream, toSerialize, ctx ?? DefaultContext);
             var end = stream.Position;
             var byteCount = end - start;
 
@@ -146,12 +170,12 @@ namespace Robust.Shared.Serialization
         }
 
         public T Deserialize<T>(Stream stream, SerializationContext? ctx = null)
-            => (T) Deserialize(stream, ctx);
+            => (T) Deserialize(stream, ctx ?? DefaultContext);
 
         public void DeserializeDirect<T>(Stream stream, out T value, SerializationContext? ctx = null)
         {
             var start = stream.Position;
-            _serializer.DeserializeDirect(stream, out value, ctx);
+            _serializer.DeserializeDirect(stream, out value, ctx ?? DefaultContext);
             var end = stream.Position;
             var byteCount = end - start;
 
@@ -171,7 +195,7 @@ namespace Robust.Shared.Serialization
         public object Deserialize(Stream stream, SerializationContext? ctx = null)
         {
             var start = stream.Position;
-            var result = _serializer.Deserialize(stream, ctx);
+            var result = _serializer.Deserialize(stream, ctx ?? DefaultContext);
             var end = stream.Position;
             var byteCount = end - start;
 

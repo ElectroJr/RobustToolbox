@@ -9,6 +9,7 @@ using Robust.Shared.Log;
 using Robust.Shared.Maths;
 using Robust.Shared.Network;
 using Robust.Shared.Physics;
+using Robust.Shared.Serialization;
 
 namespace Robust.Shared
 {
@@ -282,6 +283,15 @@ namespace Robust.Shared
         /// 0 = no packets duplicated, 1 = all packets duplicated.
         /// </summary>
         public static readonly CVarDef<float> NetFakeDuplicates = CVarDef.Create("net.fakeduplicates", 0f, CVar.CHEAT);
+
+        /// <summary>
+        /// Upper limit on the size of collections and strings that are (de)serialized by <see cref="IRobustSerializer"/>.
+        /// This only applies for data being sent from clients to the server. Note that resource uploading is not
+        /// affected by this limit. See <see cref="ResourceUploadingLimitMb"/> instead.
+        /// </summary>
+        public static readonly CVarDef<int> NetMaxSerializationSize = CVarDef.Create("net.max_serialization_size",
+            262_144, CVar.SERVER | CVar.ARCHIVE | CVar.REPLICATED);
+        // 262_144 = 2^18. Corresponds to a ~ 1MB float[].
 
         /**
          * SUS
