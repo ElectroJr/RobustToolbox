@@ -64,7 +64,7 @@ internal abstract class MsgViewVariablesPathReqVal : MsgViewVariablesPathReq
 
 internal abstract class MsgViewVariablesPathRes : MsgViewVariablesPath
 {
-    public string[] Response { get; set; } = Array.Empty<string>();
+    public string[] Response { get; set; } = default!;
     public ViewVariablesResponseCode ResponseCode { get; set; } = ViewVariablesResponseCode.Ok;
 
     internal MsgViewVariablesPathRes()
@@ -82,6 +82,10 @@ internal abstract class MsgViewVariablesPathRes : MsgViewVariablesPath
         base.ReadFromBuffer(buffer, serializer);
         ResponseCode = (ViewVariablesResponseCode) buffer.ReadUInt16();
         var length = buffer.ReadInt32();
+
+        if (length > ViewVariablesManager.MaxListPathResponseLength)
+            throw new Exception("Response length exceeded maximum size.");
+
         Response = new string[length];
 
         for (var i = 0; i < length; i++)
@@ -92,6 +96,9 @@ internal abstract class MsgViewVariablesPathRes : MsgViewVariablesPath
 
     public override void WriteToBuffer(NetOutgoingMessage buffer, IRobustSerializer serializer)
     {
+        if (Response.Length > ViewVariablesManager.MaxListPathResponseLength)
+            throw new Exception("Response length exceeded maximum size.");
+
         base.WriteToBuffer(buffer, serializer);
         buffer.Write((ushort)ResponseCode);
         buffer.Write(Response.Length);
