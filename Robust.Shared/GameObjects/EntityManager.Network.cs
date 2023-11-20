@@ -256,8 +256,7 @@ public partial class EntityManager
     /// <inheritdoc />
     public HashSet<EntityUid> GetEntitySet(HashSet<NetEntity> netEntities)
     {
-        var entities = new HashSet<EntityUid>();
-        entities.EnsureCapacity(netEntities.Count);
+        var entities = new HashSet<EntityUid>(netEntities.Count);
 
         foreach (var netEntity in netEntities)
         {
@@ -265,6 +264,15 @@ public partial class EntityManager
         }
 
         return entities;
+    }
+
+    public void GetEntitySet(HashSet<NetEntity> netEntities, HashSet<EntityUid> entities)
+    {
+        entities.EnsureCapacity(netEntities.Count);
+        foreach (var netEntity in netEntities)
+        {
+            entities.Add(GetEntity(netEntity));
+        }
     }
 
     /// <inheritdoc />
@@ -280,6 +288,15 @@ public partial class EntityManager
         return entities;
     }
 
+    public void GetEntityList(List<NetEntity> netEntities, List<EntityUid> entities)
+    {
+        entities.EnsureCapacity(netEntities.Count);
+        foreach (var netEntity in netEntities)
+        {
+            entities.Add(GetEntity(netEntity));
+        }
+    }
+
     public HashSet<EntityUid> EnsureEntitySet<T>(HashSet<NetEntity> netEntities, EntityUid callerEntity)
     {
         var entities = new HashSet<EntityUid>(netEntities.Count);
@@ -290,6 +307,15 @@ public partial class EntityManager
         }
 
         return entities;
+    }
+
+    public void EnsureEntitySet<T>(HashSet<NetEntity> netEntities, EntityUid callerEntity, HashSet<EntityUid> entities)
+    {
+        entities.EnsureCapacity(netEntities.Count);
+        foreach (var netEntity in netEntities)
+        {
+            entities.Add(EnsureEntity<T>(netEntity, callerEntity));
+        }
     }
 
     /// <inheritdoc />
@@ -305,6 +331,15 @@ public partial class EntityManager
         return entities;
     }
 
+    public void EnsureEntityList<T>(List<NetEntity> netEntities, EntityUid callerEntity, List<EntityUid> entities)
+    {
+        entities.EnsureCapacity(netEntities.Count);
+        foreach (var netEntity in netEntities)
+        {
+            entities.Add(EnsureEntity<T>(netEntity, callerEntity));
+        }
+    }
+
     /// <inheritdoc />
     public List<EntityUid> GetEntityList(ICollection<NetEntity> netEntities)
     {
@@ -315,6 +350,15 @@ public partial class EntityManager
         }
 
         return entities;
+    }
+
+    public void GetEntityList(ICollection<NetEntity> netEntities, List<EntityUid> entities)
+    {
+        entities.EnsureCapacity(netEntities.Count);
+        foreach (var netEntity in netEntities)
+        {
+            entities.Add(GetEntity(netEntity));
+        }
     }
 
     /// <inheritdoc />
@@ -330,6 +374,15 @@ public partial class EntityManager
         return entities;
     }
 
+    public void GetEntityList(List<NetEntity?> netEntities, List<EntityUid?> entities)
+    {
+        entities.EnsureCapacity(netEntities.Count);
+        foreach (var netEntity in netEntities)
+        {
+            entities.Add(GetEntity(netEntity));
+        }
+    }
+
     /// <inheritdoc />
     public EntityUid[] GetEntityArray(NetEntity[] netEntities)
     {
@@ -341,6 +394,15 @@ public partial class EntityManager
         }
 
         return entities;
+    }
+
+    public void GetEntityArray(NetEntity[] netEntities, ref EntityUid[] entities)
+    {
+        Array.Resize(ref entities, netEntities.Length);
+        for (var i = 0; i < netEntities.Length; i++)
+        {
+            entities[i] = GetEntity(netEntities[i]);
+        }
     }
 
     /// <inheritdoc />
@@ -356,31 +418,68 @@ public partial class EntityManager
         return entities;
     }
 
-    /// <inheritdoc />
-    public HashSet<NetEntity> GetNetEntitySet(HashSet<EntityUid> entities)
+    public void GetEntityArray(NetEntity?[] netEntities, ref EntityUid?[] entities)
     {
-        var newSet = new HashSet<NetEntity>(entities.Count);
-
-        foreach (var ent in entities)
+        Array.Resize(ref entities, netEntities.Length);
+        for (var i = 0; i < netEntities.Length; i++)
         {
-            MetaQuery.TryGetComponent(ent, out var metadata);
-            newSet.Add(GetNetEntity(ent, metadata));
+            entities[i] = GetEntity(netEntities[i]);
         }
-
-        return newSet;
     }
 
     /// <inheritdoc />
-    public List<NetEntity> GetNetEntityList(List<EntityUid> entities)
+    public HashSet<NetEntity> GetNetEntitySet(HashSet<EntityUid> entities, bool removeInvalid = true)
     {
-        var netEntities = new List<NetEntity>(entities.Count);
+        var newSet = new HashSet<NetEntity>(entities.Count);
+        GetNetEntitySet(entities, newSet, removeInvalid);
+        return newSet;
+    }
 
-        foreach (var netEntity in entities)
+    public void GetNetEntitySet(HashSet<EntityUid> entities, HashSet<NetEntity> netEntities, bool removeInvalid = true)
+    {
+        netEntities.EnsureCapacity(entities.Count);
+        bool anyInvalid = false;
+        foreach (var ent in entities)
         {
-            netEntities.Add(GetNetEntity(netEntity));
+            var nent = GetNetEntity(ent);
+            netEntities.Add(nent);
+            anyInvalid |= nent == NetEntity.Invalid;
         }
 
+        if (!anyInvalid || !removeInvalid)
+            return;
+
+        // This is slow, but ot also shouldn't happen frequently.
+        // This is mainly to stop PVS error spam.
+        netEntities.Remove(NetEntity.Invalid);
+        entities.RemoveWhere(e => !EntityExists(e));
+    }
+
+    /// <inheritdoc />
+    public List<NetEntity> GetNetEntityList(List<EntityUid> entities, bool removeInvalid = true)
+    {
+        var netEntities = new List<NetEntity>(entities.Count);
+        GetNetEntityList(entities, netEntities, removeInvalid);
         return netEntities;
+    }
+
+    public void GetNetEntityList(List<EntityUid> entities, List<NetEntity> netEntities, bool removeInvalid = true)
+    {
+        netEntities.EnsureCapacity(entities.Count);
+        for (int i = 0; i < entities.Count; i++)
+        {
+            var nent = GetNetEntity(entities[i]);
+            if (nent == NetEntity.Invalid && removeInvalid)
+            {
+                // We could in theory use a faster version with RemoveSwap() here. But there **might** be situations
+                // where the order matters? and this really shouldn't be happening frequently.
+                // This is mainly to stop PVS error spam.
+                entities.RemoveAt(i);
+                i--;
+                continue;
+            }
+            netEntities.Add(nent);
+        }
     }
 
     /// <inheritdoc />
@@ -410,16 +509,30 @@ public partial class EntityManager
     }
 
     /// <inheritdoc />
-    public List<NetEntity?> GetNetEntityList(List<EntityUid?> entities)
+    public List<NetEntity?> GetNetEntityList(List<EntityUid?> entities, bool removeInvalid = true)
     {
         var netEntities = new List<NetEntity?>(entities.Count);
-
-        foreach (var netEntity in entities)
-        {
-            netEntities.Add(GetNetEntity(netEntity));
-        }
-
+        GetNetEntityList(entities, netEntities, removeInvalid);
         return netEntities;
+    }
+
+    public void GetNetEntityList(List<EntityUid?> entities, List<NetEntity?> netEntities, bool removeInvalid = true)
+    {
+        netEntities.EnsureCapacity(entities.Count);
+        for (int i = 0; i < entities.Count; i++)
+        {
+            var nent = GetNetEntity(entities[i]);
+            if (nent == NetEntity.Invalid && removeInvalid)
+            {
+                // We could in theory use a faster version with RemoveSwap() here. But there **might** be situations
+                // where the order matters? and this really shouldn't be happening frequently.
+                // This is mainly to stop PVS error spam.
+                entities.RemoveAt(i);
+                i--;
+                continue;
+            }
+            netEntities.Add(nent);
+        }
     }
 
     /// <inheritdoc />
@@ -435,6 +548,15 @@ public partial class EntityManager
         return netEntities;
     }
 
+    public void GetNetEntityArray(EntityUid[] entities, ref NetEntity[] netEntities)
+    {
+        Array.Resize(ref netEntities, entities.Length);
+        for (var i = 0; i < entities.Length; i++)
+        {
+            netEntities[i] = GetNetEntity(entities[i]);
+        }
+    }
+
     /// <inheritdoc />
     public NetEntity?[] GetNetEntityArray(EntityUid?[] entities)
     {
@@ -446,6 +568,15 @@ public partial class EntityManager
         }
 
         return netEntities;
+    }
+
+    public void GetNetEntityArray(EntityUid?[] entities, ref NetEntity?[] netEntities)
+    {
+        Array.Resize(ref netEntities, entities.Length);
+        for (var i = 0; i < entities.Length; i++)
+        {
+            netEntities[i] = GetNetEntity(entities[i]);
+        }
     }
 
     /// <inheritdoc />

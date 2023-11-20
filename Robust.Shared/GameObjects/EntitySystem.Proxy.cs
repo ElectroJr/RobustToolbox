@@ -1025,9 +1025,21 @@ public partial class EntitySystem
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void EnsureEntitySet<T>(HashSet<NetEntity> netEntities, EntityUid callerEntity, HashSet<EntityUid> entities)
+    {
+        EntityManager.EnsureEntitySet<T>(netEntities, callerEntity, entities);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected List<EntityUid> EnsureEntityList<T>(List<NetEntity> netEntities, EntityUid callerEntity)
     {
         return EntityManager.EnsureEntityList<T>(netEntities, callerEntity);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void EnsureEntityList<T>(List<NetEntity> netEntities, EntityUid callerEntity, List<EntityUid> entities)
+    {
+        EntityManager.EnsureEntityList<T>(netEntities, callerEntity, entities);
     }
 
     /// <summary>
@@ -1052,9 +1064,18 @@ public partial class EntitySystem
     ///     Returns the <see cref="NetEntity"/> versions of the supplied entities. Logs an error if the entities do not exist.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected HashSet<NetEntity> GetNetEntitySet(HashSet<EntityUid> uids)
+    protected HashSet<NetEntity> GetNetEntitySet(HashSet<EntityUid> uids, bool removeInvalid = true)
     {
-        return EntityManager.GetNetEntitySet(uids);
+        return EntityManager.GetNetEntitySet(uids, removeInvalid);
+    }
+
+    /// <summary>
+    ///     Returns the <see cref="NetEntity"/> versions of the supplied entities. Logs an error if the entities do not exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetNetEntitySet(HashSet<EntityUid> uids, HashSet<NetEntity> entities, bool removeInvalid = true)
+    {
+        EntityManager.GetNetEntitySet(uids, entities, removeInvalid);
     }
 
     /// <summary>
@@ -1064,6 +1085,15 @@ public partial class EntitySystem
     protected HashSet<EntityUid> GetEntitySet(HashSet<NetEntity> netEntities)
     {
         return EntityManager.GetEntitySet(netEntities);
+    }
+
+    /// <summary>
+    ///     Returns the <see cref="EntityUid"/> versions of the supplied <see cref="NetEntity"/>. Returns <see cref="EntityUid.Invalid"/> if it doesn't exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetEntitySet(HashSet<NetEntity> netEntities, HashSet<EntityUid> entities)
+    {
+        EntityManager.GetEntitySet(netEntities, entities);
     }
 
     /// <summary>
@@ -1094,12 +1124,30 @@ public partial class EntitySystem
     }
 
     /// <summary>
+    ///     Returns the <see cref="EntityUid"/> versions of the supplied <see cref="NetEntity"/>. Returns <see cref="EntityUid.Invalid"/> if it doesn't exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetEntityList(ICollection<NetEntity> netEntities, List<EntityUid> entities)
+    {
+        EntityManager.GetEntityList(netEntities, entities);
+    }
+
+    /// <summary>
     ///     Returns the <see cref="NetEntity"/> versions of the supplied entities. Logs an error if the entities do not exist.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected List<NetEntity> GetNetEntityList(List<EntityUid> uids)
+    protected List<NetEntity> GetNetEntityList(List<EntityUid> uids, bool removeInvalid = true)
     {
-        return EntityManager.GetNetEntityList(uids);
+        return EntityManager.GetNetEntityList(uids, removeInvalid);
+    }
+
+    /// <summary>
+    ///     Returns the <see cref="NetEntity"/> versions of the supplied entities. Logs an error if the entities do not exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetNetEntityList(List<EntityUid> uids, List<NetEntity> entities, bool removeInvalid = true)
+    {
+        EntityManager.GetNetEntityList(uids, entities, removeInvalid);
     }
 
     /// <summary>
@@ -1112,12 +1160,30 @@ public partial class EntitySystem
     }
 
     /// <summary>
+    ///     Returns the <see cref="EntityUid"/> versions of the supplied <see cref="NetEntity"/>. Returns <see cref="EntityUid.Invalid"/> if it doesn't exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetEntityList(List<NetEntity> netEntities, List<EntityUid> entities)
+    {
+        EntityManager.GetEntityList(netEntities, entities);
+    }
+
+    /// <summary>
     ///     Returns the <see cref="NetEntity"/> versions of the supplied entities. Logs an error if the entities do not exist.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected List<NetEntity?> GetNetEntityList(List<EntityUid?> uids)
+    protected List<NetEntity?> GetNetEntityList(List<EntityUid?> uids, bool removeInvalid = true)
     {
-        return EntityManager.GetNetEntityList(uids);
+        return EntityManager.GetNetEntityList(uids, removeInvalid);
+    }
+
+    /// <summary>
+    ///     Returns the <see cref="NetEntity"/> versions of the supplied entities. Logs an error if the entities do not exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetNetEntityList(List<EntityUid?> uids, List<NetEntity?> entities, bool removeInvalid = true)
+    {
+        EntityManager.GetNetEntityList(uids, entities, removeInvalid);
     }
 
     /// <summary>
@@ -1130,12 +1196,30 @@ public partial class EntitySystem
     }
 
     /// <summary>
+    ///     Returns the <see cref="EntityUid"/> versions of the supplied <see cref="NetEntity"/>. Returns <see cref="EntityUid.Invalid"/> if it doesn't exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetEntityList(List<NetEntity?> netEntities, List<EntityUid?> entities)
+    {
+        EntityManager.GetEntityList(netEntities, entities);
+    }
+
+    /// <summary>
     ///     Returns the <see cref="NetEntity"/> versions of the supplied entities. Logs an error if the entities do not exist.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected NetEntity[] GetNetEntityArray(EntityUid[] uids)
     {
         return EntityManager.GetNetEntityArray(uids);
+    }
+
+    /// <summary>
+    ///     Returns the <see cref="NetEntity"/> versions of the supplied entities. Logs an error if the entities do not exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetNetEntityArray(EntityUid[] uids, ref NetEntity[] entities)
+    {
+        EntityManager.GetNetEntityArray(uids, ref entities);
     }
 
     /// <summary>
@@ -1148,6 +1232,15 @@ public partial class EntitySystem
     }
 
     /// <summary>
+    ///     Returns the <see cref="EntityUid"/> versions of the supplied <see cref="NetEntity"/>. Returns <see cref="EntityUid.Invalid"/> if it doesn't exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetEntityArray(NetEntity[] netEntities, ref EntityUid[] entities)
+    {
+        EntityManager.GetEntityArray(netEntities, ref entities);
+    }
+
+    /// <summary>
     ///     Returns the <see cref="NetEntity"/> versions of the supplied entities.  Logs an error if the entities do not exist.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1157,12 +1250,30 @@ public partial class EntitySystem
     }
 
     /// <summary>
+    ///     Returns the <see cref="NetEntity"/> versions of the supplied entities.  Logs an error if the entities do not exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetNetEntityArray(EntityUid?[] uids, ref NetEntity?[] entities)
+    {
+        EntityManager.GetNetEntityArray(uids, ref entities);
+    }
+
+    /// <summary>
     ///     Returns the <see cref="EntityUid"/> versions of the supplied <see cref="NetEntity"/>. Returns <see cref="EntityUid.Invalid"/> if it doesn't exist.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected EntityUid?[] GetEntityArray(NetEntity?[] netEntities)
     {
         return EntityManager.GetEntityArray(netEntities);
+    }
+
+    /// <summary>
+    ///     Returns the <see cref="EntityUid"/> versions of the supplied <see cref="NetEntity"/>. Returns <see cref="EntityUid.Invalid"/> if it doesn't exist.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    protected void GetEntityArray(NetEntity?[] netEntities, ref EntityUid?[] entities)
+    {
+        EntityManager.GetEntityArray(netEntities, ref entities);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

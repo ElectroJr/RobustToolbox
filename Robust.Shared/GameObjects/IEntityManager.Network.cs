@@ -110,12 +110,12 @@ public partial interface IEntityManager
     /// <summary>
     /// HashSet version of <see cref="GetNetEntity"/>
     /// </summary>
-    public HashSet<NetEntity> GetNetEntitySet(HashSet<EntityUid> entities);
+    public HashSet<NetEntity> GetNetEntitySet(HashSet<EntityUid> entities, bool removeInvalid = true);
 
     /// <summary>
     /// List version of <see cref="GetNetEntity"/>
     /// </summary>
-    public List<NetEntity> GetNetEntityList(List<EntityUid> entities);
+    public List<NetEntity> GetNetEntityList(List<EntityUid> entities, bool removeInvalid = true);
 
     /// <summary>
     /// List version of <see cref="GetNetEntity"/>
@@ -125,7 +125,7 @@ public partial interface IEntityManager
     /// <summary>
     /// List version of <see cref="GetNetEntity"/>
     /// </summary>
-    public List<NetEntity?> GetNetEntityList(List<EntityUid?> entities);
+    public List<NetEntity?> GetNetEntityList(List<EntityUid?> entities, bool removeInvalid = true);
 
     /// <summary>
     /// List version of <see cref="GetNetEntity"/>
@@ -136,6 +136,18 @@ public partial interface IEntityManager
     /// List version of <see cref="GetNetEntity"/>
     /// </summary>
     NetEntity?[] GetNetEntityArray(EntityUid?[] entities);
+
+    void GetEntitySet(HashSet<NetEntity> netEntities, HashSet<EntityUid> entities);
+    void GetEntityList(List<NetEntity> netEntities, List<EntityUid> entities);
+    void GetEntityList(ICollection<NetEntity> netEntities, List<EntityUid> entities);
+    void GetEntityList(List<NetEntity?> netEntities, List<EntityUid?> entities);
+    void GetEntityArray(NetEntity[] netEntities, ref EntityUid[] entities);
+    void GetEntityArray(NetEntity?[] netEntities, ref EntityUid?[] entities);
+    void GetNetEntitySet(HashSet<EntityUid> entities, HashSet<NetEntity> netEntities, bool removeInvalid = true);
+    void GetNetEntityList(List<EntityUid?> entities, List<NetEntity?> netEntities, bool removeInvalid = true);
+    void GetNetEntityList(List<EntityUid> entities, List<NetEntity> netEntities, bool removeInvalid = true);
+    void GetNetEntityArray(EntityUid[] entities, ref NetEntity[] netEntities);
+    void GetNetEntityArray(EntityUid?[] entities, ref NetEntity?[] netEntities);
 
     /// <summary>
     /// Returns the corresponding <see cref="NetCoordinates"/> for the specified local coordinates.
