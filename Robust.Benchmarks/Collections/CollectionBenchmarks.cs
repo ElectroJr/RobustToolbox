@@ -45,6 +45,8 @@ public abstract class CollectionBenchmarks
         {
             ClassList.Add(new());
             StructList.Add(new());
+            ClassArray[i] = new();
+            StructArray[i] = new();
             ListKeys[i] = i;
 
             var k = new EntityUid(i);
