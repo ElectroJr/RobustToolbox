@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System;
+using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
 
 namespace Robust.Benchmarks.Collections;
@@ -7,10 +8,111 @@ namespace Robust.Benchmarks.Collections;
 public class CollectionEnumerationBenchmark : CollectionBenchmarks
 {
     [Benchmark(Baseline = true)]
-    public int ClassListForeach()
+    public int ClassArrayAsSpan()
     {
         var total = 0;
-        foreach (var data in ClassList)
+        foreach (var data in ClassArray.AsSpan())
+        {
+            total += data.A + data.B + data.C;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int ClassArrayAsSpanRef()
+    {
+        var total = 0;
+        foreach (ref var data in ClassArray.AsSpan())
+        {
+            total += data.A + data.B + data.C;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int ClassArrayFor()
+    {
+        var total = 0;
+        for (var i = 0; i < ClassArray.Length; i++)
+        {
+            var data = ClassArray[i];
+            total += data.A + data.B + data.C;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int ClassArrayForeach()
+    {
+        var total = 0;
+        foreach (var data in ClassArray)
+        {
+            total += data.A + data.B + data.C;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int StructArrayAsSpan()
+    {
+        var total = 0;
+        foreach (var data in StructArray.AsSpan())
+        {
+            total += data.A + data.B + data.C;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int StructArrayAsSpanRef()
+    {
+        var total = 0;
+        foreach (ref var data in StructArray.AsSpan())
+        {
+            total += data.A + data.B + data.C;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int StructArrayFor()
+    {
+        var total = 0;
+        for (var i = 0; i < StructArray.Length; i++)
+        {
+            var data = StructArray[i];
+            total += data.A + data.B + data.C;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int StructArrayForeach()
+    {
+        var total = 0;
+        foreach (var data in StructArray)
+        {
+            total += data.A + data.B + data.C;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int ClassListAsSpan()
+    {
+        var total = 0;
+        foreach (var data in CollectionsMarshal.AsSpan(ClassList))
+        {
+            total += data.A + data.B + data.C;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int ClassListAsSpanRef()
+    {
+        var total = 0;
+        foreach (ref var data in CollectionsMarshal.AsSpan(ClassList))
         {
             total += data.A + data.B + data.C;
         }
@@ -30,10 +132,10 @@ public class CollectionEnumerationBenchmark : CollectionBenchmarks
     }
 
     [Benchmark]
-    public int ClassListAsSpan()
+    public int ClassListForeach()
     {
         var total = 0;
-        foreach (ref var data in CollectionsMarshal.AsSpan(ClassList))
+        foreach (var data in ClassList)
         {
             total += data.A + data.B + data.C;
         }
@@ -41,10 +143,21 @@ public class CollectionEnumerationBenchmark : CollectionBenchmarks
     }
 
     [Benchmark]
-    public int StructListForeach()
+    public int StructListAsSpan()
     {
         var total = 0;
-        foreach (var data in StructList)
+        foreach (var data in CollectionsMarshal.AsSpan(StructList))
+        {
+            total += data.A + data.B + data.C;
+        }
+        return total;
+    }
+
+    [Benchmark]
+    public int StructListAsSpanRef()
+    {
+        var total = 0;
+        foreach (ref var data in CollectionsMarshal.AsSpan(StructList))
         {
             total += data.A + data.B + data.C;
         }
@@ -64,10 +177,10 @@ public class CollectionEnumerationBenchmark : CollectionBenchmarks
     }
 
     [Benchmark]
-    public int StructListAsSpan()
+    public int StructListForeach()
     {
         var total = 0;
-        foreach (ref var data in CollectionsMarshal.AsSpan(StructList))
+        foreach (var data in StructList)
         {
             total += data.A + data.B + data.C;
         }

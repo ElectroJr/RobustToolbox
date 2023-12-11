@@ -29,6 +29,8 @@ public abstract class CollectionBenchmarks
 
     public List<DataClass> ClassList = new();
     public List<DataStruct> StructList = new();
+    public DataClass[] ClassArray = new DataClass[N];
+    public DataStruct[] StructArray = new DataStruct[N];
 
     public HashSet<EntityUid> KeySet = new();
     public List<EntityUid> KeyList = new();
