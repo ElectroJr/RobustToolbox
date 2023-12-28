@@ -6,6 +6,7 @@
       <OutputPath>../bin/Benchmarks</OutputPath>
       <OutputType>Exe</OutputType>
       <NoWarn>RA0003</NoWarn>
+      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Robust.Server\Robust.Server.csproj" />
