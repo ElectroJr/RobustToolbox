@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.InteropServices;
+using Arch.Core.Utils;
 using JetBrains.Annotations;
 using Microsoft.Extensions.ObjectPool;
 using Robust.Client.GameObjects;
@@ -609,6 +610,7 @@ namespace Robust.Client.GameStates
                 }
 
                 // Remove predicted component additions
+                // TODO ARCH 1 archetype change.
                 foreach (var comp in toRemove)
                 {
                     _entities.RemoveComponent(entity, comp);
@@ -1243,7 +1245,7 @@ namespace Robust.Client.GameStates
                     if (!meta.NetComponents.TryGetValue(id, out var comp))
                     {
                         comp = _compFactory.GetComponent(id);
-                        _entityManager.AddComponent(uid, comp, true, metadata: meta);
+                        _entityManager.AddComponent(uid, comp, metadata: meta);
                     }
 
                     _compStateWork[id] = (comp, state, null);
@@ -1251,17 +1253,48 @@ namespace Robust.Client.GameStates
             }
             else if (curState != null)
             {
+                var addedComps = new List<IComponent>();
+                var addedCompTypes = new List<ComponentType>();
+                var addedRegistrations = new List<ComponentRegistration>();
+
                 foreach (var compChange in curState.ComponentChanges.Span)
                 {
                     if (!meta.NetComponents.TryGetValue(compChange.NetID, out var comp))
                     {
-                        comp = _compFactory.GetComponent(compChange.NetID);
-                        _entityManager.AddComponent(uid, comp, true, metadata:meta);
+                        var registration = _compFactory.GetRegistration(compChange.NetID);
+                        addedRegistrations.Add(registration);
+                        comp = _compFactory.GetComponent(registration);
+                        comp.Owner = uid;
+                        addedComps.Add(comp);
+                        addedCompTypes.Add(comp.GetType());
                     }
                     else if (compChange.LastModifiedTick <= lastApplied && lastApplied != GameTick.Zero)
                         continue;
 
                     _compStateWork[compChange.NetID] = (comp, compChange.State, null);
+                }
+
+                // To avoid shuffling the archetype we'll set the component range up-front.
+                if (addedComps.Count > 0)
+                {
+                    // TODO ARCH: This fucking sucks but
+                    // - Frequent archetype changes PER COMPONENT sucks
+                    // - the components will be null in event handlers until it's done.
+                    _entityManager.AddComponentRange(uid, addedCompTypes);
+
+                    for (var i = 0; i < addedComps.Count; i++)
+                    {
+                        var component = addedComps[i];
+                        var reg = addedRegistrations[i];
+                        _entityManager.AddComponentInternalOnly(uid, component, reg, meta);
+                    }
+
+                    for (var i = 0; i < addedComps.Count; i++)
+                    {
+                        var component = addedComps[i];
+                        var reg = addedRegistrations[i];
+                        _entityManager.AddComponentEvents(uid, component, reg, false, meta);
+                    }
                 }
             }
 
@@ -1352,7 +1385,7 @@ namespace Robust.Client.GameStates
                 return false;
             }
 
-            if (!EntityUid.TryParse(args[0], out uid))
+            if (!EntityUid.TryParse(args[0], "-1", out uid))
             {
                 shell.WriteError(Loc.GetString("cmd-parse-failure-uid", ("arg", args[0])));
                 meta = null;
@@ -1484,7 +1517,7 @@ namespace Robust.Client.GameStates
                 if (!meta.NetComponents.TryGetValue(id, out var comp))
                 {
                     comp = _compFactory.GetComponent(id);
-                    _entityManager.AddComponent(uid, comp, true, meta);
+                    _entityManager.AddComponent(uid, comp, meta);
                 }
 
                 var handleState = new ComponentHandleState(state, null);
