@@ -159,12 +159,8 @@ namespace Robust.Shared.ContentPack
         private static string GetFullPath(string root, ResPath path)
         {
             var relPath = path.ToRelativeSystemPath();
-            if (relPath.Contains("\\..") || relPath.Contains("/.."))
-            {
-                // Hard cap on any exploit smuggling a .. in there.
-                // Since that could allow leaving sandbox.
+            if (relPath.Contains("\\..") || relPath.Contains("/..") || relPath.StartsWith("..\\") || relPath.StartsWith("..//"))
                 throw new InvalidOperationException($"This branch should never be reached. Path: {path}");
-            }
 
             return Path.GetFullPath(Path.Combine(root, relPath));
         }

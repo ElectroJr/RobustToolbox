@@ -407,7 +407,10 @@ public readonly struct ResPath : IEquatable<ResPath>
     /// <exception cref="ArgumentException">Thrown if the separators are not the same.</exception>
     public bool TryRelativeTo(ResPath basePath, [NotNullWhen(true)] out ResPath? relative)
     {
-        if (this == basePath)
+        var path = this.Clean();
+        basePath = basePath.Clean();
+
+        if (path == basePath)
         {
             relative = Self;
             return true;
@@ -416,14 +419,13 @@ public readonly struct ResPath : IEquatable<ResPath>
         // "foo.txt" is relative to "."
         if (basePath == Self && IsRelative)
         {
-            relative = this;
+            relative = path;
             return true;
         }
 
-        if (CanonPath.StartsWith(basePath.CanonPath))
+        if (path.CanonPath.StartsWith(basePath.CanonPath))
         {
-            var x = CanonPath[basePath.CanonPath.Length..]
-                .Trim('/');
+            var x = path.CanonPath[basePath.CanonPath.Length..].Trim('/');
             relative = x == "" ? Self : new ResPath(x);
             return true;
         }

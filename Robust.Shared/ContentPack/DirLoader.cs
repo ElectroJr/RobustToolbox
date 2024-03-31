@@ -60,7 +60,11 @@ namespace Robust.Shared.ContentPack
 
             internal string GetPath(ResPath relPath)
             {
-                return Path.GetFullPath(Path.Combine(_directory.FullName, relPath.ToRelativeSystemPath()));
+                var path = relPath.Clean().ToRelativeSystemPath();
+                if (path.Contains("\\..") || path.Contains("/..") || path.StartsWith("..\\") || path.StartsWith("..//"))
+                    throw new InvalidOperationException($"This branch should never be reached. Path: {path}");
+
+                return Path.GetFullPath(Path.Combine(_directory.FullName, path));
             }
 
             /// <inheritdoc />
