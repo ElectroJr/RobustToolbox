@@ -205,10 +205,7 @@ namespace Robust.Server.GameObjects
         /// <inheritdoc />
         public void SendSystemNetworkMessage(EntityEventArgs message, bool recordReplay = true)
         {
-            var newMsg = new MsgEntity();
-            newMsg.Type = EntityMessageType.SystemMessage;
-            newMsg.SystemMessage = message;
-            newMsg.SourceTick = _gameTiming.CurTick;
+            var newMsg = new MsgEntity(message, default, _gameTiming.CurTick, CompressionThreshold, CompressionContext);
 
             if (recordReplay)
                 _replay.RecordServerMessage(message);
@@ -219,11 +216,7 @@ namespace Robust.Server.GameObjects
         /// <inheritdoc />
         public void SendSystemNetworkMessage(EntityEventArgs message, INetChannel targetConnection)
         {
-            var newMsg = new MsgEntity();
-            newMsg.Type = EntityMessageType.SystemMessage;
-            newMsg.SystemMessage = message;
-            newMsg.SourceTick = _gameTiming.CurTick;
-
+            var newMsg = new MsgEntity(message, default, _gameTiming.CurTick, CompressionThreshold, CompressionContext);
             _networkManager.ServerSendMessage(newMsg, targetConnection);
         }
 
@@ -269,17 +262,11 @@ namespace Robust.Server.GameObjects
             try
 #endif
             {
-                switch (message.Type)
-                {
-                    case EntityMessageType.SystemMessage:
-                        var msg = message.SystemMessage;
-                        var sessionType = typeof(EntitySessionMessage<>).MakeGenericType(msg.GetType());
-                        var sessionMsg =
-                            Activator.CreateInstance(sessionType, new EntitySessionEventArgs(player), msg)!;
-                        ReceivedSystemMessage?.Invoke(this, msg);
-                        ReceivedSystemMessage?.Invoke(this, sessionMsg);
-                        return;
-                }
+                var msg = message.Event;
+                var sessionType = typeof(EntitySessionMessage<>).MakeGenericType(msg.GetType());
+                var sessionMsg = Activator.CreateInstance(sessionType, new EntitySessionEventArgs(player), msg)!;
+                ReceivedSystemMessage?.Invoke(this, msg);
+                ReceivedSystemMessage?.Invoke(this, sessionMsg);
             }
 #if EXCEPTION_TOLERANCE
             catch (Exception e)

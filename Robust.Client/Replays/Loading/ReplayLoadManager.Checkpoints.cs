@@ -215,7 +215,10 @@ public sealed partial class ReplayLoadManager
                     {
                         _netMan.DispatchLocalNetMessage(new NetworkResourceUploadMessage
                         {
-                            RelativePath = path, Data = resUpload.Data
+                            RelativePath = path,
+                            Data = resUpload.Data,
+                            Size = resUpload.Data.Length,
+                            UncompressedSize = -1
                         });
                         message.Messages.RemoveSwap(i);
                         break;

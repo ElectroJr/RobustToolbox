@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Robust.Shared.ContentPack;
 using Robust.Shared.IoC;
+using Robust.Shared.Log;
 using Robust.Shared.Network;
 using Robust.Shared.Replays;
 using Robust.Shared.Serialization;
@@ -46,14 +48,27 @@ public abstract class SharedNetworkResourceManager : IDisposable
         // replays will need information about currently loaded extra resources
         foreach (var (path, data) in ContentRoot.GetAllFiles())
         {
-            events.Add(new ReplayResourceUploadMsg { RelativePath = path, Data = data });
+            events.Add(new ReplayResourceUploadMsg { RelativePath = path, Data = data});
         }
     }
 
     protected virtual void ResourceUploadMsg(NetworkResourceUploadMessage msg)
     {
-        ContentRoot.AddOrUpdateFile(msg.RelativePath, msg.Data);
-        _replay.RecordReplayMessage(new ReplayResourceUploadMsg { RelativePath = msg.RelativePath, Data = msg.Data });
+        byte[] uncompressed;
+        if (msg.UncompressedSize < 0)
+        {
+            uncompressed = msg.Data;
+        }
+        else
+        {
+            uncompressed = new byte[msg.UncompressedSize];
+            using var ms = new MemoryStream(uncompressed);
+            using var decompressStream = new ZStdDecompressStream(new MemoryStream(msg.Data));
+            decompressStream.CopyTo(ms, uncompressed.Length);
+        }
+
+        ContentRoot.AddOrUpdateFile(msg.RelativePath, uncompressed);
+        _replay.RecordReplayMessage(new ReplayResourceUploadMsg { RelativePath = msg.RelativePath, Data = uncompressed});
     }
 
     public void Dispose()
@@ -66,7 +81,8 @@ public abstract class SharedNetworkResourceManager : IDisposable
     [Serializable, NetSerializable]
     public sealed class ReplayResourceUploadMsg
     {
+        // Uncompressed file data
         public byte[] Data = default!;
-        public ResPath RelativePath = default!;
+        public ResPath RelativePath;
     }
 }

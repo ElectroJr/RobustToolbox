@@ -13,6 +13,7 @@
     <PackageReference Include="DiscordRichPresence" PrivateAssets="compile" />
     <PackageReference Include="JetBrains.Annotations" PrivateAssets="All" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" PrivateAssets="compile" />
+    <PackageReference Include="SharpZstd.Interop" PrivateAssets="compile" />
     <PackageReference Include="SQLitePCLRaw.provider.sqlite3" Condition="'$(UseSystemSqlite)' == 'True'" PrivateAssets="compile" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Condition="'$(UseSystemSqlite)' != 'True'" PrivateAssets="compile" />
     <PackageReference Include="SpaceWizards.NFluidsynth" PrivateAssets="compile" />

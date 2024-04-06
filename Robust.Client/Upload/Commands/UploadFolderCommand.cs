@@ -9,6 +9,7 @@ using Robust.Shared.Localization;
 using Robust.Shared.Network;
 using Robust.Shared.Upload;
 using Robust.Shared.Utility;
+using SharpZstd.Interop;
 
 namespace Robust.Client.Upload.Commands;
 
@@ -49,6 +50,10 @@ public sealed class UploadFolderCommand : IConsoleCommand
             return; // bomb out if the folder doesnt exist in /UploadFolder
         }
 
+        var ctx = new ZStdCompressionContext();
+        var lvl = Math.Max(1, _configManager.GetCVar(CVars.NetPvsCompressLevel));
+        ctx.SetParameter(ZSTD_cParameter.ZSTD_c_compressionLevel, lvl);
+
         //Grab all files in specified folder and upload them
         foreach (var filepath in _resourceManager.UserData.Find($"{folderPath.ToRelativePath()}/").files )
         {
@@ -61,12 +66,16 @@ public sealed class UploadFolderCommand : IConsoleCommand
                     return;
                 }
 
-                var data = filestream.CopyToArray();
+                var rawData = filestream.CopyToArray();
+                var data = new byte[ZStd.CompressBound(rawData.Length)];
+                var size = ctx.Compress2(data, rawData.AsSpan());
 
                 var msg = new NetworkResourceUploadMessage
                 {
                     RelativePath = filepath.RelativeTo(BaseUploadFolderPath),
-                    Data = data
+                    Data = data,
+                    Size = size,
+                    UncompressedSize = rawData.Length
                 };
 
                 _netMan.ClientSendMessage(msg);

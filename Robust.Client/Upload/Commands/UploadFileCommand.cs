@@ -1,3 +1,4 @@
+using System;
 using Robust.Client.UserInterface;
 using Robust.Shared;
 using Robust.Shared.Configuration;
@@ -52,12 +53,19 @@ public sealed class UploadFileCommand : IConsoleCommand
             return;
         }
 
-        var data = file.CopyToArray();
+        // Read & compress file.
+        var ctx = new ZStdCompressionContext();
+        var lvl = Math.Max(1, _cfgManager.GetCVar(CVars.NetPvsCompressLevel));
+        var rawData = file.CopyToArray();
+        var data = new byte[ZStd.CompressBound(rawData.Length)];
+        var size = ctx.Compress(data, rawData.AsSpan(), lvl);
 
         var msg = new NetworkResourceUploadMessage
         {
             RelativePath = path,
-            Data = data
+            Data = data,
+            Size = size,
+            UncompressedSize = rawData.Length
         };
 
         _netManager.ClientSendMessage(msg);

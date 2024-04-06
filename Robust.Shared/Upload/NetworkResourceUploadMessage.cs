@@ -11,31 +11,33 @@ public sealed class NetworkResourceUploadMessage : NetMessage
     public override NetDeliveryMethod DeliveryMethod => NetDeliveryMethod.ReliableUnordered;
     public override MsgGroups MsgGroup => MsgGroups.Command;
 
-    public byte[] Data { get; set; } = Array.Empty<byte>();
-    public ResPath RelativePath { get; set; } = ResPath.Self;
+    public int Size;
 
-    public NetworkResourceUploadMessage()
-    {
-    }
+    /// <summary>
+    /// Size of the data after decompression. -1 implies the data is already decompressed.
+    /// </summary>
+    public int UncompressedSize;
 
-    public NetworkResourceUploadMessage(byte[] data, ResPath relativePath)
-    {
-        Data = data;
-        RelativePath = relativePath;
-    }
+    /// <summary>
+    /// Compressed file data
+    /// </summary>
+    public byte[] Data = default!;
+
+    public ResPath RelativePath = ResPath.Self;
 
     public override void ReadFromBuffer(NetIncomingMessage buffer, IRobustSerializer serializer)
     {
-        var dataLength = buffer.ReadVariableInt32();
-        Data = buffer.ReadBytes(dataLength);
-        // What is the second argument here?
+        Size = buffer.ReadVariableInt32();
+        UncompressedSize = buffer.ReadVariableInt32();
+        Data = buffer.ReadBytes(Size);
         RelativePath = new ResPath(buffer.ReadString());
     }
 
     public override void WriteToBuffer(NetOutgoingMessage buffer, IRobustSerializer serializer)
     {
-        buffer.WriteVariableInt32(Data.Length);
-        buffer.Write(Data);
+        buffer.WriteVariableInt32(Size);
+        buffer.WriteVariableInt32(UncompressedSize);
+        buffer.Write(Data.AsSpan(Size));
         buffer.Write(RelativePath.ToString());
         buffer.Write(ResPath.Separator);
     }

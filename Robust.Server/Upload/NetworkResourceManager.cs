@@ -7,7 +7,9 @@ using Robust.Shared.IoC;
 using Robust.Shared.Network;
 using Robust.Shared.Player;
 using Robust.Shared.Upload;
+using Robust.Shared.Utility;
 using Robust.Shared.ViewVariables;
+using SharpZstd.Interop;
 
 namespace Robust.Server.Upload;
 
@@ -51,7 +53,7 @@ public sealed class NetworkResourceManager : SharedNetworkResourceManager
             return;
 
         // Ensure the data is under the current size limit, if it's currently enabled.
-        if (SizeLimit > 0f && msg.Data.Length * BytesToMegabytes > SizeLimit)
+        if (SizeLimit > 0f && Math.Max(msg.Data.Length, msg.UncompressedSize) * BytesToMegabytes > SizeLimit)
             return;
 
         base.ResourceUploadMsg(msg);
@@ -67,11 +69,25 @@ public sealed class NetworkResourceManager : SharedNetworkResourceManager
 
     private void ServerNetManagerOnConnected(object? sender, NetChannelArgs e)
     {
+        // TODO maybe cache compressed data?
+        var ctx = new ZStdCompressionContext();
+        var lvl = Math.Max(1, _cfgManager.GetCVar(CVars.NetPvsCompressLevel));
+        ctx.SetParameter(ZSTD_cParameter.ZSTD_c_compressionLevel, lvl);
+        byte[]? compressed = null;
+
         foreach (var (path, data) in ContentRoot.GetAllFiles())
         {
-            var msg = new NetworkResourceUploadMessage();
-            msg.RelativePath = path;
-            msg.Data = data;
+            Array.Resize(ref compressed, ZStd.CompressBound(data.Length));
+            var size = ctx.Compress2(compressed, data.AsSpan());
+
+            var msg = new NetworkResourceUploadMessage
+            {
+                RelativePath = path,
+                Data = compressed,
+                Size = size,
+                UncompressedSize = data.Length
+            };
+
             e.Channel.SendMessage(msg);
         }
     }
