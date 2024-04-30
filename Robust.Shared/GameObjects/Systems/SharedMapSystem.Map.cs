@@ -14,7 +14,6 @@ public abstract partial class SharedMapSystem
 
     private void InitializeMap()
     {
-        SubscribeLocalEvent<MapComponent, ComponentAdd>(OnComponentAdd);
         SubscribeLocalEvent<MapComponent, ComponentInit>(OnCompInit);
         SubscribeLocalEvent<MapComponent, ComponentStartup>(OnCompStartup);
         SubscribeLocalEvent<MapComponent, MapInitEvent>(OnMapInit);
@@ -94,16 +93,12 @@ public abstract partial class SharedMapSystem
 
     protected abstract MapId GetNextMapId();
 
-    private void OnComponentAdd(EntityUid uid, MapComponent component, ComponentAdd args)
+    private void OnCompInit(EntityUid uid, MapComponent component, ComponentInit args)
     {
-        // ordered startups when
         EnsureComp<PhysicsMapComponent>(uid);
         EnsureComp<GridTreeComponent>(uid);
         EnsureComp<MovedGridsComponent>(uid);
-    }
 
-    private void OnCompInit(EntityUid uid, MapComponent component, ComponentInit args)
-    {
         if (component.MapId == MapId.Nullspace)
             component.MapId = GetNextMapId();
 
