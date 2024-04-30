@@ -41,6 +41,12 @@ namespace Robust.Shared.GameObjects
             Version = Invalid.Version;
         }
 
+        public EntityUid(EntityUid other)
+        {
+            Id = other.Id;
+            Version = other.Version;
+        }
+
         internal EntityUid(EntityReference reference)
         {
             Id = reference.Entity.Id + ArchUidOffset;

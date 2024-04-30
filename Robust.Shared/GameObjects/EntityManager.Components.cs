@@ -15,6 +15,7 @@ using Robust.Shared.Player;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Timing;
 using Robust.Shared.Utility;
+using ComponentRegistry = Robust.Shared.Prototypes.ComponentRegistry;
 #if EXCEPTION_TOLERANCE
 using Robust.Shared.Exceptions;
 #endif
@@ -285,12 +286,12 @@ namespace Robust.Shared.GameObjects
         {
             // We can't use typeof(T) here in case T is just Component
             DebugTools.Assert(component is MetaDataComponent ||
-                              (metadata ?? MetaQuery.GetComponent(uid)).EntityLifeStage < EntityLifeStage.Terminating,
+                              metadata.EntityLifeStage < EntityLifeStage.Terminating,
                 $"Attempted to add a {component.GetType().Name} component to an entity ({ToPrettyString(uid)}) while it is terminating");
 
             // We can't use typeof(T) here in case T is just Component
             DebugTools.Assert(component is MetaDataComponent ||
-                              (metadata ?? MetaQuery.GetComponent(uid)).EntityLifeStage < EntityLifeStage.Terminating,
+                              metadata.EntityLifeStage < EntityLifeStage.Terminating,
                 $"Attempted to add a {reg.Name} component to an entity ({ToPrettyString(uid)}) while it is terminating");
 
             // TODO optimize this
@@ -309,7 +310,6 @@ namespace Robust.Shared.GameObjects
             {
                 // the main comp grid keeps this in sync
                 var netId = reg.NetID.Value;
-                metadata ??= MetaQuery.GetComponentInternal(uid);
                 metadata.NetComponents.Add(netId, component);
             }
 
@@ -346,8 +346,9 @@ namespace Robust.Shared.GameObjects
                 EventBus.RaiseComponentEvent(component, MapInitEventInstance);
         }
 
-        internal void AddComponentInternal<T>(EntityUid uid, T component, ComponentRegistration reg, bool skipInit, MetaDataComponent? metadata = null) where T : IComponent
+        internal void AddComponentInternal<T>(EntityUid uid, T component, ComponentRegistration reg, bool skipInit, MetaDataComponent? metadata) where T : IComponent
         {
+            metadata ??= MetaQuery.GetComponentInternal(uid);
             AddComponentInternalOnly(uid, component, reg, metadata);
             AddComponentEvents(uid, component, reg, skipInit, metadata);
         }
@@ -917,11 +918,6 @@ namespace Robust.Shared.GameObjects
                 yield return comp;
             }
         }
-
-        /// <summary>
-        /// Internal variant of <see cref="GetComponents"/> that directly returns the actual component set.
-        /// </summary>
-        internal IReadOnlyCollection<IComponent> GetComponentsInternal(EntityUid uid) => _entCompIndex[uid];
 
         /// <inheritdoc />
         public int ComponentCount(EntityUid uid)

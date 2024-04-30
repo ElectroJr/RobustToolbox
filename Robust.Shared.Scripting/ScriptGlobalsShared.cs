@@ -65,11 +65,6 @@ namespace Robust.Shared.Scripting
             return new(i, -1);
         }
 
-        public MapGridComponent getgrid(int i)
-        {
-            return ent.GetComponent<MapGridComponent>(new EntityUid(i));
-        }
-
         public MapGridComponent getgrid(EntityUid mapId)
         {
             return ent.GetComponent<MapGridComponent>(mapId);

@@ -46,10 +46,7 @@ internal sealed class YamlValidationContext : ISerializationContext, ITypeSerial
         SerializationHookContext hookCtx,
         ISerializationContext? context, ISerializationManager.InstantiationDelegate<EntityUid>? _)
     {
-        if (node.Value == "invalid")
-            return EntityUid.Invalid;
-
-        return EntityUid.Parse(node.Value);
+        return EntityUid.Invalid;
     }
 
     [MustUseReturnValue]
@@ -57,6 +54,6 @@ internal sealed class YamlValidationContext : ISerializationContext, ITypeSerial
         bool skipHook,
         ISerializationContext? context = null)
     {
-        return new((int)source);
+        return new(source);
     }
 }
