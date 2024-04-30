@@ -124,7 +124,7 @@ public sealed partial class EntityLookupSystem : EntitySystem
         SubscribeLocalEvent<BroadphaseComponent, ComponentAdd>(OnBroadphaseAdd);
         SubscribeLocalEvent<MapChangedEvent>(OnMapChange);
 
-        _transform.OnGlobalMoveEvent += OnMove;
+        _transform.OnBeforeMoveEvent += OnMove;
         EntityManager.EntityInitialized += OnEntityInit;
 
         SubscribeLocalEvent<TransformComponent, PhysicsBodyTypeChangedEvent>(OnBodyTypeChange);
@@ -141,7 +141,7 @@ public sealed partial class EntityLookupSystem : EntitySystem
     {
         base.Shutdown();
         EntityManager.EntityInitialized -= OnEntityInit;
-        _transform.OnGlobalMoveEvent -= OnMove;
+        _transform.OnBeforeMoveEvent -= OnMove;
     }
 
     #region DynamicTree
