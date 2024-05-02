@@ -21,7 +21,8 @@ internal struct ArchChunkEnumerator
 {
     private ArchetypeEnumerator _archetypes;
     private int _chunkIndex;
-    public Chunk Current => _archetypes.Current.GetChunk(_chunkIndex);
+    private Chunk _current;
+    public readonly Chunk Current => _current;
 
     internal ArchChunkEnumerator(in ArchetypeEnumerator archetypes)
     {
@@ -35,9 +36,11 @@ internal struct ArchChunkEnumerator
 
     public bool MoveNext()
     {
-        if (--_chunkIndex >= 0 && Current.Size > 0)
+        if (--_chunkIndex >= 0)
         {
-            return true;
+            _current = _archetypes.Current.GetChunk(_chunkIndex);
+            if (_current.Size > 0)
+                return true;
         }
 
         if (!_archetypes.MoveNext())
@@ -45,8 +48,8 @@ internal struct ArchChunkEnumerator
             return false;
         }
 
-        _chunkIndex = _archetypes.Current.ChunkCount - 1;
-        return true;
+        _chunkIndex = _archetypes.Current.ChunkCount;
+        return MoveNext();
     }
 }
 

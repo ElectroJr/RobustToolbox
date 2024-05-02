@@ -22,6 +22,7 @@ internal struct ArchetypeEnumerator
 {
     private readonly PooledList<Archetype> _archetypes;
     private int _index;
+    private Archetype _current = default!;
 
     public ArchetypeEnumerator(PooledList<Archetype> archetypes)
     {
@@ -33,8 +34,9 @@ internal struct ArchetypeEnumerator
     {
         while (--_index >= 0)
         {
-            var archetype = Current;
-            if (archetype.EntityCount > 0)
+            // TODO ARCH is pooledList indexing slower than array indexing?
+            _current = _archetypes[_index];
+            if (_current.EntityCount > 0)
             {
                 return true;
             }
@@ -43,5 +45,5 @@ internal struct ArchetypeEnumerator
         return false;
     }
 
-    public Archetype Current => _archetypes[_index];
+    public Archetype Current => _current;
 }

@@ -1745,33 +1745,40 @@ namespace Robust.Shared.GameObjects
 
         public bool MoveNext(out EntityUid uid, [NotNullWhen(true)] out TComp1? comp1)
         {
-            uid = default;
-            comp1 = default;
-
             if (--_index < 0)
             {
                 if (!_chunkEnumerator.MoveNext())
                 {
+                    uid = default;
+                    comp1 = default;
                     return false;
                 }
 
                 _index = _chunkEnumerator.Current.Size - 1;
             }
 
-            var entity = _chunkEnumerator.Current.Entities[_index];
-            var comp = _chunkEnumerator.Current.Get<TComp1>(_index);
+            var chunk = _chunkEnumerator.Current;
+            // TODO ARCH store EntityUid in the chunk
+            comp1 = chunk.Get<TComp1>(_index);
 
-            if (comp.Deleted)
+            if (comp1.Deleted)
+            {
+                uid = default;
+                comp1 = default;
                 return false;
+            }
 
+            // TODO ARCH store EntityUid in the chunk. Skip World.Reference()
+            var entity = chunk.Entities[_index];
             uid = _world.Reference(entity);
-            comp1 = comp;
+
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool MoveNext([NotNullWhen(true)] out TComp1? comp1)
         {
+            // TODO ARCH don't index EntityUid unless its required
             return MoveNext(out _, out comp1);
         }
     }
@@ -1799,35 +1806,41 @@ namespace Robust.Shared.GameObjects
 
         public bool MoveNext(out EntityUid uid, [NotNullWhen(true)] out TComp1? comp1, [NotNullWhen(true)] out TComp2? comp2)
         {
-            uid = default;
-            comp1 = default;
-            comp2 = default;
-
             if (--_index < 0)
             {
                 if (!_chunkEnumerator.MoveNext())
                 {
+                    uid = default;
+                    comp1 = default;
+                    comp2 = default;
                     return false;
                 }
 
                 _index = _chunkEnumerator.Current.Size - 1;
             }
 
-            var entity = _chunkEnumerator.Current.Entities[_index];
-            var comps = _chunkEnumerator.Current.GetRow<TComp1, TComp2>(_index);
+            var res = _chunkEnumerator.Current.GetRow<TComp1, TComp2>(_index);
 
-            if (comps.t0.Deleted || comps.t1.Deleted)
+            // TODO ARCH store EntityUid in the chunk. Skip World.Reference()
+            uid = _world.Reference(res.Entity);
+            comp1 = res.t0;
+            comp2 = res.t1;
+
+            if (comp1.Deleted || comp2.Deleted)
+            {
+                uid = default;
+                comp1 = default;
+                comp2 = default;
                 return false;
+            }
 
-            uid = _world.Reference(entity);
-            comp1 = comps.t0;
-            comp2 = comps.t1;
             return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool MoveNext([NotNullWhen(true)] out TComp1? comp1, [NotNullWhen(true)] out TComp2? comp2)
         {
+            // TODO ARCH don't index EntityUid unless its required
             return MoveNext(out _, out comp1, out comp2);
         }
     }
