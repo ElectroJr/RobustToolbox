@@ -715,6 +715,9 @@ namespace Robust.Shared.GameObjects
                     return false;
                 }
 
+                // TODO ARCH
+                // The event should try cache the entity archetype for faster component fetching.
+                // I hope this is the main reason why struct events are ~2x slower with arch, and it can just be fixed?
                 component = _entityManager.GetComponentInternal(_uid, compType);
                 return true;
             }

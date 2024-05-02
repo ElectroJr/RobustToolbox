@@ -781,6 +781,9 @@ namespace Robust.Shared.GameObjects
         /// <inheritdoc />
         public IComponent GetComponentInternal(EntityUid uid, CompIdx type)
         {
+            // TODO ARCH
+            // This "GetInternal" is just a normal tryget in a trenchcoat
+            // Either remove it, or optimize it somehow (e.g., remove IsAlive and Deleted checks)?
             if (TryGetComponent(uid, type, out var component))
                 return component;
 
@@ -1293,21 +1296,7 @@ namespace Robust.Shared.GameObjects
         [Pure]
         public bool TryGetComponent(EntityUid uid, [NotNullWhen(true)] out TComp1? component)
         {
-            if (_type != null)
-            {
-                if (_manager.TryGetComponent(uid, _type.Value.Type, out var comp))
-                {
-                    component = (TComp1) comp;
-                    return true;
-                }
-
-                component = default;
-                return false;
-            }
-            else
-            {
-                return _manager.TryGetComponent(uid, out component);
-            }
+            return _manager.TryGetComponent(uid, out component);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
