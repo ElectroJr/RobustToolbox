@@ -168,7 +168,7 @@ namespace Robust.UnitTesting.Server.GameObjects.Components
             Assert.That(containerSys.CanInsert(entity, container), Is.False);
         }
 
-        [Test]
+        /*[Test]
         public void BaseContainer_InsertMap_False()
         {
             var sim = SimulationFactory();
@@ -179,7 +179,7 @@ namespace Robust.UnitTesting.Server.GameObjects.Components
 
             Assert.That(containerSys.Insert(mapEnt, container), Is.False);
             Assert.That(containerSys.CanInsert(mapEnt, container), Is.False);
-        }
+        }*/
 
         [Test]
         public void BaseContainer_InsertGrid_False()

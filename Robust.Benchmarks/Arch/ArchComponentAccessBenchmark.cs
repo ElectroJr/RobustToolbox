@@ -1,4 +1,5 @@
-﻿using System;
+﻿/*
+using System;
 using System.Runtime.CompilerServices;
 using Arch.Core;
 using BenchmarkDotNet.Attributes;
@@ -175,3 +176,4 @@ public class ArchComponentAccessBenchmark
         }
     }
 }
+*/
