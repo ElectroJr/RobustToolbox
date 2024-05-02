@@ -816,14 +816,8 @@ namespace Robust.Shared.GameObjects
                 return false;
             }
 
-            if (TryGetComponent(uid.Value, typeof(T), out var comp))
-            {
-                if (!comp.Deleted)
-                {
-                    component = (T)comp;
-                    return true;
-                }
-            }
+            if (TryGetComponent(uid.Value, out component))
+                return true;
 
             component = default;
             return false;
@@ -1767,7 +1761,7 @@ namespace Robust.Shared.GameObjects
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool MoveNext([NotNullWhen(true)] out TComp1? comp1)
         {
-            // TODO ARCH don't index EntityUid unless its required
+            // TODO ARCH don't retrieve EntityUid unless its required
             return MoveNext(out _, out comp1);
         }
     }
@@ -1829,7 +1823,7 @@ namespace Robust.Shared.GameObjects
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool MoveNext([NotNullWhen(true)] out TComp1? comp1, [NotNullWhen(true)] out TComp2? comp2)
         {
-            // TODO ARCH don't index EntityUid unless its required
+            // TODO ARCH don't retrieve EntityUid unless its required
             return MoveNext(out _, out comp1, out comp2);
         }
     }
