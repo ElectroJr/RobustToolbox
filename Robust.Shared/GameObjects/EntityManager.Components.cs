@@ -794,7 +794,11 @@ namespace Robust.Shared.GameObjects
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryGetComponent<T>(EntityUid uid, [NotNullWhen(true)] out T? component) where T : IComponent?
         {
-            if (IsAlive(uid) && _world.TryGet(uid, out component))
+            // TODO ARCH
+            // is IsAlive needed / what is it for?
+            // and if it is needed, can we optimize it somehow?
+            // For now I'm just removing it to see how fast the benchmark could get without it.
+            if (uid.IsValid() && _world.TryGet(uid, out component))
             {
                 DebugTools.Assert(component != null);
                 if (!component!.Deleted)
