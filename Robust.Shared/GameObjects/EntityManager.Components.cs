@@ -1745,7 +1745,6 @@ namespace Robust.Shared.GameObjects
             }
 
             var chunk = _chunkEnumerator.Current;
-            // TODO ARCH store EntityUid in the chunk
             comp1 = chunk.Get<TComp1>(_index);
 
             if (comp1.Deleted)
@@ -1755,7 +1754,7 @@ namespace Robust.Shared.GameObjects
                 return false;
             }
 
-            // TODO ARCH store EntityUid in the chunk. Skip World.Reference()
+            // TODO ARCH store EntityUid in the chunk? Skip World.Reference()?
             var entity = chunk.Entities[_index];
             uid = _world.Reference(entity);
 
@@ -1808,7 +1807,7 @@ namespace Robust.Shared.GameObjects
 
             var res = _chunkEnumerator.Current.GetRow<TComp1, TComp2>(_index);
 
-            // TODO ARCH store EntityUid in the chunk. Skip World.Reference()
+            // TODO ARCH store EntityUid in the chunk? Skip World.Reference()?
             uid = _world.Reference(res.Entity);
             comp1 = res.t0;
             comp2 = res.t1;
@@ -1871,16 +1870,17 @@ namespace Robust.Shared.GameObjects
                 _index = _chunkEnumerator.Current.Size - 1;
             }
 
-            var entity = _chunkEnumerator.Current.Entities[_index];
-            var comps = _chunkEnumerator.Current.GetRow<TComp1, TComp2, TComp3>(_index);
+            var res = _chunkEnumerator.Current.GetRow<TComp1, TComp2, TComp3>(_index);
 
-            if (comps.t0.Deleted || comps.t1.Deleted || comps.t2.Deleted)
+            // TODO ARCH store EntityUid in the chunk? Skip World.Reference()?
+            uid = _world.Reference(res.Entity);
+            comp1 = res.t0;
+            comp2 = res.t1;
+            comp3 = res.t2;
+
+            if (comp1.Deleted || comp2.Deleted || comp3.Deleted)
                 return false;
 
-            uid = _world.Reference(entity);
-            comp1 = comps.t0;
-            comp2 = comps.t1;
-            comp3 = comps.t2;
             return true;
         }
 
