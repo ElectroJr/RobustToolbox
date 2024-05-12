@@ -12,7 +12,7 @@ namespace Robust.Shared.GameObjects;
 
 public partial class EntityManager
 {
-    private World _world = default!;
+    public World _world = default!;
 
     private static readonly ComponentType[] DefaultArchetype = new ComponentType[]
     {
