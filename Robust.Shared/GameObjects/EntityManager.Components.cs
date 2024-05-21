@@ -885,6 +885,37 @@ namespace Robust.Shared.GameObjects
         }
 
         /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetComponentIfElse<T>(EntityUid uid, [NotNullWhen(true)] out T? component) where T : IComponent?
+        {
+            if (typeof(T) == typeof(TransformComponent))
+            {
+                if (!TransformQuery.TryGetComponent(uid, out var c))
+                {
+                    component = default;
+                    return false;
+                }
+
+                component = (T) (IComponent) c;
+                return true;
+            }
+
+            if (typeof(T) == typeof(MetaDataComponent))
+            {
+                if (!MetaQuery.TryGetComponent(uid, out var c))
+                {
+                    component = default;
+                    return false;
+                }
+
+                component = (T) (IComponent) c;
+                return true;
+            }
+
+            return TryGetComponent(uid, out component);
+        }
+
+        /// <inheritdoc />
         public bool TryGetComponent<T>([NotNullWhen(true)] EntityUid? uid, [NotNullWhen(true)] out T? component) where T : IComponent?
         {
             if (!uid.HasValue)
