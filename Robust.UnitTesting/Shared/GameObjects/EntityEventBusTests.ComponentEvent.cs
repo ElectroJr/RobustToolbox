@@ -20,7 +20,7 @@ namespace Robust.UnitTesting.Shared.GameObjects
             var entUid = new EntityUid(7);
             var compInstance = new MetaDataComponent();
 
-            var entManMock = new Mock<IEntityManager>();
+            var entManMock = new Mock<EntityManager>();
 
             compFactory.RegisterClass<MetaDataComponent>();
             entManMock.Setup(m => m.ComponentFactory).Returns(compFactory);
@@ -72,7 +72,7 @@ namespace Robust.UnitTesting.Shared.GameObjects
             var entUid = new EntityUid(7);
             var compInstance = new MetaDataComponent();
 
-            var entManMock = new Mock<IEntityManager>();
+            var entManMock = new Mock<EntityManager>();
 
             var compRegistration = new ComponentRegistration(
                 "MetaData",
@@ -127,7 +127,7 @@ namespace Robust.UnitTesting.Shared.GameObjects
             var entUid = new EntityUid(7);
             var compInstance = new MetaDataComponent();
 
-            var entManMock = new Mock<IEntityManager>();
+            var entManMock = new Mock<EntityManager>();
 
             compInstance.Owner = entUid;
 
@@ -182,7 +182,7 @@ namespace Robust.UnitTesting.Shared.GameObjects
             // Arrange
             var entUid = new EntityUid(7);
 
-            var entManMock = new Mock<IEntityManager>();
+            var entManMock = new Mock<EntityManager>();
             var compFacMock = new Mock<IComponentFactory>();
 
             List<ComponentRegistration> allRefTypes = new();

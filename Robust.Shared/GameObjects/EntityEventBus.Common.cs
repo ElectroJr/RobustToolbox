@@ -11,7 +11,7 @@ namespace Robust.Shared.GameObjects;
 
 internal sealed partial class EntityEventBus : IEventBus
 {
-    private IEntityManager _entMan;
+    private EntityManager _entMan;
     private IComponentFactory _comFac;
 
     // Data on individual events. Used to check ordering info and fire broadcast events.

@@ -117,7 +117,7 @@ namespace Robust.Shared.GameObjects
         /// Constructs a new instance of <see cref="EntityEventBus"/>.
         /// </summary>
         /// <param name="entMan">The entity manager to watch for entity/component events.</param>
-        public EntityEventBus(IEntityManager entMan)
+        public EntityEventBus(EntityManager entMan)
         {
             _entMan = entMan;
             _comFac = entMan.ComponentFactory;
@@ -672,7 +672,7 @@ namespace Robust.Shared.GameObjects
             private readonly Type _eventType;
             private readonly EntityUid _uid;
             private readonly FrozenDictionary<Type, DirectedRegistration>?[] _subscriptions;
-            private readonly IEntityManager _entityManager;
+            private readonly EntityManager _entityManager;
             private readonly EventTableListEntry[] _list;
             private int _idx;
 
@@ -682,7 +682,7 @@ namespace Robust.Shared.GameObjects
                 EventTableListEntry[] list,
                 FrozenDictionary<Type, DirectedRegistration>?[] subscriptions,
                 EntityUid uid,
-                IEntityManager entityManager)
+                EntityManager entityManager)
             {
                 _eventType = eventType;
                 _list = list;
@@ -709,12 +709,7 @@ namespace Robust.Shared.GameObjects
                 var compType = entry.Component;
                 var compSubs = _subscriptions[compType.Value]!;
 
-                if (!compSubs.TryGetValue(_eventType, out registration))
-                {
-                    component = default;
-                    return false;
-                }
-
+                registration = compSubs[_eventType];
                 component = _entityManager.GetComponentInternal(_uid, compType);
                 return true;
             }
