@@ -164,6 +164,7 @@ namespace Robust.Shared.GameObjects
             }
         }
 
+        [ViewVariables]
         internal MetaDataFlags _flags;
 
         /// <summary>

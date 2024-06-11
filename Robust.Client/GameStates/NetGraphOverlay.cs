@@ -65,7 +65,7 @@ namespace Robust.Client.GameStates
             var sz = args.AppliedState.PayloadSize;
 
             // calc lag
-            var lag = _netManager.ServerChannel!.Ping;
+            var lag = _netManager.ServerChannel?.Ping ?? 0; // Null in replays
 
             // calc interp info
             var buffer = _gameStateManager.GetApplicableStateCount();
