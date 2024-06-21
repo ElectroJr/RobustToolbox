@@ -74,13 +74,8 @@ namespace Robust.Client.GameObjects
 
         private void HandleInit(EntityUid uid, PointLightComponent component, ComponentInit args)
         {
-            SetMask(component.MaskPath, component);
-        }
-
-        public void SetMask(string? maskPath, PointLightComponent component)
-        {
-            if (maskPath is not null)
-                component.Mask = _resourceCache.GetResource<TextureResource>(maskPath);
+            if (component.MaskPath is not null)
+                component.Mask = _resourceCache.GetResource<TextureResource>(component.MaskPath);
             else
                 component.Mask = null;
         }

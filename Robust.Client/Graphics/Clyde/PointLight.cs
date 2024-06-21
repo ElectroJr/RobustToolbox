@@ -7,7 +7,7 @@ namespace Robust.Client.Graphics.Clyde;
 struct PointLight(LightProperties properties, float distance, bool cast, Texture? mask)
 {
     public readonly LightProperties Properties = properties;
-    public readonly Texture? Mask = mask;
+    public readonly Texture? Mask = mask; // TODO CONVERT TO UV COORDS
     public readonly float DistFromCentreSq = distance;
     public readonly bool CastShadows = cast;
 }
