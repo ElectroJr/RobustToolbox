@@ -6,7 +6,7 @@ namespace Robust.Client.Graphics.Clyde;
 
 struct PointLight(LightProperties properties, float distance, bool cast, Box2 mask)
 {
-    public readonly LightProperties Properties = properties;
+    public LightProperties Properties = properties;
     public readonly Box2 Mask = mask;
     public readonly float DistFromCentreSq = distance;
     public readonly bool CastShadows = cast;
@@ -27,7 +27,7 @@ public readonly struct LightVertex(Vector2 tex, Vector2 tex2, LightProperties pr
 /// Struct containing light properties. This makes up part of the light rendering vertex data
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct LightProperties(
+public struct LightProperties(
     Color color,
     Vector2 lightPos,
     float range,
@@ -41,6 +41,6 @@ public readonly struct LightProperties(
     public readonly float Range = range;
     public readonly float Power = power;
     public readonly float Softness = softness;
-    public readonly float Index = index;
+    public float Index = index;
     public readonly float Angle = angle;
 }

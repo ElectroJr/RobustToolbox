@@ -415,7 +415,6 @@ namespace Robust.Client.Graphics.Clyde
         /// <param name="width">The width of the current framebuffer.</param>
         /// <param name="maxDist">The maximum distance of this light.</param>
         /// <param name="viewportY">Y index of the row to render the depth at in the framebuffer.</param>
-        /// </param>
         private void DrawOcclusionDepth(Vector2 lightPos, int width, float maxDist, int viewportY)
         {
             // The light is now the center of the universe.
@@ -543,15 +542,15 @@ namespace Robust.Client.Graphics.Clyde
 
                 if (_lightManager.DrawShadows)
                 {
+                    var shadowCount = 0;
                     for (var i = 0; i < count; i++)
                     {
-                        // TODO LIGHTING
-                        // Just set light.Properties.Index here, and cap the height of the shadow texture to match the
-                        // max shadow casting lights
-
                         ref var light = ref _lightsToRenderList[i];
-                        if (light.CastShadows)
-                            DrawOcclusionDepth(light.Properties.LightPos, ShadowMapSize, light.Properties.Range, i);
+                        if (!light.CastShadows)
+                            continue;
+
+                        DebugTools.AssertEqual((shadowCount+0.5f)/ShadowTexture.Height, light.Properties.Index);
+                        DrawOcclusionDepth(light.Properties.LightPos, ShadowMapSize, light.Properties.Range, shadowCount++);
                     }
                 }
 
@@ -689,15 +688,15 @@ namespace Robust.Client.Graphics.Clyde
             if (!circle.Intersects(state.worldAABB))
                 return true;
 
-            // If the light is a shadow casting light, keep a separate track of that
-            if (light.CastShadows)
-                shadowCount++;
-
             var distanceSquared = (state.worldAABB.Center - lightPos).LengthSquared();
 
             var angle = light.MaskAutoRotate
                 ? (float) (light.Rotation + rot)
                 : (float) light.Rotation;
+
+            var shadowMapIndex = light.CastShadows
+                ? ((shadowCount++) + 0.5f) / state.textureHeight
+                : -1;
 
             var props = new LightProperties(
                 light.Color,
@@ -705,7 +704,7 @@ namespace Robust.Client.Graphics.Clyde
                 light.Radius,
                 light.Energy,
                 light.Softness,
-                light.CastShadows ? (count + 0.5f) / state.textureHeight : -1,
+                shadowMapIndex,
                 angle
             );
 
@@ -766,6 +765,15 @@ namespace Robust.Client.Graphics.Clyde
                 // Then effectively delete the furthest lights, by setting the end of the array to exclude N
                 // number of shadow casting lights (where N is the number above the max number per scene.)
                 state.count -= state.shadowCastingCount - _maxShadowcastingLights;
+
+                // Reassign shadow map indices
+                var shadowCount = 0;
+                foreach (ref var light in _lightsToRenderList.AsSpan()[(state.count - _maxShadowcastingLights)..])
+                {
+                    DebugTools.Assert(light.CastShadows);
+                    light.Properties.Index = ((shadowCount++) + 0.5f) / ShadowTexture.Height;
+                }
+                DebugTools.AssertEqual(shadowCount, _maxShadowcastingLights);
             }
 
             // When culling occluders later, we can't just remove any occluders outside the worldBounds.
