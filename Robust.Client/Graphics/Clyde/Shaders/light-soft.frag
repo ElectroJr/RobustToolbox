@@ -1,18 +1,18 @@
-#include "/Shaders/Internal/light_shared.swsl"
-
+// Inserted into light-shared.frag
 highp vec4 calcGaussianWeights(highp float sigma, highp vec4 offset)
 {
     highp vec4 eExp = offset * offset / (2.0 * sigma * sigma);
     return exp(-eExp) / (sigma * sqrt(2.0 * PI));
 }
 
-highp float createOcclusion(highp vec2 diff)
+highp float createOcclusion(highp float ourDist)
 {
+    highp float lightIndex = LightData.w;
+    highp float lightSoftness = LightData.z;
+
     // Calculate vector perpendicular to light vector.
     // So we can sample it to get a decent soft shadow?
-    highp vec2 perpendicular = normalize(cross(vec3(diff, 0.0), vec3(0.0, 0.0, 1.0)).xy) * 1.0 / 32.0;
-
-    highp float ourDist = length(diff);
+    highp vec2 perpendicular = normalize(cross(vec3(DeltaWorldPos, 0.0), vec3(0.0, 0.0, 1.0)).xy) * 1.0 / 32.0;
 
     // Sample 7 points on a line perpendicular to the light source.
     // Depending on the closest point, we change the gaussian weights down below
@@ -20,13 +20,13 @@ highp float createOcclusion(highp vec2 diff)
     perpendicular *= lightSoftness * 1.5;
 
     // Get all the samples we need.
-    highp vec2 sample1 = occludeDepth(diff, shadowMap, lightIndex);
-    highp vec2 sample2 = occludeDepth(diff + perpendicular, shadowMap, lightIndex);
-    highp vec2 sample3 = occludeDepth(diff - perpendicular, shadowMap, lightIndex);
-    highp vec2 sample4 = occludeDepth(diff + perpendicular * 2.0, shadowMap, lightIndex);
-    highp vec2 sample5 = occludeDepth(diff - perpendicular * 2.0, shadowMap, lightIndex);
-    highp vec2 sample6 = occludeDepth(diff + perpendicular * 3.0, shadowMap, lightIndex);
-    highp vec2 sample7 = occludeDepth(diff - perpendicular * 3.0, shadowMap, lightIndex);
+    highp vec2 sample1 = occludeDepth(DeltaWorldPos, shadowMap, lightIndex);
+    highp vec2 sample2 = occludeDepth(DeltaWorldPos + perpendicular, shadowMap, lightIndex);
+    highp vec2 sample3 = occludeDepth(DeltaWorldPos - perpendicular, shadowMap, lightIndex);
+    highp vec2 sample4 = occludeDepth(DeltaWorldPos + perpendicular * 2.0, shadowMap, lightIndex);
+    highp vec2 sample5 = occludeDepth(DeltaWorldPos - perpendicular * 2.0, shadowMap, lightIndex);
+    highp vec2 sample6 = occludeDepth(DeltaWorldPos + perpendicular * 3.0, shadowMap, lightIndex);
+    highp vec2 sample7 = occludeDepth(DeltaWorldPos - perpendicular * 3.0, shadowMap, lightIndex);
 
     highp float mindist =
         min(sample1.x,
@@ -67,4 +67,3 @@ highp float createOcclusion(highp vec2 diff)
 
     return occlusion / totalWeigths;
 }
-

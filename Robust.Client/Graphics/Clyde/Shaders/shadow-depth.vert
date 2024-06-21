@@ -19,10 +19,6 @@ uniform vec2 shadowLightCentre;
 
 uniform float shadowOverlapSide;
 
-// this constant ought to be moved to z-library
-// also deal with the reference to it in shadow_cast_shared
-const highp float PI = 3.1415926535897932384626433;
-
 // expands wall edges a little to prevent holes
 const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
 // added to zbufferDepth BEFORE divide

@@ -2,17 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Buffers;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
 using Robust.Client.ResourceManagement;
 using Robust.Shared;
 using Robust.Shared.GameObjects;
-using Robust.Shared.IoC;
 using Robust.Shared.Log;
 using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Maths;
-using OGLTextureWrapMode = OpenToolkit.Graphics.OpenGL.TextureWrapMode;
 using TKStencilOp = OpenToolkit.Graphics.OpenGL4.StencilOp;
 using Robust.Shared.Physics;
 using Robust.Client.ComponentTrees;
@@ -21,6 +20,7 @@ using static Robust.Shared.GameObjects.OccluderComponent;
 using Robust.Shared.Utility;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
 using Vector4 = Robust.Shared.Maths.Vector4;
+using SysVec4 = System.Numerics.Vector4;
 
 namespace Robust.Client.Graphics.Clyde
 {
@@ -43,8 +43,6 @@ namespace Robust.Client.Graphics.Clyde
         // Various shaders used in the light rendering process.
         // We keep ClydeHandles into the _loadedShaders dict so they can be reloaded.
         // They're all .swsl now.
-        private ClydeHandle _lightSoftShaderHandle;
-        private ClydeHandle _lightHardShaderHandle;
         private ClydeHandle _fovShaderHandle;
         private ClydeHandle _fovLightShaderHandle;
         private ClydeHandle _wallBleedBlurShaderHandle;
@@ -58,6 +56,8 @@ namespace Robust.Client.Graphics.Clyde
         // Shader program used to calculate depth for shadows/FOV.
         // Sadly not .swsl since it has a different vertex format and such.
         private GLShaderProgram _fovCalculationProgram = default!;
+        private GLShaderProgram _softLightProgram = default!;
+        private GLShaderProgram _hardLightProgram = default!;
 
         // Occlusion geometry used to render shadows and FOV.
 
@@ -70,6 +70,13 @@ namespace Robust.Client.Graphics.Clyde
         private GLBuffer _occlusionEbo = default!;
         private GLHandle _occlusionVao;
 
+        private GLBuffer _lightVbo = default!;
+        private GLBuffer _lightEbo = default!;
+        private GLHandle _lightVao;
+        private readonly LightVertex[] _lightVertexData = new LightVertex[MaxBatchQuads * 4];
+        private ushort[] _lightIndexData = default!;
+        private int _lightVertexIndex;
+        private int _lightIndexIndex;
 
         // Occlusion mask geometry that represents the area with occluders.
         // This is used to merge _wallBleedIntermediateRenderTarget2 onto _lightRenderTarget after wall bleed is done.
@@ -98,12 +105,37 @@ namespace Robust.Client.Graphics.Clyde
         private (PointLightComponent light, Vector2 pos, float distanceSquared, Angle rot)[] _lightsToRenderList = default!;
 
         private LightCapacityComparer _lightCap = new();
-        private ShadowCapacityComparer _shadowCap = new ShadowCapacityComparer();
+        private ShadowCapacityComparer _shadowCap = new();
+
+        [StructLayout(LayoutKind.Sequential)]
+        public readonly struct LightVertex(Vector2 tex, Vector2 tex2, LightProperties properties)
+        {
+            public readonly Vector2 Tex = tex; // UV Coordinates in the texture atlas
+            public readonly Vector2 Tex2 = tex2; // UV for the sub-texture
+            public readonly LightProperties Properties = properties;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public readonly struct LightProperties(
+            Color color,
+            Vector2 lightPos,
+            float range,
+            float power,
+            float softness,
+            float index,
+            float angle)
+        {
+            public readonly Color Color = color;
+            public readonly Vector2 LightPos = lightPos;
+            public readonly float Range = range;
+            public readonly float Power = power;
+            public readonly float Softness = softness;
+            public readonly float Index = index;
+            public readonly float Angle = angle;
+        }
 
         private unsafe void InitLighting()
         {
-
-
             // Other...
             LoadLightingShaders();
 
@@ -158,6 +190,58 @@ namespace Robust.Client.Graphics.Clyde
                 CheckGlError();
             }
 
+            {
+                // Light VAO.
+                _lightVao = new GLHandle(GenVertexArray());
+                BindVertexArray(_lightVao.Handle);
+                CheckGlError();
+                ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _lightVao, nameof(_lightVao));
+
+                _lightVbo = new GLBuffer(this,
+                    BufferTarget.ArrayBuffer,
+                    BufferUsageHint.DynamicDraw,
+                    sizeof(LightVertex) * _lightVertexData.Length,
+                    nameof(_lightVbo));
+
+                // Texture coordinates in the texture atlas.
+                GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, sizeof(LightVertex), 0 * sizeof(float));
+                GL.EnableVertexAttribArray(0);
+
+                // Atlas sub-texture UV coordinates.
+                GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, sizeof(LightVertex), 2 * sizeof(float));
+                GL.EnableVertexAttribArray(1);
+
+                // Light colour.
+                GL.VertexAttribPointer(2, 4, VertexAttribPointerType.Float, false, sizeof(LightVertex), 4 * sizeof(float));
+                GL.EnableVertexAttribArray(2);
+
+                // Light world position.
+                GL.VertexAttribPointer(3, 2, VertexAttribPointerType.Float, false, sizeof(LightVertex), 8 * sizeof(float));
+                GL.EnableVertexAttribArray(3);
+
+                // Light properties.
+                GL.VertexAttribPointer(4, 4, VertexAttribPointerType.Float, false, sizeof(LightVertex), 10 * sizeof(float));
+                GL.EnableVertexAttribArray(4);
+
+                // Light angle
+                GL.VertexAttribPointer(5, 1, VertexAttribPointerType.Float, false, sizeof(LightVertex), 14 * sizeof(float));
+                GL.EnableVertexAttribArray(5);
+
+                DebugTools.AssertEqual(sizeof(LightVertex), 15*sizeof(float));
+                DebugTools.AssertEqual(sizeof(LightProperties), 11*sizeof(float));
+
+                CheckGlError();
+
+                _lightIndexData = new ushort[MaxBatchQuads * GetQuadBatchIndexCount()];
+                _lightEbo = new GLBuffer(this,
+                    BufferTarget.ElementArrayBuffer,
+                    BufferUsageHint.DynamicDraw,
+                    sizeof(ushort) * _lightIndexData.Length,
+                    nameof(_lightEbo));
+
+                CheckGlError();
+            }
+
             // FOV FBO.
             _fovRenderTarget = CreateRenderTarget((FovMapSize, 2),
                 new RenderTargetFormatParameters(
@@ -207,8 +291,27 @@ namespace Robust.Client.Graphics.Clyde
                 return default;
             }
 
-            _lightSoftShaderHandle = LoadShaderHandle("/Shaders/Internal/light-soft.swsl");
-            _lightHardShaderHandle = LoadShaderHandle("/Shaders/Internal/light-hard.swsl");
+            var lightVert = ReadEmbeddedShader("light.vert");
+            var lightSoftFrag = ReadEmbeddedShader("light-soft.frag");
+            var lightHardFrag = ReadEmbeddedShader("light-hard.frag");
+            var lightSharedFrag = ReadEmbeddedShader("light-shared.frag");
+
+            lightSoftFrag = lightSharedFrag.Replace("// [CreateOcclusion]", lightSoftFrag);
+            lightHardFrag = lightSharedFrag.Replace("// [CreateOcclusion]", lightHardFrag);
+
+            (string, uint)[] lightAttribLocations =
+            {
+                ("tCoord", 0),
+                ("tCoord2", 1),
+                ("lightColor", 2),
+                ("lightPos", 3),
+                ("lightData", 4),
+                ("lightAngle", 5),
+            };
+
+            _softLightProgram = _compileProgram(lightVert, lightSoftFrag, lightAttribLocations, "Soft Light Program");
+            _hardLightProgram = _compileProgram(lightVert, lightHardFrag, lightAttribLocations, "Hard Light Program");
+
             _fovShaderHandle = LoadShaderHandle("/Shaders/Internal/fov.swsl");
             _fovLightShaderHandle = LoadShaderHandle("/Shaders/Internal/fov-lighting.swsl");
             _wallBleedBlurShaderHandle = LoadShaderHandle("/Shaders/Internal/wall-bleed-blur.swsl");
@@ -351,7 +454,6 @@ namespace Robust.Client.Graphics.Clyde
                 return;
             }
 
-            (PointLightComponent light, Vector2 pos, float distanceSquared, Angle rot)[] lights;
             int count;
             Box2 expandedBounds;
             using (_prof.Group("LightsToRender"))
@@ -412,8 +514,7 @@ namespace Robust.Client.Graphics.Clyde
 
             ApplyLightingFovToBuffer(viewport, eye);
 
-            var lightShader = _loadedShaders[_enableSoftShadows ? _lightSoftShaderHandle : _lightHardShaderHandle]
-                .Program;
+            var lightShader = _enableSoftShadows ? _softLightProgram : _hardLightProgram;
             lightShader.Use();
 
             SetupGlobalUniformsImmediate(lightShader, ShadowTexture);
@@ -429,84 +530,49 @@ namespace Robust.Client.Graphics.Clyde
             GL.StencilOp(TKStencilOp.Keep, TKStencilOp.Keep, TKStencilOp.Keep);
             CheckGlError();
 
-            var lastRange = float.NaN;
-            var lastPower = float.NaN;
-            var lastColor = new Color(float.NaN, float.NaN, float.NaN, float.NaN);
-            var lastSoftness = float.NaN;
-            Texture? lastMask = null;
-
+            using (DebugGroup("Draw Lights"))
             using (_prof.Group("Draw Lights"))
             {
+                SetTexture(TextureUnit.Texture0, _stockTextureWhite);
+                lightShader.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
+
+                var idxCount = GetQuadBatchIndexCount();
                 for (var i = 0; i < count; i++)
                 {
                     var (component, lightPos, _, rot) = _lightsToRenderList[i];
 
-                    Texture? mask = null;
-                    var rotation = Angle.Zero;
+                    float angle = 0;
                     if (component.Mask != null)
                     {
-                        mask = component.Mask;
-                        rotation = component.Rotation;
-
                         if (component.MaskAutoRotate)
-                        {
-                            rotation += rot;
-                        }
+                            angle = (float) (rot + component.Rotation);
+                        else
+                            angle = (float) component.Rotation;
                     }
 
-                    var maskTexture = mask ?? _stockTextureWhite;
-                    if (lastMask != maskTexture)
-                    {
-                        SetTexture(TextureUnit.Texture0, maskTexture);
-                        lastMask = maskTexture;
-                        lightShader.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
-                    }
+                    // TODO LIGHTING move into _lightsToRenderList[]
+                    var props = new LightProperties(
+                        component.Color,
+                        lightPos,
+                        component.Radius,
+                        component.Energy,
+                        component.Softness,
+                        component.CastShadows ? (i + 0.5f) / ShadowTexture.Height : -1,
+                        angle
+                    );
 
-                    if (!MathHelper.CloseToPercent(lastRange, component.Radius))
-                    {
-                        lastRange = component.Radius;
-                        lightShader.SetUniformMaybe("lightRange", lastRange);
-                    }
+                    if (_lightVertexIndex + 4 >= _lightVertexData.Length || _lightIndexIndex + idxCount > _lightIndexData.Length)
+                        FlushLights();
 
-                    if (!MathHelper.CloseToPercent(lastPower, component.Energy))
-                    {
-                        lastPower = component.Energy;
-                        lightShader.SetUniformMaybe("lightPower", lastPower);
-                    }
-
-                    if (lastColor != component.Color)
-                    {
-                        lastColor = component.Color;
-                        lightShader.SetUniformMaybe("lightColor", lastColor);
-                    }
-
-                    if (_enableSoftShadows && !MathHelper.CloseToPercent(lastSoftness, component.Softness))
-                    {
-                        lastSoftness = component.Softness;
-                        lightShader.SetUniformMaybe("lightSoftness", lastSoftness);
-                    }
-
-                    lightShader.SetUniformMaybe("lightCenter", lightPos);
-                    lightShader.SetUniformMaybe("lightIndex",
-                        component.CastShadows ? (i + 0.5f) / ShadowTexture.Height : -1);
-
-                    var offset = new Vector2(component.Radius, component.Radius);
-
-                    Matrix3x2 matrix;
-                    if (mask == null)
-                    {
-                        matrix = Matrix3x2.Identity;
-                    }
-                    else
-                    {
-                        // Only apply rotation if a mask is said, because else it doesn't matter.
-                        matrix = Matrix3Helpers.CreateRotation(rotation);
-                    }
-
-                    (matrix.M31, matrix.M32) = lightPos;
-
-                    _drawQuad(-offset, offset, matrix, lightShader);
+                    _lightVertexData[_lightVertexIndex + 0] = new LightVertex(new Vector2(0,0), new Vector2(0,0), props);
+                    _lightVertexData[_lightVertexIndex + 1] = new LightVertex(new Vector2(1,0), new Vector2(1,0), props);
+                    _lightVertexData[_lightVertexIndex + 2] = new LightVertex(new Vector2(1,1), new Vector2(1,1), props);
+                    _lightVertexData[_lightVertexIndex + 3] = new LightVertex(new Vector2(0,1), new Vector2(0,1), props);
+                    QuadBatchIndexWrite(_lightIndexData, ref _lightIndexIndex, (ushort) _lightVertexIndex);
+                    _lightVertexIndex += 4;
                 }
+
+                FlushLights();
             }
 
             ResetBlendFunc();
@@ -535,6 +601,26 @@ namespace Robust.Client.Graphics.Clyde
             Array.Clear(_lightsToRenderList, 0, count);
 
             _lightingReady = true;
+        }
+
+        private void FlushLights()
+        {
+            if (_lightVertexIndex == 0)
+                return;
+
+            BindVertexArray(_lightVao.Handle);
+            CheckGlError();
+
+            _lightVbo.Reallocate(new Span<LightVertex>(_lightVertexData, 0, _lightVertexIndex));
+            _lightEbo.Reallocate(new Span<ushort>(_lightIndexData, 0, _lightIndexIndex));
+
+            var type = MapPrimitiveType(GetQuadBatchPrimitiveType());
+            GL.DrawElements(type, _lightIndexIndex, DrawElementsType.UnsignedShort, 0);
+            _debugStats.LastGLDrawCalls += 1;
+            CheckGlError();
+
+            _lightIndexIndex = 0;
+            _lightVertexIndex = 0;
         }
 
         private static bool LightQuery(ref (
