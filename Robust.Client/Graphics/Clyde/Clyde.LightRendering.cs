@@ -543,8 +543,11 @@ namespace Robust.Client.Graphics.Clyde
                     for (var i = 0; i < count; i++)
                     {
                         ref var light = ref _lightsToRenderList[i];
-                        if (light.CastShadows)
-                            DrawOcclusionDepth(light.Properties.LightPos, ShadowMapSize, shadowCount++, light.Properties.Index);
+                        if (!light.CastShadows)
+                            continue;
+
+                        DebugTools.AssertEqual(light.Properties.Index, ShadowIndexToUV(shadowCount, ShadowTexture.Height));
+                        DrawOcclusionDepth(light.Properties.LightPos, ShadowMapSize, shadowCount++, light.Properties.Index);
                     }
                 }
 
