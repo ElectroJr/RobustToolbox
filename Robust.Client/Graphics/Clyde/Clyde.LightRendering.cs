@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Buffers;
 using System.Numerics;
-using System.Runtime.InteropServices;
 using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
 using Robust.Client.ResourceManagement;
@@ -20,7 +19,6 @@ using static Robust.Shared.GameObjects.OccluderComponent;
 using Robust.Shared.Utility;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
 using Vector4 = Robust.Shared.Maths.Vector4;
-using SysVec4 = System.Numerics.Vector4;
 
 namespace Robust.Client.Graphics.Clyde
 {
@@ -102,37 +100,10 @@ namespace Robust.Client.Graphics.Clyde
         private ClydeTexture FovTexture => _fovRenderTarget.Texture;
         private ClydeTexture ShadowTexture => _shadowRenderTarget.Texture;
 
-        private (PointLightComponent light, Vector2 pos, float distanceSquared, Angle rot)[] _lightsToRenderList = default!;
+        private PointLight[] _lightsToRenderList = default!;
 
         private LightCapacityComparer _lightCap = new();
         private ShadowCapacityComparer _shadowCap = new();
-
-        [StructLayout(LayoutKind.Sequential)]
-        public readonly struct LightVertex(Vector2 tex, Vector2 tex2, LightProperties properties)
-        {
-            public readonly Vector2 Tex = tex; // UV Coordinates in the texture atlas
-            public readonly Vector2 Tex2 = tex2; // UV for the sub-texture
-            public readonly LightProperties Properties = properties;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        public readonly struct LightProperties(
-            Color color,
-            Vector2 lightPos,
-            float range,
-            float power,
-            float softness,
-            float index,
-            float angle)
-        {
-            public readonly Color Color = color;
-            public readonly Vector2 LightPos = lightPos;
-            public readonly float Range = range;
-            public readonly float Power = power;
-            public readonly float Softness = softness;
-            public readonly float Index = index;
-            public readonly float Angle = angle;
-        }
 
         private unsafe void InitLighting()
         {
@@ -486,11 +457,13 @@ namespace Robust.Client.Graphics.Clyde
                 {
                     for (var i = 0; i < count; i++)
                     {
-                        var (light, lightPos, _, _) = _lightsToRenderList[i];
+                        // TODO LIGHTING
+                        // Just set light.Properties.Index here, and cap the height of the shadow texture to match the
+                        // max shadow casting lights
 
-                        if (!light.CastShadows) continue;
-
-                        DrawOcclusionDepth(lightPos, ShadowMapSize, light.Radius, i);
+                        ref var light = ref _lightsToRenderList[i];
+                        if (light.CastShadows)
+                            DrawOcclusionDepth(light.Properties.LightPos, ShadowMapSize, light.Properties.Range, i);
                     }
                 }
 
@@ -539,35 +512,14 @@ namespace Robust.Client.Graphics.Clyde
                 var idxCount = GetQuadBatchIndexCount();
                 for (var i = 0; i < count; i++)
                 {
-                    var (component, lightPos, _, rot) = _lightsToRenderList[i];
-
-                    float angle = 0;
-                    if (component.Mask != null)
-                    {
-                        if (component.MaskAutoRotate)
-                            angle = (float) (rot + component.Rotation);
-                        else
-                            angle = (float) component.Rotation;
-                    }
-
-                    // TODO LIGHTING move into _lightsToRenderList[]
-                    var props = new LightProperties(
-                        component.Color,
-                        lightPos,
-                        component.Radius,
-                        component.Energy,
-                        component.Softness,
-                        component.CastShadows ? (i + 0.5f) / ShadowTexture.Height : -1,
-                        angle
-                    );
-
+                    ref var light = ref _lightsToRenderList[i];
                     if (_lightVertexIndex + 4 >= _lightVertexData.Length || _lightIndexIndex + idxCount > _lightIndexData.Length)
                         FlushLights();
 
-                    _lightVertexData[_lightVertexIndex + 0] = new LightVertex(new Vector2(0,0), new Vector2(0,0), props);
-                    _lightVertexData[_lightVertexIndex + 1] = new LightVertex(new Vector2(1,0), new Vector2(1,0), props);
-                    _lightVertexData[_lightVertexIndex + 2] = new LightVertex(new Vector2(1,1), new Vector2(1,1), props);
-                    _lightVertexData[_lightVertexIndex + 3] = new LightVertex(new Vector2(0,1), new Vector2(0,1), props);
+                    _lightVertexData[_lightVertexIndex + 0] = new LightVertex(new Vector2(0,0), new Vector2(0,0), light.Properties);
+                    _lightVertexData[_lightVertexIndex + 1] = new LightVertex(new Vector2(1,0), new Vector2(1,0), light.Properties);
+                    _lightVertexData[_lightVertexIndex + 2] = new LightVertex(new Vector2(1,1), new Vector2(1,1), light.Properties);
+                    _lightVertexData[_lightVertexIndex + 3] = new LightVertex(new Vector2(0,1), new Vector2(0,1), light.Properties);
                     QuadBatchIndexWrite(_lightIndexData, ref _lightIndexIndex, (ushort) _lightVertexIndex);
                     _lightVertexIndex += 4;
                 }
@@ -629,7 +581,8 @@ namespace Robust.Client.Graphics.Clyde
             int shadowCastingCount,
             TransformSystem xformSystem,
             EntityQuery<TransformComponent> xforms,
-            Box2 worldAABB) state,
+            Box2 worldAABB,
+            int textureHeight) state,
             in ComponentTreeEntry<PointLightComponent> value)
         {
             ref var count = ref state.count;
@@ -654,30 +607,42 @@ namespace Robust.Client.Graphics.Clyde
                 shadowCount++;
 
             var distanceSquared = (state.worldAABB.Center - lightPos).LengthSquared();
-            state.clyde._lightsToRenderList[count++] = (light, lightPos, distanceSquared, rot);
+
+            var angle = light.MaskAutoRotate
+                ? (float) light.Rotation
+                : (float) (light.Rotation + rot);
+
+            var props = new LightProperties(
+                light.Color,
+                lightPos,
+                light.Radius,
+                light.Energy,
+                light.Softness,
+                light.CastShadows ? (count + 0.5f) / state.textureHeight : -1,
+                angle
+            );
+
+            state.clyde._lightsToRenderList[count++] = new PointLight(props, distanceSquared, light.CastShadows, light.Mask);
 
             return true;
         }
 
-        private sealed class LightCapacityComparer : IComparer<(PointLightComponent light, Vector2 pos, float distanceSquared, Angle rot)>
+        private sealed class LightCapacityComparer : IComparer<PointLight>
         {
-            public int Compare(
-                (PointLightComponent light, Vector2 pos, float distanceSquared, Angle rot) x,
-                (PointLightComponent light, Vector2 pos, float distanceSquared, Angle rot) y)
+            public int Compare(PointLight x, PointLight y)
             {
-                if (x.light.CastShadows && !y.light.CastShadows) return 1;
-                if (!x.light.CastShadows && y.light.CastShadows) return -1;
-                return 0;
+                if (x.CastShadows == y.CastShadows)
+                    return 0;
+
+                return x.CastShadows ? 1 : -1;
             }
         }
 
-        private sealed class ShadowCapacityComparer : IComparer<(PointLightComponent light, Vector2 pos, float distanceSquared, Angle rot)>
+        private sealed class ShadowCapacityComparer : IComparer<PointLight>
         {
-            public int Compare(
-                (PointLightComponent light, Vector2 pos, float distanceSquared, Angle rot) x,
-                (PointLightComponent light, Vector2 pos, float distanceSquared, Angle rot) y)
+            public int Compare(PointLight x, PointLight y)
             {
-                return x.distanceSquared.CompareTo(y.distanceSquared);
+                return x.DistFromCentreSq.CompareTo(y.DistFromCentreSq);
             }
         }
 
@@ -691,7 +656,7 @@ namespace Robust.Client.Graphics.Clyde
 
             // Use worldbounds for this one as we only care if the light intersects our actual bounds
             var xforms = _entityManager.GetEntityQuery<TransformComponent>();
-            var state = (this, count: 0, shadowCastingCount: 0, xformSystem, xforms, worldAABB);
+            var state = (this, count: 0, shadowCastingCount: 0, xformSystem, xforms, worldAABB, ShadowTexture.Height);
 
             foreach (var (uid, comp) in lightTreeSys.GetIntersectingTrees(map, worldAABB))
             {
@@ -723,9 +688,10 @@ namespace Robust.Client.Graphics.Clyde
             // (if the occluder is in the current lights at all, it's still not between the light and the world bounds).
             var expandedBounds = worldAABB;
 
+            // TODO SIMD
             for (var i = 0; i < state.count; i++)
             {
-                expandedBounds = expandedBounds.ExtendToContain(_lightsToRenderList[i].pos);
+                expandedBounds = expandedBounds.ExtendToContain(_lightsToRenderList[i].Properties.LightPos);
             }
 
             _debugStats.TotalLights += state.count;
@@ -1326,7 +1292,7 @@ namespace Robust.Client.Graphics.Clyde
         private void MaxLightsChanged(int value)
         {
             _maxLights = value;
-            _lightsToRenderList = new (PointLightComponent, Vector2, float , Angle)[value];
+            _lightsToRenderList = new PointLight[value];
             DebugTools.Assert(_maxLights >= _maxShadowcastingLights);
         }
     }
