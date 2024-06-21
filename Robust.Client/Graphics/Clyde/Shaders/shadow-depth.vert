@@ -14,9 +14,8 @@ attribute vec2 subVertex;
 // x: actual angle, y: line angle + 90 degrees, z: Distance at y
 varying vec3 fragControl;
 
-// Note: This is *not* the standard projectionMatrix!
 uniform vec2 shadowLightCentre;
-
+uniform float lightIndex;
 uniform float shadowOverlapSide;
 
 // expands wall edges a little to prevent holes
@@ -28,7 +27,7 @@ const highp float DEPTH_ZBUFFER_PREDIV_BIAS = 1.0;
 void main()
 {
     // aPos is clockwise, but we need anticlockwise so swap it here
-    vec2 pA = aPos.zw - shadowLightCentre;
+    vec2 pA = aPos.zw - shadowLightCentre + vec2(lightIndex*0.00001);
     vec2 pB = aPos.xy - shadowLightCentre;
     float xA = atan(pA.y, -pA.x);
     float xB = atan(pB.y, -pB.x);

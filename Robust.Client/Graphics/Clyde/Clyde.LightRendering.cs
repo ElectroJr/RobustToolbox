@@ -378,31 +378,27 @@ namespace Robust.Client.Graphics.Clyde
             _mergeWallLayerShaderHandle = LoadShaderHandle("/Shaders/Internal/wall-merge.swsl");
         }
 
-        private void DrawFov(Viewport viewport, IEye eye)
+        private void DrawFov(IEye eye)
         {
             using var _ = DebugGroup(nameof(DrawFov));
-            using var _p = _prof.Group("DrawFov");
+            using var __ = _prof.Group("DrawFov");
 
             PrepareDepthDraw(RtToLoaded(_fovRenderTarget));
 
             if (eye.DrawFov)
             {
-                // Calculate maximum distance for the projection based on screen size.
-                var screenSizeCut = viewport.Size / EyeManager.PixelsPerMeter;
-                var maxDist = (float)Math.Max(screenSizeCut.X, screenSizeCut.Y);
-
                 // FOV is rendered twice.
                 // Once with back face culling like regular lighting.
                 // Then once with front face culling for the final FOV pass (so you see "into" walls).
                 GL.CullFace(CullFaceMode.Back);
                 CheckGlError();
 
-                DrawOcclusionDepth(eye.Position.Position, _fovRenderTarget.Size.X, maxDist, 0);
+                DrawOcclusionDepth(eye.Position.Position, _fovRenderTarget.Size.X, 0, ShadowIndexToUV(0, 2));
 
                 GL.CullFace(CullFaceMode.Front);
                 CheckGlError();
 
-                DrawOcclusionDepth(eye.Position.Position, _fovRenderTarget.Size.X, maxDist, 1);
+                DrawOcclusionDepth(eye.Position.Position, _fovRenderTarget.Size.X, 1, ShadowIndexToUV(1, 2));
             }
 
             FinalizeDepthDraw();
@@ -414,13 +410,12 @@ namespace Robust.Client.Graphics.Clyde
         ///     Draws depths for lighting & FOV into the currently bound framebuffer.
         /// </summary>
         /// <param name="lightPos">The position of the light source.</param>
-        /// <param name="width">The width of the current framebuffer.</param>
-        /// <param name="maxDist">The maximum distance of this light.</param>
-        /// <param name="viewportY">Y index of the row to render the depth at in the framebuffer.</param>
-        private void DrawOcclusionDepth(Vector2 lightPos, int width, float maxDist, int viewportY)
+        /// <param name="index">UV y-index of the row to render the depth at in the framebuffer.</param>
+        private void DrawOcclusionDepth(Vector2 lightPos, int width, int viewportY, float index)
         {
             // The light is now the center of the universe.
             _fovCalculationProgram.SetUniform("shadowLightCentre", lightPos);
+            _fovCalculationProgram.SetUniform("lightIndex", index);
 
             // Shift viewport around so we write to the correct quadrant of the depth map.
             GL.Viewport(0, viewportY, width, 1);
@@ -525,7 +520,7 @@ namespace Robust.Client.Graphics.Clyde
 
             UpdateOcclusionGeometry(mapId, expandedBounds, eyeTransform);
 
-            DrawFov(viewport, eye);
+            DrawFov(eye);
 
             if (!_lightManager.DrawLighting)
             {
@@ -542,17 +537,14 @@ namespace Robust.Client.Graphics.Clyde
                 GL.CullFace(CullFaceMode.Back);
                 CheckGlError();
 
+                var shadowCount = 0;
                 if (_lightManager.DrawShadows)
                 {
-                    var shadowCount = 0;
                     for (var i = 0; i < count; i++)
                     {
                         ref var light = ref _lightsToRenderList[i];
-                        if (!light.CastShadows)
-                            continue;
-
-                        DebugTools.AssertEqual((shadowCount+0.5f)/ShadowTexture.Height, light.Properties.Index);
-                        DrawOcclusionDepth(light.Properties.LightPos, ShadowMapSize, light.Properties.Range, shadowCount++);
+                        if (light.CastShadows)
+                            DrawOcclusionDepth(light.Properties.LightPos, ShadowMapSize, shadowCount++, light.Properties.Index);
                     }
                 }
 
@@ -769,7 +761,7 @@ namespace Robust.Client.Graphics.Clyde
                 foreach (ref var light in _lightsToRenderList.AsSpan()[(state.count - _maxShadowcastingLights)..])
                 {
                     DebugTools.Assert(light.CastShadows);
-                    light.Properties.Index = ((shadowCount++) + 0.5f) / ShadowTexture.Height;
+                    light.Properties.Index = ShadowIndexToUV(shadowCount++, ShadowTexture.Height);
                 }
                 DebugTools.AssertEqual(shadowCount, _maxShadowcastingLights);
             }
@@ -1079,6 +1071,8 @@ namespace Robust.Client.Graphics.Clyde
             var indexMaskBuffer = ArrayPool<ushort>.Shared.Rent(_maxOccluders * GetQuadBatchIndexCount());
 
             // I love mysterious variable names, it keeps you on your toes.
+            // I was about to agree with this comment before realising its my own comment.
+            // I still fucking hate this shit WTF even are these.
             var ai = 0;
             var avi = 0;
             var ami = 0;
@@ -1174,10 +1168,6 @@ namespace Robust.Client.Graphics.Clyde
                             // the normal of the plane is that of the face
                             // therefore, if the dot <= 0, the face is facing the camera
                             // I don't like this, but rotated occluders started happening
-
-                            // var normal =  (b - a).Rotated90DegreesAnticlockwiseWorld;
-                            // Vector2.Dot(normal, a) <= 0;
-                            // equivalent to:
                             return a.X * b.Y > a.Y * b.X;
                         }
 
@@ -1238,10 +1228,10 @@ namespace Robust.Client.Graphics.Clyde
                         }
 
                         // Generate mask geometry.
-                        arrayMaskBuffer[ami + 0] = new Vector2(tl.X, tl.Y);
-                        arrayMaskBuffer[ami + 1] = new Vector2(tr.X, tr.Y);
-                        arrayMaskBuffer[ami + 2] = new Vector2(br.X, br.Y);
-                        arrayMaskBuffer[ami + 3] = new Vector2(bl.X, bl.Y);
+                        arrayMaskBuffer[ami + 0] = tl;
+                        arrayMaskBuffer[ami + 1] = tr;
+                        arrayMaskBuffer[ami + 2] = br;
+                        arrayMaskBuffer[ami + 3] = bl;
 
                         // Generate mask indices.
                         QuadBatchIndexWrite(indexMaskBuffer, ref imi, (ushort)ami);
