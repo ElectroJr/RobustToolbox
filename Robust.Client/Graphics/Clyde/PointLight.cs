@@ -41,6 +41,10 @@ public struct LightProperties(
     public readonly float Range = range;
     public readonly float Power = power;
     public readonly float Softness = softness;
+
+    /// <summary>
+    /// V coordinates of the light in the shadow/depth texture.
+    /// </summary>
     public float Index = index;
     public readonly float Angle = angle;
 }

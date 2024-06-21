@@ -408,6 +408,8 @@ namespace Robust.Client.Graphics.Clyde
             FinalizeDepthDraw();
         }
 
+        public static float ShadowIndexToUV(int index, int height) => (index + 0.5f) / height;
+
         /// <summary>
         ///     Draws depths for lighting & FOV into the currently bound framebuffer.
         /// </summary>
@@ -694,17 +696,13 @@ namespace Robust.Client.Graphics.Clyde
                 ? (float) (light.Rotation + rot)
                 : (float) light.Rotation;
 
-            var shadowMapIndex = light.CastShadows
-                ? ((shadowCount++) + 0.5f) / state.textureHeight
-                : -1;
-
             var props = new LightProperties(
                 light.Color,
                 lightPos,
                 light.Radius,
                 light.Energy,
                 light.Softness,
-                shadowMapIndex,
+                light.CastShadows ? ShadowIndexToUV(shadowCount++, state.textureHeight) : -1,
                 angle
             );
 
