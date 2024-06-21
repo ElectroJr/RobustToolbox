@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Buffers;
+using System.Linq;
 using System.Numerics;
 using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
@@ -14,9 +15,15 @@ using Robust.Shared.Maths;
 using TKStencilOp = OpenToolkit.Graphics.OpenGL4.StencilOp;
 using Robust.Shared.Physics;
 using Robust.Client.ComponentTrees;
+using Robust.Client.Utility;
 using Robust.Shared.Graphics;
+using Robust.Shared.Light;
+using Robust.Shared.Serialization.TypeSerializers.Implementations;
 using static Robust.Shared.GameObjects.OccluderComponent;
 using Robust.Shared.Utility;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using Color = Robust.Shared.Maths.Color;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
 using Vector4 = Robust.Shared.Maths.Vector4;
 
@@ -101,6 +108,7 @@ namespace Robust.Client.Graphics.Clyde
         private ClydeTexture ShadowTexture => _shadowRenderTarget.Texture;
 
         private PointLight[] _lightsToRenderList = default!;
+        private ClydeTexture _lightMaskTexture = default!;
 
         private LightCapacityComparer _lightCap = new();
         private ShadowCapacityComparer _shadowCap = new();
@@ -233,7 +241,87 @@ namespace Robust.Client.Graphics.Clyde
             // Shadow FBO.
             _shadowRenderTargetCanInitializeSafely = true;
             MaxShadowcastingLightsChanged(_maxShadowcastingLights);
+
+            SetupLightMasks();
         }
+
+        /// <summary>
+        /// Merge all know light masks into one texture.
+        /// </summary>
+        private void SetupLightMasks()
+        {
+            List<(LightMaskPrototype, Image<Rgba32>)> textures = new();
+            List<LightMaskPrototype> textureLess = new();
+            foreach (var proto in _protoMan.EnumeratePrototypes<LightMaskPrototype>())
+            {
+                if (proto.Texture == null)
+                {
+                    textureLess.Add(proto);
+                    continue;
+                }
+
+                try
+                {
+                    var path = SpriteSpecifierSerializer.TextureRoot / proto.Texture.TexturePath;
+                    using var stream = _resourceCache.ContentFileRead(path);
+                    var image = Image.Load<Rgba32>(stream);
+                    textures.Add((proto, image));
+                }
+                catch (Exception)
+                {
+                    _clydeSawmill.Error($"Failed to load light mask. Id: {proto.ID}. Path: {proto.Texture}");
+                    throw;
+                }
+            }
+
+            var width = textures.Sum(x => x.Item2.Width) + 1;
+            var height = Math.Max(1, textures.Max(x => x.Item2.Height));
+            var maxSize = Math.Min(GL.GetInteger(GetPName.MaxTextureSize), _cfg.GetCVar(CVars.ResRSIAtlasSize));
+
+            if (width > maxSize)
+            {
+                // If someone **REALLY** needs more than 8k of light masks, this can be changed to create more than one
+                // row. Currently I'm lazy
+                throw new NotSupportedException("Too many light masks");
+            }
+
+            var maskAtlas = new Image<Rgba32>(width + 1, height);
+            float w = width;
+            float h = height;
+
+            // the 0-0 pixel is used by lights without any mask
+            maskAtlas[0, 0] = new Rgba32(255, 255, 255, 255);
+            Vector2i offset = (1,0);
+
+            foreach (var (proto, mask) in textures)
+            {
+                var box = new UIBox2i(0, 0, mask.Width, mask.Height);
+                mask.Blit(box, maskAtlas, offset);
+                box = box.Translated(offset);
+
+                // Convert texture box2i to atlas UV coordinates
+
+                var l = box.Left / w;
+                var b = (h - box.Bottom) / h;
+                var r = box.Right / w;
+                var t = (h - box.Top) / h;
+
+
+                // I'm not sure whats wrong, but flashlights are pointing the wrong way.
+                // So uhhh... we'll just flip these.
+                (b, t) = (t, b);
+
+                proto.TextureBox = new Box2(l, b, r, t);
+
+                offset.X += mask.Width;
+            }
+
+            var whiteBox = new Box2(0, (h - 1) / h, 1 / w, 1);
+            textureLess.ForEach(x => x.TextureBox = whiteBox);
+
+            _lightMaskTexture = (ClydeTexture) LoadTextureFromImage(maskAtlas);
+        }
+
 
         private void LoadLightingShaders()
         {
@@ -258,7 +346,7 @@ namespace Robust.Client.Graphics.Clyde
                     return resource.ClydeHandle;
                 }
 
-                Logger.Warning($"Can't load shader {path}\n");
+                _clydeSawmill.Warning($"Can't load shader {path}\n");
                 return default;
             }
 
@@ -492,6 +580,8 @@ namespace Robust.Client.Graphics.Clyde
 
             SetupGlobalUniformsImmediate(lightShader, ShadowTexture);
 
+            SetTexture(TextureUnit.Texture0, _lightMaskTexture);
+            lightShader.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
             SetTexture(TextureUnit.Texture1, ShadowTexture);
             lightShader.SetUniformTextureMaybe("shadowMap", TextureUnit.Texture1);
 
@@ -506,9 +596,6 @@ namespace Robust.Client.Graphics.Clyde
             using (DebugGroup("Draw Lights"))
             using (_prof.Group("Draw Lights"))
             {
-                SetTexture(TextureUnit.Texture0, _stockTextureWhite);
-                lightShader.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
-
                 var idxCount = GetQuadBatchIndexCount();
                 for (var i = 0; i < count; i++)
                 {
@@ -516,10 +603,10 @@ namespace Robust.Client.Graphics.Clyde
                     if (_lightVertexIndex + 4 >= _lightVertexData.Length || _lightIndexIndex + idxCount > _lightIndexData.Length)
                         FlushLights();
 
-                    _lightVertexData[_lightVertexIndex + 0] = new LightVertex(new Vector2(0,0), new Vector2(0,0), light.Properties);
-                    _lightVertexData[_lightVertexIndex + 1] = new LightVertex(new Vector2(1,0), new Vector2(1,0), light.Properties);
-                    _lightVertexData[_lightVertexIndex + 2] = new LightVertex(new Vector2(1,1), new Vector2(1,1), light.Properties);
-                    _lightVertexData[_lightVertexIndex + 3] = new LightVertex(new Vector2(0,1), new Vector2(0,1), light.Properties);
+                    _lightVertexData[_lightVertexIndex + 0] = new LightVertex(light.Mask.BottomLeft, new Vector2(0,0), light.Properties);
+                    _lightVertexData[_lightVertexIndex + 1] = new LightVertex(light.Mask.BottomRight, new Vector2(1,0), light.Properties);
+                    _lightVertexData[_lightVertexIndex + 2] = new LightVertex(light.Mask.TopRight, new Vector2(1,1), light.Properties);
+                    _lightVertexData[_lightVertexIndex + 3] = new LightVertex(light.Mask.TopLeft, new Vector2(0,1), light.Properties);
                     QuadBatchIndexWrite(_lightIndexData, ref _lightIndexIndex, (ushort) _lightVertexIndex);
                     _lightVertexIndex += 4;
                 }
@@ -609,8 +696,8 @@ namespace Robust.Client.Graphics.Clyde
             var distanceSquared = (state.worldAABB.Center - lightPos).LengthSquared();
 
             var angle = light.MaskAutoRotate
-                ? (float) light.Rotation
-                : (float) (light.Rotation + rot);
+                ? (float) (light.Rotation + rot)
+                : (float) light.Rotation;
 
             var props = new LightProperties(
                 light.Color,
@@ -622,7 +709,7 @@ namespace Robust.Client.Graphics.Clyde
                 angle
             );
 
-            state.clyde._lightsToRenderList[count++] = new PointLight(props, distanceSquared, light.CastShadows, light.Mask);
+            state.clyde._lightsToRenderList[count++] = new PointLight(props, distanceSquared, light.CastShadows, light.MaskPrototype.TextureBox);
 
             return true;
         }

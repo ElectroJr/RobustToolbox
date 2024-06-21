@@ -4,10 +4,10 @@ using Robust.Shared.Maths;
 
 namespace Robust.Client.Graphics.Clyde;
 
-struct PointLight(LightProperties properties, float distance, bool cast, Texture? mask)
+struct PointLight(LightProperties properties, float distance, bool cast, Box2 mask)
 {
     public readonly LightProperties Properties = properties;
-    public readonly Texture? Mask = mask; // TODO CONVERT TO UV COORDS
+    public readonly Box2 Mask = mask;
     public readonly float DistFromCentreSq = distance;
     public readonly bool CastShadows = cast;
 }
