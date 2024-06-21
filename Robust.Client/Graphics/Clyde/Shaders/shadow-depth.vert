@@ -83,5 +83,5 @@ void main()
     //  and we don't really need to have correction
     float zbufferDepth = 1.0 - (1.0 / (length(mix(pA, pB, subVertex.x)) + DEPTH_ZBUFFER_PREDIV_BIAS));
 
-    gl_Position = vec4(targetAngle / PI, mix(1.0, -1.0, subVertex.y), zbufferDepth, 1.0);
+    gl_Position = vec4(targetAngle / PI, mix(-1.0, 1.0, subVertex.y), zbufferDepth, 1.0);
 }

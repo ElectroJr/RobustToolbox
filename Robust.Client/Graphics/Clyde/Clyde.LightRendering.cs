@@ -390,12 +390,12 @@ namespace Robust.Client.Graphics.Clyde
                 // FOV is rendered twice.
                 // Once with back face culling like regular lighting.
                 // Then once with front face culling for the final FOV pass (so you see "into" walls).
-                GL.CullFace(CullFaceMode.Back);
+                GL.CullFace(CullFaceMode.Front);
                 CheckGlError();
 
                 DrawOcclusionDepth(eye.Position.Position, _fovRenderTarget.Size.X, 0, ShadowIndexToUV(0, 2));
 
-                GL.CullFace(CullFaceMode.Front);
+                GL.CullFace(CullFaceMode.Back);
                 CheckGlError();
 
                 DrawOcclusionDepth(eye.Position.Position, _fovRenderTarget.Size.X, 1, ShadowIndexToUV(1, 2));
@@ -534,7 +534,7 @@ namespace Robust.Client.Graphics.Clyde
             using (_prof.Group("Draw shadow depth"))
             {
                 PrepareDepthDraw(RtToLoaded(_shadowRenderTarget));
-                GL.CullFace(CullFaceMode.Back);
+                GL.CullFace(CullFaceMode.Front);
                 CheckGlError();
 
                 var shadowCount = 0;
@@ -1058,7 +1058,7 @@ namespace Robust.Client.Graphics.Clyde
         private void UpdateOcclusionGeometry(MapId map, Box2 expandedBounds, Matrix3x2 eyeTransform)
         {
             using var _ = _prof.Group("UpdateOcclusionGeometry");
-            using var _p = DebugGroup(nameof(UpdateOcclusionGeometry));
+            using var __ = DebugGroup(nameof(UpdateOcclusionGeometry));
 
             // This method generates two sets of occlusion geometry:
             // 3D geometry used during depth projection.
