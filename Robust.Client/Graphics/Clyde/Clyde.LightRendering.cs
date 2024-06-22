@@ -68,18 +68,21 @@ namespace Robust.Client.Graphics.Clyde
         // Occlusion geometry used to render shadows and FOV.
         // Each Vector2 vertex is the position of the start or end of a line occluder. The position is in world
         // coordinates, but shifted such that the current eye is at (0,0) to avoid floating point errors.
-        // Currently the occlusion mask code relies on the line occluders always forming a quad.
+        // Currently the occlusion and depth draw code assumes that there are always 4 lines per occluder.
         private int _occluderCount;
         private ComponentTreeEntry<OccluderComponent>[] _occluders = default!;
-        private Vector2[] _occluderVertices = default!;
-        private GLBuffer _occluderVbo = default!;
+        private Vector2[] _occluderPositionBuffer = default!;
+        private GLBuffer _occluderPositionVbo = default!;
 
-        /// <summary>
-        /// Amount of indices in <see cref="_occluderDepthIndices"/>, so how much we have to draw when drawing _occlusionMaskVao.
-        /// </summary>
+        // Indices for retrieving data from the occluder position buffer when drawing depth maps
         private Vector128<ushort>[] _occluderDepthIndices = default!;
         private GLBuffer _occluderDepthEbo = default!;
         private GLHandle _occluderDepthVao;
+
+        // Indices for retrieving data from the occluder position buffer when drawing FOV mask
+        private ushort[] _occlusionMaskIndices = default!;
+        private GLBuffer _occlusionMaskEbo = default!;
+        private GLHandle _occlusionMaskVao;
 
         private GLBuffer _lightVbo = default!;
         private GLBuffer _lightEbo = default!;
@@ -88,16 +91,6 @@ namespace Robust.Client.Graphics.Clyde
         private ushort[] _lightIndexData = default!;
         private int _lightVertexIndex;
         private int _lightIndexIndex;
-
-        // Occlusion mask geometry that represents the area with occluders.
-        // This is used to merge _wallBleedIntermediateRenderTarget2 onto _lightRenderTarget after wall bleed is done.
-
-        /// <summary>
-        /// Amount of indices in <see cref="_occlusionMaskEbo"/>, so how much we have to draw when drawing _occlusionMaskVao.
-        /// </summary>
-        private ushort[] _occlusionMaskIndices = default!;
-        private GLBuffer _occlusionMaskEbo = default!;
-        private GLHandle _occlusionMaskVao;
 
         // For depth calculation for FOV.
         private RenderTexture _fovRenderTarget = default!;
@@ -130,10 +123,10 @@ namespace Robust.Client.Graphics.Clyde
                 CheckGlError();
                 ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _occluderDepthVao, nameof(_occluderDepthVao));
 
-                _occluderVbo = new GLBuffer(this,
+                _occluderPositionVbo = new GLBuffer(this,
                     BufferTarget.ArrayBuffer,
                     BufferUsageHint.DynamicDraw,
-                    nameof(_occluderVbo));
+                    nameof(_occluderPositionVbo));
 
                 GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
                 GL.EnableVertexAttribArray(0);
@@ -155,7 +148,7 @@ namespace Robust.Client.Graphics.Clyde
                 CheckGlError();
                 ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _occlusionMaskVao, nameof(_occlusionMaskVao));
 
-                GL.BindBuffer(BufferTarget.ElementArrayBuffer, _occluderVbo.ObjectHandle);
+                GL.BindBuffer(BufferTarget.ElementArrayBuffer, _occluderPositionVbo.ObjectHandle);
 
                 _occlusionMaskEbo = new GLBuffer(this,
                     BufferTarget.ElementArrayBuffer,
@@ -420,13 +413,13 @@ namespace Robust.Client.Graphics.Clyde
 
             // Make two draw calls. This allows a faked "generation" of additional polygons.
             _fovCalculationProgram.SetUniform("shadowOverlapSide", 0.0f);
-            GL.DrawElements(PrimitiveType.Lines, _occlusionDataLength, DrawElementsType.UnsignedShort, 0);
+            GL.DrawElements(PrimitiveType.Lines, _occluderCount * 8, DrawElementsType.UnsignedShort, 0);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
 
             // Yup, it's the other draw call.
             _fovCalculationProgram.SetUniform("shadowOverlapSide", 1.0f);
-            GL.DrawElements(PrimitiveType.Lines, _occlusionDataLength, DrawElementsType.UnsignedShort, 0);
+            GL.DrawElements(PrimitiveType.Lines, _occluderCount * 8, DrawElementsType.UnsignedShort, 0);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
         }
@@ -917,7 +910,9 @@ namespace Robust.Client.Graphics.Clyde
             BindVertexArray(_occlusionMaskVao.Handle);
             CheckGlError();
 
-            GL.DrawElements(GetQuadGLPrimitiveType(), _occlusionMaskCount, DrawElementsType.UnsignedShort,
+            GL.DrawElements(GetQuadGLPrimitiveType(),
+                _occluderCount * GetQuadBatchIndexCount(),
+                DrawElementsType.UnsignedShort,
                 IntPtr.Zero);
             CheckGlError();
 
@@ -1044,7 +1039,7 @@ namespace Robust.Client.Graphics.Clyde
 
             FindOccluders(expandedBounds, eye, xformSystem);
 
-            Array.Resize(ref _occluderVertices, _maxOccluders * 4);
+            Array.Resize(ref _occluderPositionBuffer, _maxOccluders * 4);
             ushort vertexIndex = 0;
             var eyePos = eye.Position.Position;
 
@@ -1065,10 +1060,10 @@ namespace Robust.Client.Graphics.Clyde
                 var bl = tl + br - tr;
 
                 // Add occluder corners to the position vertex buffer
-                _occluderVertices[vertexIndex + 0] = tl;
-                _occluderVertices[vertexIndex + 1] = tr;
-                _occluderVertices[vertexIndex + 2] = br;
-                _occluderVertices[vertexIndex + 3] = bl;
+                _occluderPositionBuffer[vertexIndex + 0] = tl;
+                _occluderPositionBuffer[vertexIndex + 1] = tr;
+                _occluderPositionBuffer[vertexIndex + 2] = br;
+                _occluderPositionBuffer[vertexIndex + 3] = bl;
                 vertexIndex += 4;
             }
 
@@ -1077,7 +1072,7 @@ namespace Robust.Client.Graphics.Clyde
             // Upload geometry to OpenGL.
             GL.BindVertexArray(0);
             CheckGlError();
-            _occluderVbo.Reallocate(_occluderVertices.AsSpan(0, vertexIndex));
+            _occluderPositionVbo.Reallocate(_occluderPositionBuffer.AsSpan(0, vertexIndex));
         }
 
         /// <summary>
@@ -1213,8 +1208,9 @@ namespace Robust.Client.Graphics.Clyde
             CheckGlError();
 
             // Update _occluderDepthEbo indices
-            // The depth draw always fetches two occluder vertices per line vertex
-            // And the two lines fetch the same two occluder vertices. hence the repeated indices.
+            // The depth draw will draw 4 disconnected lines per occluder quad (i.e., 8 lines per quad).
+            // And each two consists of two vertices that fetch data from the same area of the occluder position buffer.
+            // Hence the repeated indices here.
             Array.Resize(ref _occluderDepthIndices, _maxOccluders);
             var depthIndexOffsets = Vector128.Create((ushort)0, 0, 1, 1, 2, 2, 3, 3);
             var vertexIndex = Vector128.Create((ushort)0);
@@ -1227,7 +1223,7 @@ namespace Robust.Client.Graphics.Clyde
             _occluderDepthEbo.Reallocate(_occluderDepthIndices.AsSpan());
 
             // Update _occlusionMaskEbo indices
-            // This is just used for drawing normal quads
+            // This is just used for drawing normal quads from the occluder position buffer.
             Array.Resize(ref _occlusionMaskIndices, _maxOccluders * GetQuadBatchIndexCount());
             int index = 0;
             ushort vertex = 0;
