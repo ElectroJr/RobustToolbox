@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Buffers;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.Intrinsics;
@@ -19,13 +18,11 @@ using Robust.Client.Utility;
 using Robust.Shared.Graphics;
 using Robust.Shared.Light;
 using Robust.Shared.Serialization.TypeSerializers.Implementations;
-using static Robust.Shared.GameObjects.OccluderComponent;
 using Robust.Shared.Utility;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Color = Robust.Shared.Maths.Color;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
-using Vector4 = Robust.Shared.Maths.Vector4;
 using SysVec4 = System.Numerics.Vector4;
 
 namespace Robust.Client.Graphics.Clyde
@@ -133,6 +130,9 @@ namespace Robust.Client.Graphics.Clyde
                 GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
                 GL.EnableVertexAttribArray(1);
 
+                // TODO LIGHTING Maybe use static instead of BufferUsageHint.DynamicDraw
+                // But apparently it doesnt make much of a difference and is just a hint?
+                // And im scared of hidden footguns when using static indices into a dynamic draw buffer?
                 _occluderDepthEbo = new GLBuffer(this,
                     BufferTarget.ElementArrayBuffer,
                     BufferUsageHint.DynamicDraw,
@@ -1049,9 +1049,16 @@ namespace Robust.Client.Graphics.Clyde
                 // This can be optimized if we assume occluders are always directly parented to a grid or map
                 // And AFAIK the occluder tree currently requires that (as it does not have a recursive move event subscription).
                 var (pos, rot) = xformSystem.GetWorldPositionRotation(occluder.Transform);
+
+
+                // TODO LIGHTING
+                // Move these transformations to the vertex shader.
+                // I.e., just send the positions & rotations as flat vertex data
+                // But because of instanced rendering, maybe its actually faster to do on the cpu?
                 var box = occluder.Component.BoundingBox.Translated(pos - eyePos);
 
                 // TODO LIGHTING SIMD ROTATION
+                // Assuming we even keep doing it on the cpu
                 // Performing a general matrix transformation here is unnecessary
                 var worldTransform = Matrix3Helpers.CreateRotation(rot);
                 var tl = Vector2.Transform(box.TopLeft, worldTransform);
