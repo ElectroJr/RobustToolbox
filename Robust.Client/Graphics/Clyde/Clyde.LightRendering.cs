@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Buffers;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.Intrinsics;
 using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
 using Robust.Client.ResourceManagement;
 using Robust.Shared;
 using Robust.Shared.GameObjects;
-using Robust.Shared.Log;
 using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Maths;
@@ -26,6 +26,7 @@ using SixLabors.ImageSharp.PixelFormats;
 using Color = Robust.Shared.Maths.Color;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
 using Vector4 = Robust.Shared.Maths.Vector4;
+using SysVec4 = System.Numerics.Vector4;
 
 namespace Robust.Client.Graphics.Clyde
 {
@@ -65,15 +66,20 @@ namespace Robust.Client.Graphics.Clyde
         private GLShaderProgram _hardLightProgram = default!;
 
         // Occlusion geometry used to render shadows and FOV.
+        // Each Vector2 vertex is the position of the start or end of a line occluder. The position is in world
+        // coordinates, but shifted such that the current eye is at (0,0) to avoid floating point errors.
+        // Currently the occlusion mask code relies on the line occluders always forming a quad.
+        private int _occluderCount;
+        private ComponentTreeEntry<OccluderComponent>[] _occluders = default!;
+        private Vector2[] _occluderVertices = default!;
+        private GLBuffer _occluderVbo = default!;
 
-        // Amount of indices in _occlusionEbo, so how much we have to draw when drawing _occlusionVao.
-        private int _occlusionDataLength;
-
-        // Actual GL objects used for rendering.
-        private GLBuffer _occlusionVbo = default!;
-        private GLBuffer _occlusionVIVbo = default!;
-        private GLBuffer _occlusionEbo = default!;
-        private GLHandle _occlusionVao;
+        /// <summary>
+        /// Amount of indices in <see cref="_occluderDepthIndices"/>, so how much we have to draw when drawing _occlusionMaskVao.
+        /// </summary>
+        private Vector128<ushort>[] _occluderDepthIndices = default!;
+        private GLBuffer _occluderDepthEbo = default!;
+        private GLHandle _occluderDepthVao;
 
         private GLBuffer _lightVbo = default!;
         private GLBuffer _lightEbo = default!;
@@ -86,11 +92,10 @@ namespace Robust.Client.Graphics.Clyde
         // Occlusion mask geometry that represents the area with occluders.
         // This is used to merge _wallBleedIntermediateRenderTarget2 onto _lightRenderTarget after wall bleed is done.
 
-        // Amount of indices in _occlusionMaskEbo, so how much we have to draw when drawing _occlusionMaskVao.
-        private int _occlusionMaskDataLength;
-
-        // Actual GL objects used for rendering.
-        private GLBuffer _occlusionMaskVbo = default!;
+        /// <summary>
+        /// Amount of indices in <see cref="_occlusionMaskEbo"/>, so how much we have to draw when drawing _occlusionMaskVao.
+        /// </summary>
+        private ushort[] _occlusionMaskIndices = default!;
         private GLBuffer _occlusionMaskEbo = default!;
         private GLHandle _occlusionMaskVao;
 
@@ -118,50 +123,43 @@ namespace Robust.Client.Graphics.Clyde
             // Other...
             LoadLightingShaders();
 
+            // Set up VAO for drawing occluder depths.
             {
-                // Occlusion VAO.
-                // Only handles positions, no other vertex data necessary.
-                _occlusionVao = new GLHandle(GenVertexArray());
-                BindVertexArray(_occlusionVao.Handle);
+                _occluderDepthVao = new GLHandle(GenVertexArray());
+                BindVertexArray(_occluderDepthVao.Handle);
                 CheckGlError();
+                ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _occluderDepthVao, nameof(_occluderDepthVao));
 
-                ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _occlusionVao, nameof(_occlusionVao));
+                _occluderVbo = new GLBuffer(this,
+                    BufferTarget.ArrayBuffer,
+                    BufferUsageHint.DynamicDraw,
+                    nameof(_occluderVbo));
 
-                // aPos
-                _occlusionVbo = new GLBuffer(this, BufferTarget.ArrayBuffer, BufferUsageHint.DynamicDraw,
-                    nameof(_occlusionVbo));
-                GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(Vector4), IntPtr.Zero);
+                GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
                 GL.EnableVertexAttribArray(0);
-
-                CheckGlError();
-
-                // subVertex
-                _occlusionVIVbo = new GLBuffer(this, BufferTarget.ArrayBuffer, BufferUsageHint.DynamicDraw,
-                    nameof(_occlusionVIVbo));
-                GL.VertexAttribPointer(1, 2, VertexAttribPointerType.UnsignedByte, true, sizeof(byte) * 2, IntPtr.Zero);
+                GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
                 GL.EnableVertexAttribArray(1);
 
-                // index
-                _occlusionEbo = new GLBuffer(this, BufferTarget.ElementArrayBuffer, BufferUsageHint.DynamicDraw,
-                    nameof(_occlusionEbo));
+                _occluderDepthEbo = new GLBuffer(this,
+                    BufferTarget.ElementArrayBuffer,
+                    BufferUsageHint.DynamicDraw,
+                    nameof(_occluderDepthEbo));
 
                 CheckGlError();
             }
 
+            // Set up VAO for drawing occluder stencil.
             {
-                // Occlusion mask VAO.
-                // Only handles positions, no other vertex data necessary.
-
                 _occlusionMaskVao = new GLHandle(GenVertexArray());
                 BindVertexArray(_occlusionMaskVao.Handle);
                 CheckGlError();
-
                 ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _occlusionMaskVao, nameof(_occlusionMaskVao));
 
-                _occlusionMaskVbo = new GLBuffer(this, BufferTarget.ArrayBuffer, BufferUsageHint.DynamicDraw,
-                    nameof(_occlusionMaskVbo));
+                GL.BindBuffer(BufferTarget.ElementArrayBuffer, _occluderVbo.ObjectHandle);
 
-                _occlusionMaskEbo = new GLBuffer(this, BufferTarget.ElementArrayBuffer, BufferUsageHint.DynamicDraw,
+                _occlusionMaskEbo = new GLBuffer(this,
+                    BufferTarget.ElementArrayBuffer,
+                    BufferUsageHint.DynamicDraw,
                     nameof(_occlusionMaskEbo));
 
                 GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, sizeof(Vector2), IntPtr.Zero);
@@ -328,11 +326,7 @@ namespace Robust.Client.Graphics.Clyde
             var depthVert = ReadEmbeddedShader("shadow-depth.vert");
             var depthFrag = ReadEmbeddedShader("shadow-depth.frag");
 
-            (string, uint)[] attribLocations =
-            {
-                ("aPos", 0),
-                ("subVertex", 1)
-            };
+            (string, uint)[] attribLocations = { ("aPos", 0) };
 
             _fovCalculationProgram = _compileProgram(depthVert, depthFrag, attribLocations, "Shadow Depth Program");
 
@@ -380,63 +374,93 @@ namespace Robust.Client.Graphics.Clyde
 
         private void DrawFov(IEye eye)
         {
+            if (!eye.DrawFov)
+                return;
+
             using var _ = DebugGroup(nameof(DrawFov));
-            using var __ = _prof.Group("DrawFov");
+            using var __ = _prof.Group(nameof(DrawFov));
 
-            PrepareDepthDraw(RtToLoaded(_fovRenderTarget));
-
-            if (eye.DrawFov)
-            {
-                // FOV is rendered twice.
-                // Once with back face culling like regular lighting.
-                // Then once with front face culling for the final FOV pass (so you see "into" walls).
-                GL.CullFace(CullFaceMode.Front);
-                CheckGlError();
-
-                DrawOcclusionDepth(eye.Position.Position, _fovRenderTarget.Size.X, 0, ShadowIndexToUV(0, 2));
-
-                GL.CullFace(CullFaceMode.Back);
-                CheckGlError();
-
-                DrawOcclusionDepth(eye.Position.Position, _fovRenderTarget.Size.X, 1, ShadowIndexToUV(1, 2));
-            }
-
-            FinalizeDepthDraw();
+            PrepareDepthTarget(RtToLoaded(_fovRenderTarget));
+            DrawOcclusionDepth(eye.Position.Position, ImageIndexToV(0, 2));
         }
 
-        public static float ShadowIndexToUV(int index, int height) => (index + 0.5f) / height;
+        private void DrawShadowDepths(int count)
+        {
+            if (!_lightManager.DrawShadows)
+                return;
+
+            using var _ = DebugGroup(nameof(DrawShadowDepths));
+            using var __ = _prof.Group(nameof(DrawShadowDepths));
+
+            PrepareDepthTarget(RtToLoaded(_shadowRenderTarget));
+
+            for (var i = 0; i < count; i++)
+            {
+                ref var light = ref _lightsToRenderList[i];
+                if (light.CastShadows)
+                    DrawOcclusionDepth(light.Properties.LightPos, light.Properties.Index);
+            }
+        }
+
+        /// <summary>
+        /// Convert an image y-coordinate to the UV coordinates. Useful for shaders that should index a specific row in
+        /// an image.
+        /// </summary>
+        public static float ImageIndexToV(int index, int height) => (index + 0.5f) / height;
 
         /// <summary>
         ///     Draws depths for lighting & FOV into the currently bound framebuffer.
         /// </summary>
-        /// <param name="lightPos">The position of the light source.</param>
+        /// <param name="origin">The position of the light or eye for which we want to draw the depths.</param>
         /// <param name="index">UV y-index of the row to render the depth at in the framebuffer.</param>
-        private void DrawOcclusionDepth(Vector2 lightPos, int width, int viewportY, float index)
+        private void DrawOcclusionDepth(Vector2 origin, float index)
         {
-            // The light is now the center of the universe.
-            _fovCalculationProgram.SetUniform("shadowLightCentre", lightPos);
-            _fovCalculationProgram.SetUniform("lightIndex", index);
-
-            // Shift viewport around so we write to the correct quadrant of the depth map.
-            GL.Viewport(0, viewportY, width, 1);
-            CheckGlError();
+            _fovCalculationProgram.SetUniform("origin", origin);
+            _fovCalculationProgram.SetUniform("index", index);
 
             // Make two draw calls. This allows a faked "generation" of additional polygons.
             _fovCalculationProgram.SetUniform("shadowOverlapSide", 0.0f);
-            GL.DrawElements(GetQuadGLPrimitiveType(), _occlusionDataLength, DrawElementsType.UnsignedShort, 0);
+            GL.DrawElements(PrimitiveType.Lines, _occlusionDataLength, DrawElementsType.UnsignedShort, 0);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
+
             // Yup, it's the other draw call.
             _fovCalculationProgram.SetUniform("shadowOverlapSide", 1.0f);
-            GL.DrawElements(GetQuadGLPrimitiveType(), _occlusionDataLength, DrawElementsType.UnsignedShort, 0);
+            GL.DrawElements(PrimitiveType.Lines, _occlusionDataLength, DrawElementsType.UnsignedShort, 0);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
         }
 
-        private void PrepareDepthDraw(LoadedRenderTarget target)
+
+        /// <summary>
+        /// Bind and clear the target for a depth/fov draw.
+        /// </summary>
+        private void PrepareDepthTarget(LoadedRenderTarget target)
         {
             const float arbitraryDistanceMax = 1234;
+            BindRenderTargetImmediate(target);
+            CheckGlError();
 
+            GL.Viewport(0, 0, target.Size.X, target.Size.Y);
+            CheckGlError();
+
+            GL.ClearDepth(1);
+            CheckGlError();
+            if (_hasGLFloatFramebuffers)
+                GL.ClearColor(arbitraryDistanceMax, arbitraryDistanceMax * arbitraryDistanceMax, 0, 1);
+            else
+                GL.ClearColor(1, 1, 1, 1);
+
+            CheckGlError();
+            GL.Clear(ClearBufferMask.DepthBufferBit | ClearBufferMask.ColorBufferBit);
+            CheckGlError();
+        }
+
+        /// <summary>
+        /// Configure <see cref="GL"/> properties and shaders for drawing occluder depths.
+        /// </summary>
+        private void PrepareDepthDraw()
+        {
             GL.Disable(EnableCap.Blend);
             CheckGlError();
 
@@ -447,46 +471,22 @@ namespace Robust.Client.Graphics.Clyde
             GL.DepthMask(true);
             CheckGlError();
 
-            GL.Enable(EnableCap.CullFace);
-            CheckGlError();
-            GL.FrontFace(FrontFaceDirection.Cw);
-            CheckGlError();
-
-            BindRenderTargetImmediate(target);
-            CheckGlError();
-            GL.ClearDepth(1);
-            CheckGlError();
-            if (_hasGLFloatFramebuffers)
-            {
-                GL.ClearColor(arbitraryDistanceMax, arbitraryDistanceMax * arbitraryDistanceMax, 0, 1);
-            }
-            else
-            {
-                GL.ClearColor(1, 1, 1, 1);
-            }
-
-            CheckGlError();
-            GL.Clear(ClearBufferMask.DepthBufferBit | ClearBufferMask.ColorBufferBit);
-            CheckGlError();
-
-            BindVertexArray(_occlusionVao.Handle);
+            BindVertexArray(_occluderDepthVao.Handle);
             CheckGlError();
 
             _fovCalculationProgram.Use();
-
             SetupGlobalUniformsImmediate(_fovCalculationProgram, null);
         }
 
+        /// <summary>
+        /// Reset the properties configured in <see cref="PrepareDepthDraw"/>.
+        /// </summary>
         private void FinalizeDepthDraw()
         {
-            GL.Disable(EnableCap.CullFace);
-            CheckGlError();
-
             GL.DepthMask(false);
             CheckGlError();
             GL.Disable(EnableCap.DepthTest);
             CheckGlError();
-
             GL.Enable(EnableCap.Blend);
             CheckGlError();
         }
@@ -516,43 +516,22 @@ namespace Robust.Client.Graphics.Clyde
                 (count, expandedBounds) = GetLightsToRender(mapId, worldBounds, worldAABB);
             }
 
-            eye.GetViewMatrixNoOffset(out var eyeTransform, eye.Scale);
+            UpdateOcclusionGeometry(expandedBounds, eye);
 
-            UpdateOcclusionGeometry(mapId, expandedBounds, eyeTransform);
-
+            PrepareDepthDraw();
             DrawFov(eye);
 
             if (!_lightManager.DrawLighting)
             {
+                FinalizeDepthDraw();
                 BindRenderTargetFull(viewport.RenderTarget);
                 GL.Viewport(0, 0, viewport.Size.X, viewport.Size.Y);
                 CheckGlError();
                 return;
             }
 
-            using (DebugGroup("Draw shadow depth"))
-            using (_prof.Group("Draw shadow depth"))
-            {
-                PrepareDepthDraw(RtToLoaded(_shadowRenderTarget));
-                GL.CullFace(CullFaceMode.Front);
-                CheckGlError();
-
-                var shadowCount = 0;
-                if (_lightManager.DrawShadows)
-                {
-                    for (var i = 0; i < count; i++)
-                    {
-                        ref var light = ref _lightsToRenderList[i];
-                        if (!light.CastShadows)
-                            continue;
-
-                        DebugTools.AssertEqual(light.Properties.Index, ShadowIndexToUV(shadowCount, ShadowTexture.Height));
-                        DrawOcclusionDepth(light.Properties.LightPos, ShadowMapSize, shadowCount++, light.Properties.Index);
-                    }
-                }
-
-                FinalizeDepthDraw();
-            }
+            DrawShadowDepths(count);
+            FinalizeDepthDraw();
 
             GL.Enable(EnableCap.StencilTest);
             _isStencilling = true;
@@ -638,6 +617,7 @@ namespace Robust.Client.Graphics.Clyde
             _lightingReady = true;
         }
 
+
         private void FlushLights()
         {
             if (_lightVertexIndex == 0)
@@ -697,7 +677,7 @@ namespace Robust.Client.Graphics.Clyde
                 light.Radius,
                 light.Energy,
                 light.Softness,
-                light.CastShadows ? ShadowIndexToUV(shadowCount++, state.textureHeight) : -1,
+                light.CastShadows ? ImageIndexToV(shadowCount++, state.textureHeight) : -1,
                 angle
             );
 
@@ -764,7 +744,7 @@ namespace Robust.Client.Graphics.Clyde
                 foreach (ref var light in _lightsToRenderList.AsSpan()[(state.count - _maxShadowcastingLights)..])
                 {
                     DebugTools.Assert(light.CastShadows);
-                    light.Properties.Index = ShadowIndexToUV(shadowCount++, ShadowTexture.Height);
+                    light.Properties.Index = ImageIndexToV(shadowCount++, ShadowTexture.Height);
                 }
                 DebugTools.AssertEqual(shadowCount, _maxShadowcastingLights);
             }
@@ -937,7 +917,7 @@ namespace Robust.Client.Graphics.Clyde
             BindVertexArray(_occlusionMaskVao.Handle);
             CheckGlError();
 
-            GL.DrawElements(GetQuadGLPrimitiveType(), _occlusionMaskDataLength, DrawElementsType.UnsignedShort,
+            GL.DrawElements(GetQuadGLPrimitiveType(), _occlusionMaskCount, DrawElementsType.UnsignedShort,
                 IntPtr.Zero);
             CheckGlError();
 
@@ -1055,223 +1035,75 @@ namespace Robust.Client.Graphics.Clyde
             _drawQuad(Vector2.Zero, Vector2.One, Matrix3x2.Identity, fovShader);
         }
 
-        private void UpdateOcclusionGeometry(MapId map, Box2 expandedBounds, Matrix3x2 eyeTransform)
+        private void UpdateOcclusionGeometry(Box2 expandedBounds, IEye eye)
         {
             using var _ = _prof.Group("UpdateOcclusionGeometry");
             using var __ = DebugGroup(nameof(UpdateOcclusionGeometry));
 
-            // This method generates two sets of occlusion geometry:
-            // 3D geometry used during depth projection.
-            // 2D mask geometry used to apply wall bleed.
-
-            // 16 = 4 vertices * 4 directions
-            var arrayBuffer = ArrayPool<Vector4>.Shared.Rent(_maxOccluders * 4 * 4);
-            // multiplied by 2 (it's a vector2 of bytes)
-            var arrayVIBuffer = ArrayPool<byte>.Shared.Rent(_maxOccluders * 2 * 4 * 4);
-            var indexBuffer = ArrayPool<ushort>.Shared.Rent(_maxOccluders * GetQuadBatchIndexCount() * 4);
-
-            var arrayMaskBuffer = ArrayPool<Vector2>.Shared.Rent(_maxOccluders * 4);
-            var indexMaskBuffer = ArrayPool<ushort>.Shared.Rent(_maxOccluders * GetQuadBatchIndexCount());
-
-            // I love mysterious variable names, it keeps you on your toes.
-            // I was about to agree with this comment before realising its my own comment.
-            // I still fucking hate this shit WTF even are these.
-            var ai = 0;
-            var avi = 0;
-            var ami = 0;
-            var ii = 0;
-            var imi = 0;
-            var amiMax = _maxOccluders * 4;
-
-            var occluderSystem = _entitySystemManager.GetEntitySystem<OccluderSystem>();
             var xformSystem = _entitySystemManager.GetEntitySystem<TransformSystem>();
-            var xforms = _entityManager.GetEntityQuery<TransformComponent>();
 
-            try
+            FindOccluders(expandedBounds, eye, xformSystem);
+
+            Array.Resize(ref _occluderVertices, _maxOccluders * 4);
+            ushort vertexIndex = 0;
+            var eyePos = eye.Position.Position;
+
+            foreach (var occluder in _occluders.AsSpan()[.._occluderCount])
             {
-                foreach (var (uid, comp) in occluderSystem.GetIntersectingTrees(map, expandedBounds))
-                {
-                    if (ami >= amiMax)
-                        break;
+                // TODO LIGHTING
+                // This can be optimized if we assume occluders are always directly parented to a grid or map
+                // And AFAIK the occluder tree currently requires that (as it does not have a recursive move event subscription).
+                var (pos, rot) = xformSystem.GetWorldPositionRotation(occluder.Transform);
+                var box = occluder.Component.BoundingBox.Translated(pos - eyePos);
 
-                    var treeBounds = xforms.GetComponent(uid).InvWorldMatrix.TransformBox(expandedBounds);
+                // TODO LIGHTING SIMD ROTATION
+                // Performing a general matrix transformation here is unnecessary
+                var worldTransform = Matrix3Helpers.CreateRotation(rot);
+                var tl = Vector2.Transform(box.TopLeft, worldTransform);
+                var tr = Vector2.Transform(box.TopRight, worldTransform);
+                var br = Vector2.Transform(box.BottomRight, worldTransform);
+                var bl = tl + br - tr;
 
-                    comp.Tree.QueryAabb((in ComponentTreeEntry<OccluderComponent> entry) =>
+                // Add occluder corners to the position vertex buffer
+                _occluderVertices[vertexIndex + 0] = tl;
+                _occluderVertices[vertexIndex + 1] = tr;
+                _occluderVertices[vertexIndex + 2] = br;
+                _occluderVertices[vertexIndex + 3] = bl;
+                vertexIndex += 4;
+            }
+
+            Array.Clear(_occluders);
+
+            // Upload geometry to OpenGL.
+            GL.BindVertexArray(0);
+            CheckGlError();
+            _occluderVbo.Reallocate(_occluderVertices.AsSpan(0, vertexIndex));
+        }
+
+        /// <summary>
+        /// Query the occluder tree and populate the <see cref="_occluders"/> array.
+        /// </summary>
+        private void FindOccluders(Box2 bounds, IEye eye, TransformSystem xformSystem)
+        {
+            var occluderSystem = _entitySystemManager.GetEntitySystem<OccluderSystem>();
+            Array.Resize(ref _occluders, _maxOccluders);
+            (ComponentTreeEntry<OccluderComponent>[] Results, int Count) state = (_occluders, 0);
+
+            foreach (var (uid, comp) in occluderSystem.GetIntersectingTrees(eye.Position.MapId, bounds))
+            {
+                var treeBounds = xformSystem.GetInvWorldMatrix(uid).TransformBox(bounds);
+                comp.Tree.QueryAabb(ref state,static (ref (ComponentTreeEntry<OccluderComponent>[] Results, int Count) state, in ComponentTreeEntry<OccluderComponent> entry) =>
                     {
-                        var (occluder, transform) = entry;
-                        if (!occluder.Enabled)
-                        {
-                            return true;
-                        }
-
-                        if (ami >= amiMax)
-                            return false;
-
-                        var worldTransform = xformSystem.GetWorldMatrix(transform, xforms);
-                        var box = occluder.BoundingBox;
-
-                        var tl = Vector2.Transform(box.TopLeft, worldTransform);
-                        var tr = Vector2.Transform(box.TopRight, worldTransform);
-                        var br = Vector2.Transform(box.BottomRight, worldTransform);
-                        var bl = tl + br - tr;
-
-                        // Faces.
-                        var faceN = new Vector4(tl.X, tl.Y, tr.X, tr.Y);
-                        var faceE = new Vector4(tr.X, tr.Y, br.X, br.Y);
-                        var faceS = new Vector4(br.X, br.Y, bl.X, bl.Y);
-                        var faceW = new Vector4(bl.X, bl.Y, tl.X, tl.Y);
-
-                        //
-                        // Buckle up.
-                        // For the front-face culled final FOV to work, we obviously cannot have faces inside a series
-                        // of walls that are perpendicular to you.
-                        // This next code does that by only writing render indices for faces that should be rendered.
-                        //
-
-                        //
-                        // Keep in mind, a face only blocks light from *leaving* from the back.
-                        // It does not block light entering.
-                        //
-                        // So first rule: a face always exists if there's no neighboring occluder in that direction.
-                        // Can't have holes after all.
-                        // Second rule: otherwise, if either vertex of the face is "visible" from the camera,
-                        // we don't draw the face.
-                        // This visibility check is significantly more simple and resourceful than you might think.
-                        // A corner becomes "occluded" if it's not visible from either cardinal direction it's on.
-                        // So a the top right corner is occluded if there's something blocking visibility
-                        // on the top AND right.
-                        // This "occluded in direction" check has two parts: whether this is a neighboring occluder (duh)
-                        // And whether the is in that direction of the corner.
-                        // (so a corner on the back of a wall is occluded because the camera is position on the other side).
-                        //
-                        // You'll notice that in some cases like corner walls, ALL corners are marked "occluded".
-                        // This is fine! The occlusion only blocks incoming light,
-                        // and the neighboring walls DO treat those corners as visible.
-                        // Yes, you cannot share the handling of overlapping corners of two aligned neighboring occluders.
-                        // They still have different potential behavior, keeps the code simple(ish).
-                        //
-
-                        // Calculate delta positions from camera.
-                        var dTl = Vector2.Transform(tl, eyeTransform);
-                        var dTr = Vector2.Transform(tr, eyeTransform);
-                        var dBl = Vector2.Transform(bl, eyeTransform);
-                        var dBr = dBl + dTr - dTl;
-
-                        // Get which neighbors are occluding.
-                        var no = (occluder.Occluding & OccluderDir.North) != 0;
-                        var so = (occluder.Occluding & OccluderDir.South) != 0;
-                        var eo = (occluder.Occluding & OccluderDir.East) != 0;
-                        var wo = (occluder.Occluding & OccluderDir.West) != 0;
-
-                        // Do visibility tests for occluders (described above).
-                        static bool CheckFaceEyeVis(Vector2 a, Vector2 b)
-                        {
-                            // determine which side of the plane the face is on
-                            // the plane is at the origin of this coordinate system, which is also the eye
-                            // the normal of the plane is that of the face
-                            // therefore, if the dot <= 0, the face is facing the camera
-                            // I don't like this, but rotated occluders started happening
-                            return a.X * b.Y > a.Y * b.X;
-                        }
-
-                        var nV = ((!no) && CheckFaceEyeVis(dTl, dTr));
-                        var sV = ((!so) && CheckFaceEyeVis(dBr, dBl));
-                        var eV = ((!eo) && CheckFaceEyeVis(dTr, dBr));
-                        var wV = ((!wo) && CheckFaceEyeVis(dBl, dTl));
-                        var tlV = nV || wV;
-                        var trV = nV || eV;
-                        var blV = sV || wV;
-                        var brV = sV || eV;
-
-                        // Handle faces, rules described above.
-                        // Note that "from above" it should be clockwise.
-                        // Further handling is in the shadow depth vertex shader.
-                        // (I have broken this so many times. - 20kdc)
-
-                        void WriteFaceOfBuffer(Vector4 vec)
-                        {
-                            var aiBase = ai;
-                            for (byte vi = 0; vi < 4; vi++)
-                            {
-                                arrayBuffer[ai++] = vec;
-                                // generates the sequence:
-                                // DddD
-                                // HHhh
-                                // deflection
-                                arrayVIBuffer[avi++] = (byte)((((vi + 1) & 2) != 0) ? 0 : 255);
-                                // height
-                                arrayVIBuffer[avi++] = (byte)(((vi & 2) != 0) ? 0 : 255);
-                            }
-
-                            QuadBatchIndexWrite(indexBuffer, ref ii, (ushort)aiBase);
-                        }
-
-                        // North face (TL/TR)
-                        if (!no || !tlV && !trV)
-                        {
-                            WriteFaceOfBuffer(faceN);
-                        }
-
-                        // East face (TR/BR)
-                        if (!eo || !brV && !trV)
-                        {
-                            WriteFaceOfBuffer(faceE);
-                        }
-
-                        // South face (BR/BL)
-                        if (!so || !brV && !blV)
-                        {
-                            WriteFaceOfBuffer(faceS);
-                        }
-
-                        // West face (BL/TL)
-                        if (!wo || !blV && !tlV)
-                        {
-                            WriteFaceOfBuffer(faceW);
-                        }
-
-                        // Generate mask geometry.
-                        arrayMaskBuffer[ami + 0] = tl;
-                        arrayMaskBuffer[ami + 1] = tr;
-                        arrayMaskBuffer[ami + 2] = br;
-                        arrayMaskBuffer[ami + 3] = bl;
-
-                        // Generate mask indices.
-                        QuadBatchIndexWrite(indexMaskBuffer, ref imi, (ushort)ami);
-
-                        ami += 4;
-
-                        return true;
-                    }, treeBounds);
-                }
-
-                _occlusionDataLength = ii;
-                _occlusionMaskDataLength = imi;
-
-                // Upload geometry to OpenGL.
-                BindVertexArray(_occlusionVao.Handle);
-                CheckGlError();
-
-                _occlusionVbo.Reallocate(arrayBuffer.AsSpan(0, ai));
-                _occlusionVIVbo.Reallocate(arrayVIBuffer.AsSpan(0, avi));
-                _occlusionEbo.Reallocate(indexBuffer.AsSpan(0, ii));
-
-                BindVertexArray(_occlusionMaskVao.Handle);
-                CheckGlError();
-
-                _occlusionMaskVbo.Reallocate(arrayMaskBuffer.AsSpan(0, ami));
-                _occlusionMaskEbo.Reallocate(indexMaskBuffer.AsSpan(0, imi));
-            }
-            finally
-            {
-                ArrayPool<Vector4>.Shared.Return(arrayBuffer);
-                ArrayPool<byte>.Shared.Return(arrayVIBuffer);
-                ArrayPool<ushort>.Shared.Return(indexBuffer);
-                ArrayPool<Vector2>.Shared.Return(arrayMaskBuffer);
-                ArrayPool<ushort>.Shared.Return(indexMaskBuffer);
+                        if (entry.Component.Enabled)
+                            state.Results[state.Count++] = entry;
+                        return state.Count < state.Results.Length;
+                    },
+                    treeBounds,
+                    true);
             }
 
-            _debugStats.Occluders += ami / 4;
+            _occluderCount = state.Count;
+            _debugStats.Occluders += _occluderCount;
         }
 
         private void RegenLightRts(Viewport viewport)
@@ -1372,7 +1204,55 @@ namespace Robust.Client.Graphics.Clyde
 
         private void MaxOccludersChanged(int value)
         {
-            _maxOccluders = Math.Max(value, 1024);
+            _maxOccluders = Math.Clamp(value, 1024, 8192);
+
+            // Instead of updating occluer indices every frame, we just update them once. The indices are always the
+            // same anyways, and _maxOccluders ensures that the buffers don't need to be ridiculously long.
+
+            GL.BindVertexArray(0);
+            CheckGlError();
+
+            // Update _occluderDepthEbo indices
+            // The depth draw always fetches two occluder vertices per line vertex
+            // And the two lines fetch the same two occluder vertices. hence the repeated indices.
+            Array.Resize(ref _occluderDepthIndices, _maxOccluders);
+            var depthIndexOffsets = Vector128.Create((ushort)0, 0, 1, 1, 2, 2, 3, 3);
+            var vertexIndex = Vector128.Create((ushort)0);
+            for (var i = 0; i < _maxOccluders; i++)
+            {
+                vertexIndex += depthIndexOffsets;
+                _occluderDepthIndices[i] = vertexIndex + depthIndexOffsets;
+                vertexIndex += Vector128.Create((ushort)4);
+            }
+            _occluderDepthEbo.Reallocate(_occluderDepthIndices.AsSpan());
+
+            // Update _occlusionMaskEbo indices
+            // This is just used for drawing normal quads
+            Array.Resize(ref _occlusionMaskIndices, _maxOccluders * GetQuadBatchIndexCount());
+            int index = 0;
+            ushort vertex = 0;
+            for (var i = 0; i < _maxOccluders; i++)
+            {
+                if (_hasGLPrimitiveRestart)
+                {
+                    _occlusionMaskIndices[index++] = (ushort)(vertex + 0);
+                    _occlusionMaskIndices[index++] = (ushort)(vertex + 1);
+                    _occlusionMaskIndices[index++] = (ushort)(vertex + 2);
+                    _occlusionMaskIndices[index++] = (ushort)(vertex + 3);
+                    _occlusionMaskIndices[index++] = PrimitiveRestartIndex;
+                }
+                else
+                {
+                    _occlusionMaskIndices[index++] = (ushort)(vertex + 0);
+                    _occlusionMaskIndices[index++] = (ushort)(vertex + 1);
+                    _occlusionMaskIndices[index++] = (ushort)(vertex + 2);
+                    _occlusionMaskIndices[index++] = (ushort)(vertex + 0);
+                    _occlusionMaskIndices[index++] = (ushort)(vertex + 2);
+                    _occlusionMaskIndices[index++] = (ushort)(vertex + 3);
+                }
+                vertex += 4;
+            }
+            _occlusionMaskEbo.Reallocate(_occlusionMaskIndices.AsSpan());
         }
 
         private void MaxLightsChanged(int value)

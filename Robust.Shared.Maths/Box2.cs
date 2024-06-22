@@ -323,7 +323,7 @@ namespace Robust.Shared.Maths
         [Pure]
         public readonly Box2 Translated(Vector2 point)
         {
-            return new(Left + point.X, Bottom + point.Y, Right + point.X, Top + point.Y);
+            return new(BottomLeft + point, TopRight + point);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -14,8 +14,8 @@ attribute vec2 subVertex;
 // x: actual angle, y: line angle + 90 degrees, z: Distance at y
 varying vec3 fragControl;
 
-uniform vec2 shadowLightCentre;
-uniform float lightIndex;
+uniform vec2 origin;
+uniform float index;
 uniform float shadowOverlapSide;
 
 // expands wall edges a little to prevent holes
@@ -26,9 +26,15 @@ const highp float DEPTH_ZBUFFER_PREDIV_BIAS = 1.0;
 
 void main()
 {
+    if (gl_VertexID == (gl_VertexID / 2) * 2)
+    {
+        // This is the first veterx for the line A->B
+    }
+
+
     // aPos is clockwise, but we need anticlockwise so swap it here
-    vec2 pA = aPos.zw - shadowLightCentre + vec2(lightIndex*0.00001);
-    vec2 pB = aPos.xy - shadowLightCentre;
+    vec2 pA = aPos.zw - origin;
+    vec2 pB = aPos.xy - origin;
     float xA = atan(pA.y, -pA.x);
     float xB = atan(pB.y, -pB.x);
 
