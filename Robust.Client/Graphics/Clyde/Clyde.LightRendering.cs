@@ -1061,38 +1061,54 @@ namespace Robust.Client.Graphics.Clyde
                 // but ONLY if they are occluded
 
                 // Imagine we have a row of two walls like this, with an eye centered at x:
-                // >         x
-                // > ╔╦╦╦╦╗
-                // > ╠╬╬╬╬╣
-                // > ╚╩╩╩╩╝
+                // >            x
+                // > ╔═╦═╦═╦═╗
+                // > ╠═╬═╬═╬═╣
+                // > ╠═╬═╬═╬═╣
+                // > ╚═╩═╩═╩═╝
                 //
                 // For lighting,we just want to stop any lights from entering a wall. This is easy enough, we can just
-                // cull all lines connected to other occluders, leaving us with this (thin occluders are not drawn to the depth map):
-                // >         x
-                // > ╔╤╤╤╤╗
-                // > ╟┼┼┼┼╢
-                // > ╚╧╧╧╧╝
+                // drop all lines connected to other occluders, leaving us with this (thin occluders are not drawn to the depth map):
+                // >            x
+                // > ╔═╤═╤═╤═╗
+                // > ╟─┼─┼─┼─╢
+                // > ╟─┼─┼─┼─╢
+                // > ╚═╧═╧═╧═╝
                 //
-                // We can then also cull any "back faces", leaving us with just:
-                // >         x
-                // > ╒╤╤╤╤╗
-                // > ├┼┼┼┼╢
-                // > └┴┴┴┴╜
+                // We can then also cull any "back faces" in the vertex shader, leaving us with just:
+                // >            x
+                // > ╒═╤═╤═╤═╗
+                // > ├─┼─┼─┼─╢
+                // > ├─┼─┼─┼─╢
+                // > └─┴─┴─┴─╜
                 //
-                // However, for FOV we want to instead cull the first layer of the walls, to allow viewers to view onto walls/
-                // i.e., the end result we want should look like this
-                // >         x
-                // > ┌┬┬┬┬┐
-                // > ╞╪╪╪╗┤
-                // > └┴┴┴╨┘
+                // Note that this culling is completely optional for lights, it just helps reduce the number of lines
+                // we need to draw.
                 //
-                // As we want to draw the interior occluders, we can't actually just cull all lines connected to other
-                // occluders as we would otherwise do if we only cared about lights. We can get partway there by
-                // culling all "front faces", leaving us with:
-                // >         x
-                // > ╔╦╦╦╦╗
-                // > ╠╬╬╬╬╣
-                // > ╚╩╩╩╩╝
+                // However, for FOV we want to also have a separate pass that will instead cull the first layer of the
+                // walls, to allow viewers to view onto walls, but not trough them. I.e., for FOV the end result we want
+                // should look like this:
+                // >            x
+                // > ╓─┬─┬─┬─┐
+                // > ╠═╪═╪═╬─┤
+                // > ├─┼─┼─╫─┤
+                // > └─┴─┴─╩═╛
+                //
+                // As we now actually need to draw the interior occluders, we can't just drop all lines connected to
+                // other anymore as we would do if we only cared about lights. We can get partway to our desired result
+                // by culling all "front faces" in the vertex shader, leaving us with:
+                // >            x
+                // > ╓─╥─╥─╥─┐
+                // > ╠═╬═╬═╬═╡
+                // > ╠═╬═╬═╬═╡
+                // > ╚═╩═╩═╩═╛
+                //
+                // If we then also drop any internal lines that have one external end point. this leaves us with:
+                // >            x
+                // > ╓─┬─┬─┬─┐
+                // > ╠═╬═╬═╬─┤
+                // > ╠═╬═╬═╬─┤
+                // > ╚═╧═╧═╧═╛
 =
                 occluder.Component.Occluding
 
