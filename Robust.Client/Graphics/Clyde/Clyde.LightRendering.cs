@@ -1061,37 +1061,39 @@ namespace Robust.Client.Graphics.Clyde
                 // but ONLY if they are occluded
 
                 // Imagine we have a row of two walls like this, with an eye centered at x:
-
                 // >         x
-                // > ┌┬┬┬┬┐
-                // > ├┼┼┼┼┤
-                // > └┴┴┴┴┘
-
-                // For lighting,we just want to stop any lights from entering a wall.
-                // This is easy enough, we can just cull any lines connected to other occluders, leaving us with this:
+                // > ╔╦╦╦╦╗
+                // > ╠╬╬╬╬╣
+                // > ╚╩╩╩╩╝
                 //
+                // For lighting,we just want to stop any lights from entering a wall. This is easy enough, we can just
+                // cull all lines connected to other occluders, leaving us with this (thin occluders are not drawn to the depth map):
                 // >         x
-                // > ┌────┐
-                // > │    │
-                // > └────┘
+                // > ╔╤╤╤╤╗
+                // > ╟┼┼┼┼╢
+                // > ╚╧╧╧╧╝
                 //
                 // We can then also cull any "back faces", leaving us with just:
-                //
                 // >         x
-                // > ┌────┐
-                // >      │
-                // >      ┘
+                // > ╒╤╤╤╤╗
+                // > ├┼┼┼┼╢
+                // > └┴┴┴┴╜
                 //
                 // However, for FOV we want to instead cull the first layer of the walls, to allow viewers to view onto walls/
-                // For FOV, we want to let them see into the first layer of walls. We can partly do that by just culling
-                // all front-faces, leaving us with:
-                //
+                // i.e., the end result we want should look like this
                 // >         x
-                // > ┌┬┬┬┬
-                // > ├┼┼┼┼─
-                // > └┴┴┴┴─
-
-
+                // > ┌┬┬┬┬┐
+                // > ╞╪╪╪╗┤
+                // > └┴┴┴╨┘
+                //
+                // As we want to draw the interior occluders, we can't actually just cull all lines connected to other
+                // occluders as we would otherwise do if we only cared about lights. We can get partway there by
+                // culling all "front faces", leaving us with:
+                // >         x
+                // > ╔╦╦╦╦╗
+                // > ╠╬╬╬╬╣
+                // > ╚╩╩╩╩╝
+=
                 occluder.Component.Occluding
 
                 // TODO LIGHTING
