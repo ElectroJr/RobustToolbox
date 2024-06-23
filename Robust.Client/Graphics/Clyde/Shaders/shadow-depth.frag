@@ -1,17 +1,7 @@
-
-// x: Angle being queried, y: Angle of closest point of line (is of 90-degree angle to line angle), z: Distance at y
-varying highp vec3 fragControl;
+varying highp float dist;
 
 void main()
 {
-    // Thanks to Radrark for finding this for me. There's also a useful diagram, but this is text, so:
-    // r = p / cos(theta - phi)
-    // r: Distance to line *given angle theta*
-    // p: Distance to closest point of line
-    // theta: Angle being queried
-    // phi: Angle of closest point of line - inherently on 90-degree angle to line angle
-    highp float dist = abs(fragControl.z / cos(fragControl.x - fragControl.y));
-
     // Main body.
 #ifdef HAS_DFDX
     highp float dx = dFdx(dist);
@@ -22,3 +12,16 @@ void main()
     gl_FragColor = zClydeShadowDepthPack(vec2(dist, dist * dist + 0.25 * dx*dx));
 }
 
+// If float textures are supported, puts the values in the R/G fields.
+// This assumes RG32F format.
+// If float textures are NOT supported.
+// This assumes RGBA8 format.
+// Operational range is "whatever works for FOV depth"
+highp vec4 zClydeShadowDepthPack(highp vec2 val) {
+    #ifdef HAS_FLOAT_TEXTURES
+    return vec4(val, 0.0, 1.0);
+    #else
+    highp vec2 valH = floor(val);
+    return vec4(valH / 255.0, val - valH);
+    #endif
+}

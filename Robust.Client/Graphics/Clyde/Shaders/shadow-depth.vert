@@ -6,13 +6,15 @@
 // As such, it's still an increase in performance to only render 2 views.
 // And as such, a line can be split across the 2 views.
 
-// xy: A, zw: B
-attribute vec4 aPos;
-// x: deflection(0=A/1=B) y: height
-attribute vec2 subVertex;
+// The shader has been significantly modified since then
+// So the above comments might be out of date.
+// The URL doesn't even work anymore.
 
-// x: actual angle, y: line angle + 90 degrees, z: Distance at y
-varying vec3 fragControl;
+// Coordinates of the two points A & B that make up the line being drawn.
+attribute vec4 aPos;
+
+// Distance to the line being drawn.
+varying float dist;
 
 uniform vec2 origin;
 uniform float index;
@@ -20,32 +22,29 @@ uniform float shadowOverlapSide;
 
 // expands wall edges a little to prevent holes
 const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
-// added to zbufferDepth BEFORE divide
-// really just keep at 1.0 (keeps it away from the near clipping plane)
-const highp float DEPTH_ZBUFFER_PREDIV_BIAS = 1.0;
 
 void main()
 {
-    if (gl_VertexID == (gl_VertexID / 2) * 2)
-    {
-        // This is the first veterx for the line A->B
-    }
-
-
     // aPos is clockwise, but we need anticlockwise so swap it here
-    vec2 pA = aPos.zw - origin;
-    vec2 pB = aPos.xy - origin;
-    float xA = atan(pA.y, -pA.x);
-    float xB = atan(pB.y, -pB.x);
+    vec2 pointA = aPos.xy - origin;
+    vec2 pointB = aPos.zw - origin;
+    float angleA = atan(pointA.y, pointA.x);
+    float angleB = atan(pointB.y, pointB.x);
+
+    float delta = angleB - angleA;
+    float sign = sign(delta);
 
     // expand bias
-    float lrSignBias = sign(xB - xA) * DEPTH_LEFTRIGHT_EXPAND_BIAS;
-    xA -= lrSignBias;
-    xB += lrSignBias;
+    float lrSignBias = sign * DEPTH_LEFTRIGHT_EXPAND_BIAS;
+    angleA -= lrSignBias;
+    angleB += lrSignBias;
+
+    // TODO LIGHTING
+    // on pass 2, just discard any non-clipping lines
 
     // We need to reliably detect a clip, as opposed to, say, a backdrawn face.
     // So a clip is when the angular area is >= 180 degrees (which is not possible with a quad and always occurs when wrapping)
-    if (abs(xA - xB) >= PI)
+    if (abs(delta) >= PI)
     {
         // Oh no! It clipped...
 
@@ -60,34 +59,35 @@ void main()
         if (shadowOverlapSide < 0.5)
         {
             // ...and we're adjusting the left edge...
-            xA += sign(xB - xA) * PI * 2.0;
+            xA += sign * PI * 2.0;
         }
         else
         {
             // ...and we're adjusting the right edge...
-            xB += sign(xA - xB) * PI * 2.0;
+            xB -= sign * PI * 2.0;
         }
     }
 
-    float targetAngle = mix(xA, xB, subVertex.x);
 
-    // Calculate the necessary control data for the fragment shader.
-    vec2 lineNormal = pB - pA; // hypothetical: <- would have negative X, zero Y
-    lineNormal /= length(lineNormal);
-    fragControl = vec3(
-        // Angle
-        targetAngle,
-        // Angle Out
-        atan(lineNormal.x, lineNormal.y),
-        // Distance @ Angle Out
-        dot(vec2(lineNormal.y, -lineNormal.x), pA)
-    );
+    float angle;
+    vec2 point;
+    if (gl_VertexID == (gl_VertexID / 2) * 2)
+    {
+        angle = angleA;
+        point = pointA;
+    }
+    else
+    {
+        angle = angleB;
+        point = pointB;
+    }
 
-    // Depth divide MUST be implemented here no matter what,
-    //  because GLES SL 1.00 doesn't have gl_FragDepth.
-    // Keep in mind: Ultimately, this doesn't matter, because we use the colour buffer for actual casting,
-    //  and we don't really need to have correction
-    float zbufferDepth = 1.0 - (1.0 / (length(mix(pA, pB, subVertex.x)) + DEPTH_ZBUFFER_PREDIV_BIAS));
+    dist = len(point);
 
-    gl_Position = vec4(targetAngle / PI, mix(-1.0, 1.0, subVertex.y), zbufferDepth, 1.0);
+    // We use sign here to perform back-face culling.
+    // I.e., if the angle is decreasing, this line is on the rear side of the occluder.
+    // So we simply move it out beyond the clipping plane.
+    float depth = 1.0 - (sign / (dist + 1.0));
+
+    gl_Position = vec4(angle / PI, index, depth, 1.0);
 }

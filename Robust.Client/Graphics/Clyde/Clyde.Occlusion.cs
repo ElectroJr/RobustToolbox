@@ -139,7 +139,6 @@ namespace Robust.Client.Graphics.Clyde
 
         private void DrawFov(IEye eye)
         {
-            return;
             if (!eye.DrawFov)
                 return;
 
@@ -376,7 +375,9 @@ namespace Robust.Client.Graphics.Clyde
                 var southBlocked = (neighbours & OccluderDir.South) != 0;
                 var westBlocked = (neighbours & OccluderDir.West) != 0;
 
-                // When drawing a line from a to b, is the line going clockwise or counterclockwise?
+                // When drawing a line from a to b, is the line going clockwise or counterclockwise around the origin?
+                // We draw occluders in a clockwise direction from the occluders centre. I.e. tr -> tl -> bl -> br -> tr
+                // So from the eye's POV, the lines going anti-clockwise are the parts facing towards the eye.
                 static bool IsFrontFacing(Vector2 a, Vector2 b)
                 {
                     return a.X * b.Y > a.Y * b.X;
