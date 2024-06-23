@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
@@ -24,6 +25,7 @@ using SixLabors.ImageSharp.PixelFormats;
 using Color = Robust.Shared.Maths.Color;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
 using SysVec4 = System.Numerics.Vector4;
+using static Robust.Shared.GameObjects.OccluderComponent;
 
 namespace Robust.Client.Graphics.Clyde
 {
@@ -68,16 +70,25 @@ namespace Robust.Client.Graphics.Clyde
         // Currently the occlusion and depth draw code assumes that there are always 4 lines per occluder.
         private int _occluderCount;
         private ComponentTreeEntry<OccluderComponent>[] _occluders = default!;
-        private Vector2[] _occluderPositionBuffer = default!;
-        private GLBuffer _occluderPositionVbo = default!;
 
-        // Indices for retrieving data from the occluder position buffer when drawing depth maps
-        private Vector128<ushort>[] _occluderDepthIndices = default!;
-        private GLBuffer _occluderDepthEbo = default!;
-        private GLHandle _occluderDepthVao;
+        // Rendering data for drawing the light depth map (i.e., distance to nearest occluder).
+        private int _lightOcclusionCount;
+        private SysVec4[] _lightOcclusionBuffer = default!;
+        private GLBuffer _lightOcclusionVbo;
+        private GLHandle _lightOcclusionVao;
 
-        // Indices for retrieving data from the occluder position buffer when drawing FOV mask
+        // Rendering data for drawing the fov depth map. This is a variant of the light data that allows the FOV
+        // to see into the first layer of walls.
+        private int _fovOcclusionCount;
+        private SysVec4[] _fovOcclusionBuffer = default!;
+        private GLBuffer _fovOcclusionVbo;
+        private GLHandle _fovOcclusionVao;
+
+        // Rendering data for drawing the FOV mask when bleeding lights onto walls.
+        private int _occlusionMaskCount;
         private ushort[] _occlusionMaskIndices = default!;
+        private Vector2[] _occlusionMaskBuffer = default!;
+        private GLBuffer _occlusionMaskVbo = default!;
         private GLBuffer _occlusionMaskEbo = default!;
         private GLHandle _occlusionMaskVao;
 
@@ -115,15 +126,15 @@ namespace Robust.Client.Graphics.Clyde
 
             // Set up VAO for drawing occluder depths.
             {
-                _occluderDepthVao = new GLHandle(GenVertexArray());
-                BindVertexArray(_occluderDepthVao.Handle);
+                _lightOcclusionVbo = new GLHandle(GenVertexArray());
+                BindVertexArray(_lightOcclusionVbo.Handle);
                 CheckGlError();
-                ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _occluderDepthVao, nameof(_occluderDepthVao));
+                ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _lightOcclusionVbo, nameof(_lightOcclusionVbo));
 
-                _occluderPositionVbo = new GLBuffer(this,
+                _occlusionMaskVbo = new GLBuffer(this,
                     BufferTarget.ArrayBuffer,
                     BufferUsageHint.DynamicDraw,
-                    nameof(_occluderPositionVbo));
+                    nameof(_occlusionMaskVbo));
 
                 GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
                 GL.EnableVertexAttribArray(0);
@@ -148,7 +159,7 @@ namespace Robust.Client.Graphics.Clyde
                 CheckGlError();
                 ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _occlusionMaskVao, nameof(_occlusionMaskVao));
 
-                GL.BindBuffer(BufferTarget.ElementArrayBuffer, _occluderPositionVbo.ObjectHandle);
+                GL.BindBuffer(BufferTarget.ElementArrayBuffer, _occlusionMaskVbo.ObjectHandle);
 
                 _occlusionMaskEbo = new GLBuffer(this,
                     BufferTarget.ElementArrayBuffer,
@@ -464,7 +475,7 @@ namespace Robust.Client.Graphics.Clyde
             GL.DepthMask(true);
             CheckGlError();
 
-            BindVertexArray(_occluderDepthVao.Handle);
+            BindVertexArray(_lightOcclusionVbo.Handle);
             CheckGlError();
 
             _fovCalculationProgram.Use();
@@ -1030,45 +1041,70 @@ namespace Robust.Client.Graphics.Clyde
             _drawQuad(Vector2.Zero, Vector2.One, Matrix3x2.Identity, fovShader);
         }
 
+        // TODO LIGHTING
+        // Lazy occlusion updating.
+        // I.e., cache occlusion geometry per occlusion tree.
+        // Then draw each tree with its own transformation applied in the vertex shader
         private void UpdateOcclusionGeometry(Box2 expandedBounds, IEye eye)
         {
             using var _ = _prof.Group("UpdateOcclusionGeometry");
             using var __ = DebugGroup(nameof(UpdateOcclusionGeometry));
 
-            var xformSystem = _entitySystemManager.GetEntitySystem<TransformSystem>();
+            _occluderCount = 0;
+            _lightOcclusionCount = 0;
+            _fovOcclusionCount = 0;
+            _occlusionMaskCount = 0;
 
+            var eyePos = eye.Position.Position;
+
+            var xformSystem = _entitySystemManager.GetEntitySystem<TransformSystem>();
             FindOccluders(expandedBounds, eye, xformSystem);
 
-            Array.Resize(ref _occluderPositionBuffer, _maxOccluders * 4);
-            ushort vertexIndex = 0;
-            var eyePos = eye.Position.Position;
+            // TODO LIGHTING parallelize.
+            // Specifically:
+            // - getting world position & rotation
+            // - computing corner visibility
 
             foreach (var occluder in _occluders.AsSpan()[.._occluderCount])
             {
                 DebugTools.Assert(occluder.Component.Enabled);
 
+                // TODO LIGHTING
+                // This can be optimized if we assume occluders are always directly parented to a grid or map
+                // And AFAIK the occluder tree currently requires that (as it does not have a recursive move event subscription).
+                var (pos, rot) = xformSystem.GetWorldPositionRotation(occluder.Transform);
 
+                pos -= eyePos;
+                var box = occluder.Component.BoundingBox;
 
-                // Always draw if unoccluded
-                //
-                // if occluded
-                // we still want to draw it for FOV
-                // IF its the back part of a wall
-                // to stop people from seeing two walls deep.
-                //
-                // I.e., we want to draw wals even if they are occluded
-                // as long as they are "front facing".
-                // but ONLY if they are occluded
+                // TODO LIGHTING SIMD
+                // Even though Matrix3x2 Uses some simd, it is probably faster directly SIMD these 4 transformations
+                var worldTransform = Matrix3Helpers.CreateTransform(pos, rot);
+                var tl = Vector2.Transform(box.TopLeft, worldTransform);
+                var tr = Vector2.Transform(box.TopRight, worldTransform);
+                var br = Vector2.Transform(box.BottomRight, worldTransform);
+                var bl = tl + br - tr;
 
-                // Imagine we have a row of two walls like this, with an eye centered at x:
+                // First, we just add all occluder corners to the mask buffer
+                _occlusionMaskBuffer[_occlusionMaskCount + 0] = tl;
+                _occlusionMaskBuffer[_occlusionMaskCount + 1] = tr;
+                _occlusionMaskBuffer[_occlusionMaskCount + 2] = br;
+                _occlusionMaskBuffer[_occlusionMaskCount + 3] = bl;
+                _occlusionMaskCount += 4;
+
+                // Populating the light & fov buffers is a bit more complicated.
+                // Buckle up.
+
+                // Imagine we have a grid of walls with an eye centered at x:
                 // >            x
                 // > ╔═╦═╦═╦═╗
                 // > ╠═╬═╬═╬═╣
                 // > ╠═╬═╬═╬═╣
                 // > ╚═╩═╩═╩═╝
                 //
-                // For lighting,we just want to stop any lights from entering a wall. This is easy enough, we can just
-                // drop all lines connected to other occluders, leaving us with this (thin occluders are not drawn to the depth map):
+                // For lighting, we just want to stop any lights from entering a wall. This is easy enough, we can just
+                // drop all "internal" lines that are touching other occluders, leaving us with this (thin occluders
+                // are not drawn to the depth map):
                 // >            x
                 // > ╔═╤═╤═╤═╗
                 // > ╟─┼─┼─┼─╢
@@ -1083,65 +1119,116 @@ namespace Robust.Client.Graphics.Clyde
                 // > └─┴─┴─┴─╜
                 //
                 // Note that this culling is completely optional for lights, it just helps reduce the number of lines
-                // we need to draw.
-                //
-                // However, for FOV we want to also have a separate pass that will instead cull the first layer of the
-                // walls, to allow viewers to view onto walls, but not trough them. I.e., for FOV the end result we want
-                // should look like this:
+                // we need to draw. However, for FOV we want to also have a separate pass that let us see into the first
+                // layer of the walls, but not trough them. I.e., for FOV the end result we want should look like this:
                 // >            x
                 // > ╓─┬─┬─┬─┐
                 // > ╠═╪═╪═╬─┤
                 // > ├─┼─┼─╫─┤
                 // > └─┴─┴─╩═╛
                 //
-                // As we now actually need to draw the interior occluders, we can't just drop all lines connected to
-                // other anymore as we would do if we only cared about lights. We can get partway to our desired result
-                // by culling all "front faces" in the vertex shader, leaving us with:
+                // As we now actually need to draw the interior lines, we can't just drop them all like we did for
+                // lights. We can get partway to our desired result by just culling all "front faces" in the vertex
+                // shader, leaving us with:
                 // >            x
                 // > ╓─╥─╥─╥─┐
                 // > ╠═╬═╬═╬═╡
                 // > ╠═╬═╬═╬═╡
                 // > ╚═╩═╩═╩═╛
                 //
-                // If we then also drop any internal lines that have one external end point. this leaves us with:
+                // If we then also drop any internal lines that connect to front-facing external points, this leaves us with:
                 // >            x
                 // > ╓─┬─┬─┬─┐
                 // > ╠═╬═╬═╬─┤
                 // > ╠═╬═╬═╬─┤
-                // > ╚═╧═╧═╧═╛
-=
-                occluder.Component.Occluding
+                // > ╚═╩═╩═╩═╛
+                //
+                // While this contains many more lines that we actually need for drawing the FOV, it gets the job done.
+                // I don't know if it matters much, but as we only need to draw FOV once, while light maps get drawn
+                // many times, I want to minimize the number of unnecessary occlusion lines that get used by the light
+                // depth drawing. Hence the FOV & light depths will use two different buffers.
+
+                // find which directions have adjacent occluders, so that we can neglect some internal lines
+                // Note that the cardinal directions here are defined relative to the occluder entity, not how
+                // the occluder is drawn on the screen. Similarly, the "top left" vector is just the corner that the
+                // occluder identifies as it's top left corner,
+                var neighbours = occluder.Component.Occluding;
+                var northBlocked = (neighbours & OccluderDir.North) != 0;
+                var eastBlocked = (neighbours & OccluderDir.East) != 0;
+                var southBlocked = (neighbours & OccluderDir.South) != 0;
+                var westBlocked = (neighbours & OccluderDir.West) != 0;
+
+                // When drawing a line from a to b, is the line going clockwise or counterclockwise?
+                static bool IsFrontFacing(Vector2 a, Vector2 b)
+                {
+                    return a.X * b.Y > a.Y * b.X;
+                }
+
+                // TODO LIGHTING SIMD?
+                var northFaceVisible = ((!northBlocked) && IsFrontFacing(tl, tr));
+                var southFaceVisible = ((!southBlocked) && IsFrontFacing(br, bl));
+                var eastFaceVisible = ((!eastBlocked) && IsFrontFacing(tr, br));
+                var westFaceVisible = ((!westBlocked) && IsFrontFacing(bl, tl));
+
+                var eastOrWestVisible = westFaceVisible || eastFaceVisible;
+                var northOrSouthVisible = northFaceVisible || southFaceVisible;
+
+                // For each unblocked direction, we draw one occluder line for both the the light depth and FOV buffer.
+                // Additionally, we also draw blocked directions to the FOV buffer if it is not connected to any visible
+                // corners.
+
+                if (!northBlocked)
+                {
+                    var vec = new SysVec4(tl, tr.X, tr.Y);
+                    WriteLightBuffer(vec);
+                    WriteFovBuffer(vec);
+                }
+                else if (!eastOrWestVisible)
+                {
+                    var vec = new SysVec4(tl, tr.X, tr.Y);
+                    WriteFovBuffer(vec);
+                }
+
+                if (!eastBlocked)
+                {
+                    var vec = new SysVec4(tr, br.X, br.Y);
+                    WriteLightBuffer(vec);
+                    WriteFovBuffer(vec);
+                }
+                else if (!northOrSouthVisible)
+                {
+                    var vec = new SysVec4(tr, br.X, br.Y);
+                    WriteFovBuffer(vec);
+                }
+
+                if (!southBlocked)
+                {
+                    var vec = new SysVec4(br, bl.X, bl.Y);
+                    WriteLightBuffer(vec);
+                    WriteFovBuffer(vec);
+                }
+                else if (!eastOrWestVisible)
+                {
+                    var vec = new SysVec4(br, bl.X, bl.Y);
+                    WriteFovBuffer(vec);
+                }
+
+                if (!westBlocked)
+                {
+                    var vec = new SysVec4(bl, tl.X, tl.Y);
+                    WriteLightBuffer(vec);
+                    WriteFovBuffer(vec);
+                }
+                else if (!northOrSouthVisible)
+                {
+                    var vec = new SysVec4(bl, tl.X, tl.Y);
+                    WriteFovBuffer(vec);
+                }
 
                 // TODO LIGHTING
-                // This can be optimized if we assume occluders are always directly parented to a grid or map
-                // And AFAIK the occluder tree currently requires that (as it does not have a recursive move event subscription).
-                var (pos, rot) = xformSystem.GetWorldPositionRotation(occluder.Transform);
-
-                pos = -eyePos;
-                var box = occluder.Component.BoundingBox;
-
-                // TODO LIGHTING SIMD
-                // Even though Matrix3x2 Uses some simd, it is probably faster to simd along the 4 Vecor2s
-                var worldTransform = Matrix3Helpers.CreateTransform(pos, rot);
-                var tl = Vector2.Transform(box.TopLeft, worldTransform);
-                var tr = Vector2.Transform(box.TopRight, worldTransform);
-                var br = Vector2.Transform(box.BottomRight, worldTransform);
-                var bl = tl + br - tr;
-
-                // Add occluder corners to the position vertex buffer
-                _occluderPositionBuffer[vertexIndex + 0] = tl;
-                _occluderPositionBuffer[vertexIndex + 1] = tr;
-                _occluderPositionBuffer[vertexIndex + 2] = br;
-                _occluderPositionBuffer[vertexIndex + 3] = bl;
-                vertexIndex += 4;
-
-                // Lights are blocked by the front faces of occluders.
-
-                // Buckle up.
-                // For the front-face culled final FOV to work, we obviously cannot have faces inside a series
-                // of walls that are perpendicular to you. This next code does that by only writing render indices for
-                // faces that should be rendered.
-
+                // Currently the above code uses two float/position buffers. But is it maybe better to have one float
+                // buffer, and two index/element buffers with indexed rendering?
+                // On the cpu side, we have to populate & send an extra array, so maybe its slower?
             }
 
             Array.Clear(_occluders);
@@ -1149,7 +1236,23 @@ namespace Robust.Client.Graphics.Clyde
             // Upload geometry to OpenGL.
             GL.BindVertexArray(0);
             CheckGlError();
-            _occluderPositionVbo.Reallocate(_occluderPositionBuffer.AsSpan(0, vertexIndex));
+            _occlusionMaskVbo.Reallocate(_occlusionMaskBuffer.AsSpan(0, vertexIndex));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteLightBuffer(SysVec4 vec)
+        {
+            _lightOcclusionBuffer[_lightOcclusionCount + 0] = vec;
+            _lightOcclusionBuffer[_lightOcclusionCount + 1] = vec;
+            _lightOcclusionCount += 2;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteFovBuffer(SysVec4 vec)
+        {
+            _lightOcclusionBuffer[_lightOcclusionCount + 0] = vec;
+            _lightOcclusionBuffer[_lightOcclusionCount + 1] = vec;
+            _lightOcclusionCount += 2;
         }
 
         /// <summary>
@@ -1282,6 +1385,7 @@ namespace Robust.Client.Graphics.Clyde
 
             GL.BindVertexArray(0);
             CheckGlError();
+
 
             // Update _occluderDepthEbo indices
             // The depth draw will draw 4 disconnected lines per occluder quad (i.e., 8 lines per quad).
