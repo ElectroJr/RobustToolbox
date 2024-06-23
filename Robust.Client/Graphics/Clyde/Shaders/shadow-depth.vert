@@ -59,20 +59,22 @@ void main()
         if (shadowOverlapSide < 0.5)
         {
             // ...and we're adjusting the left edge...
-            xA += sign * PI * 2.0;
+            angleA += sign * PI * 2.0;
+            sign = - sign;
         }
         else
         {
             // ...and we're adjusting the right edge...
-            xB -= sign * PI * 2.0;
+            angleB -= sign * PI * 2.0;
+            sign = - sign;
         }
     }
-
 
     float angle;
     vec2 point;
     if (gl_VertexID == (gl_VertexID / 2) * 2)
     {
+        // Even numbered vertex -> this is the start of the line
         angle = angleA;
         point = pointA;
     }
@@ -82,12 +84,11 @@ void main()
         point = pointB;
     }
 
-    dist = len(point);
+    dist = length(point);
 
-    // We use sign here to perform back-face culling.
-    // I.e., if the angle is decreasing, this line is on the rear side of the occluder.
-    // So we simply move it out beyond the clipping plane.
-    float depth = 1.0 - (sign / (dist + 1.0));
+    // We use sign here to perform back-face culling. I.e., if the angle is decreasing, this line is on the rear side
+    // of the occluder. So we simply move it out beyond the clipping plane to cull it.
+    float depth = 1.0 - sign / (dist + 1.0);
 
     gl_Position = vec4(angle / PI, index, depth, 1.0);
 }

@@ -147,9 +147,7 @@ namespace Robust.Client.Graphics.Clyde
                 CheckGlError();
             }
 
-            // Shadow FBO.
-            _shadowRenderTargetCanInitializeSafely = true;
-            MaxShadowcastingLightsChanged(_maxShadowcastingLights);
+            _cfg.OnValueChanged(CVars.MaxShadowcastingLights, MaxShadowcastingLightsChanged, true);
 
             SetupLightMasks();
         }
@@ -275,6 +273,7 @@ namespace Robust.Client.Graphics.Clyde
 
         private void DrawLightsAndFov(Viewport viewport, Box2Rotated worldBounds, Box2 worldAABB, IEye eye)
         {
+            eye.DrawFov = false;
             if (!_lightManager.Enabled || !eye.DrawLight)
             {
                 return;
@@ -893,14 +892,9 @@ namespace Robust.Client.Graphics.Clyde
             _maxShadowcastingLights = newValue;
             DebugTools.Assert(_maxLights >= _maxShadowcastingLights);
 
-            // This guard is in place because otherwise the shadow FBO is initialized before GL is initialized.
-            if (!_shadowRenderTargetCanInitializeSafely)
-                return;
-
+            // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
             if (_shadowRenderTarget != null)
-            {
                 DeleteRenderTexture(_shadowRenderTarget.Handle);
-            }
 
             // Shadow FBO.
             _shadowRenderTarget = CreateRenderTarget((ShadowMapSize, _maxShadowcastingLights),

@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
 using Robust.Client.ResourceManagement;
+using Robust.Shared;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Maths;
 using Robust.Shared.Physics;
@@ -42,28 +43,25 @@ namespace Robust.Client.Graphics.Clyde
         private ComponentTreeEntry<OccluderComponent>[] _occluders = default!;
 
         // Rendering data for drawing the light depth map (i.e., distance to nearest occluder).
-        private int _lightOcclusionCount;
+        private int _lightOcclusionIndex;
         private SysVec4[] _lightOcclusionBuffer = default!;
         private GLBuffer _lightOcclusionVbo = default!;
         private GLHandle _lightOcclusionVao;
 
         // Rendering data for drawing the fov depth map. This is a variant of the light data that allows the FOV
         // to see into the first layer of walls.
-        private int _fovOcclusionCount;
+        private int _fovOcclusionIndex;
         private SysVec4[] _fovOcclusionBuffer = default!;
         private GLBuffer _fovOcclusionVbo = default!;
         private GLHandle _fovOcclusionVao;
 
         // Rendering data for drawing the FOV mask when bleeding lights onto walls.
-        private int _occlusionMaskCount;
+        private int _occlusionMaskIndex;
         private ushort[] _occlusionMaskIndices = default!;
         private Vector2[] _occlusionMaskBuffer = default!;
         private GLBuffer _occlusionMaskVbo = default!;
         private GLBuffer _occlusionMaskEbo = default!;
         private GLHandle _occlusionMaskVao;
-
-        // Used because otherwise a MaxLightsPerScene change callback getting hit on startup causes interesting issues (read: bugs)
-        private bool _shadowRenderTargetCanInitializeSafely = false;
 
         private unsafe void InitOcclusion()
         {
@@ -135,6 +133,8 @@ namespace Robust.Client.Graphics.Clyde
                     BufferUsageHint.DynamicDraw,
                     nameof(_occlusionMaskEbo));
             }
+
+            _cfg.OnValueChanged(CVars.MaxOccluderCount, MaxOccludersChanged, true);
         }
 
         private void DrawFov(IEye eye)
@@ -150,7 +150,7 @@ namespace Robust.Client.Graphics.Clyde
             CheckGlError();
 
             PrepareDepthTarget(RtToLoaded(_fovRenderTarget));
-            DrawOcclusionDepth(eye.Position.Position, ImageIndexToV(0, 2));
+            DrawOcclusionDepth(eye.Position.Position, ImageIndexToV(0, 2), _fovOcclusionIndex / 2);
         }
 
         private void DrawShadowDepths(int count)
@@ -168,7 +168,7 @@ namespace Robust.Client.Graphics.Clyde
             {
                 ref var light = ref _lightsToRenderList[i];
                 if (light.CastShadows)
-                    DrawOcclusionDepth(light.Properties.LightPos, light.Properties.Index);
+                    DrawOcclusionDepth(light.Properties.LightPos, light.Properties.Index, _lightOcclusionIndex / 2);
             }
         }
 
@@ -183,20 +183,20 @@ namespace Robust.Client.Graphics.Clyde
         /// </summary>
         /// <param name="origin">The position of the light or eye for which we want to draw the depths.</param>
         /// <param name="index">UV y-index of the row to render the depth at in the framebuffer.</param>
-        private void DrawOcclusionDepth(Vector2 origin, float index)
+        private void DrawOcclusionDepth(Vector2 origin, float index, int count)
         {
             _depthProgram.SetUniform("origin", origin);
             _depthProgram.SetUniform("index", index);
 
             // Make two draw calls. This allows a faked "generation" of additional polygons.
             _depthProgram.SetUniform("shadowOverlapSide", 0.0f);
-            GL.DrawElements(PrimitiveType.Lines, _occluderCount * 8, DrawElementsType.UnsignedShort, 0);
+            GL.DrawArrays(PrimitiveType.Lines, 0, count);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
 
             // Yup, it's the other draw call.
             _depthProgram.SetUniform("shadowOverlapSide", 1.0f);
-            GL.DrawElements(PrimitiveType.Lines, _occluderCount * 8, DrawElementsType.UnsignedShort, 0);
+            GL.DrawArrays(PrimitiveType.Lines, 0, count);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
         }
@@ -268,9 +268,9 @@ namespace Robust.Client.Graphics.Clyde
             using var __ = DebugGroup(nameof(UpdateOcclusionGeometry));
 
             _occluderCount = 0;
-            _lightOcclusionCount = 0;
-            _fovOcclusionCount = 0;
-            _occlusionMaskCount = 0;
+            _lightOcclusionIndex = 0;
+            _fovOcclusionIndex = 0;
+            _occlusionMaskIndex = 0;
 
             var eyePos = eye.Position.Position;
 
@@ -303,11 +303,11 @@ namespace Robust.Client.Graphics.Clyde
                 var bl = tl + br - tr;
 
                 // First, we just add all occluder corners to the mask buffer
-                _occlusionMaskBuffer[_occlusionMaskCount + 0] = tl;
-                _occlusionMaskBuffer[_occlusionMaskCount + 1] = tr;
-                _occlusionMaskBuffer[_occlusionMaskCount + 2] = br;
-                _occlusionMaskBuffer[_occlusionMaskCount + 3] = bl;
-                _occlusionMaskCount += 4;
+                _occlusionMaskBuffer[_occlusionMaskIndex + 0] = tl;
+                _occlusionMaskBuffer[_occlusionMaskIndex + 1] = tr;
+                _occlusionMaskBuffer[_occlusionMaskIndex + 2] = br;
+                _occlusionMaskBuffer[_occlusionMaskIndex + 3] = bl;
+                _occlusionMaskIndex += 4;
 
                 // Populating the light & fov buffers is a bit more complicated.
                 // Buckle up.
@@ -451,30 +451,31 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             Array.Clear(_occluders);
-            DebugTools.AssertEqual(_occlusionMaskCount, _occluderCount * 4);
+            DebugTools.AssertEqual(_occlusionMaskIndex, _occluderCount * 4);
 
             // Upload geometry to OpenGL.
             GL.BindVertexArray(0);
             CheckGlError();
-            _occlusionMaskVbo.Reallocate(_occlusionMaskBuffer.AsSpan(0, _occlusionMaskCount));
-            _lightOcclusionVbo.Reallocate(_lightOcclusionBuffer.AsSpan(0, _lightOcclusionCount));
-            _fovOcclusionVbo.Reallocate(_fovOcclusionBuffer.AsSpan(0, _fovOcclusionCount));
+
+            _occlusionMaskVbo.Reallocate(_occlusionMaskBuffer.AsSpan(0, _occlusionMaskIndex));
+            _lightOcclusionVbo.Reallocate(_lightOcclusionBuffer.AsSpan(0, _lightOcclusionIndex));
+            _fovOcclusionVbo.Reallocate(_fovOcclusionBuffer.AsSpan(0, _fovOcclusionIndex));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteLightBuffer(SysVec4 vec)
         {
-            _lightOcclusionBuffer[_lightOcclusionCount + 0] = vec;
-            _lightOcclusionBuffer[_lightOcclusionCount + 1] = vec;
-            _lightOcclusionCount += 2;
+            _lightOcclusionBuffer[_lightOcclusionIndex + 0] = vec;
+            _lightOcclusionBuffer[_lightOcclusionIndex + 1] = vec;
+            _lightOcclusionIndex += 2;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteFovBuffer(SysVec4 vec)
         {
-            _lightOcclusionBuffer[_lightOcclusionCount + 0] = vec;
-            _lightOcclusionBuffer[_lightOcclusionCount + 1] = vec;
-            _lightOcclusionCount += 2;
+            _fovOcclusionBuffer[_fovOcclusionIndex + 0] = vec;
+            _fovOcclusionBuffer[_fovOcclusionIndex + 1] = vec;
+            _fovOcclusionIndex += 2;
         }
 
         /// <summary>
