@@ -1045,22 +1045,66 @@ namespace Robust.Client.Graphics.Clyde
 
             foreach (var occluder in _occluders.AsSpan()[.._occluderCount])
             {
+                DebugTools.Assert(occluder.Component.Enabled);
+
+
+
+                // Always draw if unoccluded
+                //
+                // if occluded
+                // we still want to draw it for FOV
+                // IF its the back part of a wall
+                // to stop people from seeing two walls deep.
+                //
+                // I.e., we want to draw wals even if they are occluded
+                // as long as they are "front facing".
+                // but ONLY if they are occluded
+
+                // Imagine we have a row of two walls like this, with an eye centered at x:
+
+                // >         x
+                // > ┌┬┬┬┬┐
+                // > ├┼┼┼┼┤
+                // > └┴┴┴┴┘
+
+                // For lighting,we just want to stop any lights from entering a wall.
+                // This is easy enough, we can just cull any lines connected to other occluders, leaving us with this:
+                //
+                // >         x
+                // > ┌────┐
+                // > │    │
+                // > └────┘
+                //
+                // We can then also cull any "back faces", leaving us with just:
+                //
+                // >         x
+                // > ┌────┐
+                // >      │
+                // >      ┘
+                //
+                // However, for FOV we want to instead cull the first layer of the walls, to allow viewers to view onto walls/
+                // For FOV, we want to let them see into the first layer of walls. We can partly do that by just culling
+                // all front-faces, leaving us with:
+                //
+                // >         x
+                // > ┌┬┬┬┬
+                // > ├┼┼┼┼─
+                // > └┴┴┴┴─
+
+
+                occluder.Component.Occluding
+
                 // TODO LIGHTING
                 // This can be optimized if we assume occluders are always directly parented to a grid or map
                 // And AFAIK the occluder tree currently requires that (as it does not have a recursive move event subscription).
                 var (pos, rot) = xformSystem.GetWorldPositionRotation(occluder.Transform);
 
+                pos = -eyePos;
+                var box = occluder.Component.BoundingBox;
 
-                // TODO LIGHTING
-                // Move these transformations to the vertex shader.
-                // I.e., just send the positions & rotations as flat vertex data
-                // But because of instanced rendering, maybe its actually faster to do on the cpu?
-                var box = occluder.Component.BoundingBox.Translated(pos - eyePos);
-
-                // TODO LIGHTING SIMD ROTATION
-                // Assuming we even keep doing it on the cpu
-                // Performing a general matrix transformation here is unnecessary
-                var worldTransform = Matrix3Helpers.CreateRotation(rot);
+                // TODO LIGHTING SIMD
+                // Even though Matrix3x2 Uses some simd, it is probably faster to simd along the 4 Vecor2s
+                var worldTransform = Matrix3Helpers.CreateTransform(pos, rot);
                 var tl = Vector2.Transform(box.TopLeft, worldTransform);
                 var tr = Vector2.Transform(box.TopRight, worldTransform);
                 var br = Vector2.Transform(box.BottomRight, worldTransform);
@@ -1072,6 +1116,14 @@ namespace Robust.Client.Graphics.Clyde
                 _occluderPositionBuffer[vertexIndex + 2] = br;
                 _occluderPositionBuffer[vertexIndex + 3] = bl;
                 vertexIndex += 4;
+
+                // Lights are blocked by the front faces of occluders.
+
+                // Buckle up.
+                // For the front-face culled final FOV to work, we obviously cannot have faces inside a series
+                // of walls that are perpendicular to you. This next code does that by only writing render indices for
+                // faces that should be rendered.
+
             }
 
             Array.Clear(_occluders);
@@ -1096,8 +1148,7 @@ namespace Robust.Client.Graphics.Clyde
                 var treeBounds = xformSystem.GetInvWorldMatrix(uid).TransformBox(bounds);
                 comp.Tree.QueryAabb(ref state,static (ref (ComponentTreeEntry<OccluderComponent>[] Results, int Count) state, in ComponentTreeEntry<OccluderComponent> entry) =>
                     {
-                        if (entry.Component.Enabled)
-                            state.Results[state.Count++] = entry;
+                        state.Results[state.Count++] = entry;
                         return state.Count < state.Results.Length;
                     },
                     treeBounds,
