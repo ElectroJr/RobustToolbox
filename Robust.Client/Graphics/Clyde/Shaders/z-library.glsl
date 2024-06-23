@@ -197,7 +197,7 @@ const highp float g_MinVariance = 0.0;
 // This returns a vec2 because of VSM moments.
 highp vec2 occludeDepth(highp vec2 rel, sampler2D shadowMap, highp float mapOffsetY)
 {
-    highp float deflect = (atan(rel.y, -rel.x) / PI);
+    highp float deflect = (atan(rel.y, rel.x) / PI);
     highp float mapOffsetX = (deflect + 1.0) / 2.0;
     return zClydeShadowDepthUnpack(texture2D(shadowMap, vec2(mapOffsetX, mapOffsetY)));
 }

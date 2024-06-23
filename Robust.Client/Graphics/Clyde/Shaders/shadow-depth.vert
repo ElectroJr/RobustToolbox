@@ -90,5 +90,5 @@ void main()
     // of the occluder. So we simply move it out beyond the clipping plane to cull it.
     float depth = 1.0 - sign / (dist + 1.0);
 
-    gl_Position = vec4(angle / PI, index, depth, 1.0);
+    gl_Position = vec4(angle / PI, mix(-1.0, 1.0, index), depth, 1.0);
 }

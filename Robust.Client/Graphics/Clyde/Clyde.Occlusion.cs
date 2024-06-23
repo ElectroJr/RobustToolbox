@@ -233,7 +233,6 @@ namespace Robust.Client.Graphics.Clyde
         {
             GL.Disable(EnableCap.Blend);
             CheckGlError();
-
             GL.Enable(EnableCap.DepthTest);
             CheckGlError();
             GL.DepthFunc(DepthFunction.Lequal);
