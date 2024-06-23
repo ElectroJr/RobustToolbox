@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
 using Robust.Client.ResourceManagement;
@@ -42,16 +43,16 @@ internal partial class Clyde
     private ComponentTreeEntry<OccluderComponent>[] _occluders = default!;
 
     // Rendering data for drawing the light depth map (i.e., distance to nearest occluder).
-    private int _lightOcclusionIndex;
+    private int _lightOcclusionVertexCount;
     private SysVec4[] _lightOcclusionBuffer = default!;
-    private float[] _lightInstanceBuffer = default!;
+    private DepthDrawInstance[] _lightInstancesBuffer = default!;
     private GLBuffer _lightOcclusionVbo = default!;
     private GLBuffer _lightInstanceVbo = default!;
     private GLHandle _lightOcclusionVao;
 
     // Rendering data for drawing the fov depth map. This is a variant of the light data that allows the FOV
     // to see into the first layer of walls.
-    private int _fovOcclusionIndex;
+    private int _fovOcclusionVertexCount;
     private SysVec4[] _fovOcclusionBuffer = default!;
     private GLBuffer _fovOcclusionVbo = default!;
     private GLBuffer _fovInstanceVbo = default!;
@@ -70,7 +71,13 @@ internal partial class Clyde
         var depthVert = ReadEmbeddedShader("shadow-depth.vert");
         var depthFrag = ReadEmbeddedShader("shadow-depth.frag");
 
-        (string, uint)[] attribLocations = { ("aPos", 0) };
+        (string, uint)[] attribLocations =
+        {
+            ("aPos", 0),
+            ("Origin", 1),
+            ("Index", 2),
+            ("CullClockwise", 3)
+        };
 
         _depthProgram = _compileProgram(depthVert, depthFrag, attribLocations, "Occlusion Depth Program");
 
@@ -96,17 +103,22 @@ internal partial class Clyde
             _lightInstanceVbo = new GLBuffer(this,
                 BufferTarget.ArrayBuffer,
                 BufferUsageHint.DynamicDraw,
-                nameof(_lightOcclusionVbo));
+                nameof(_lightInstanceVbo));
 
             // Light instance position
-            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 3 * sizeof(float), IntPtr.Zero);
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 0);
             GL.EnableVertexAttribArray(1);
             GL.VertexAttribDivisor(1, 1);
 
             // Light instance index
-            GL.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, 3 * sizeof(float), 2 * sizeof(float));
+            GL.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 2 * sizeof(float));
             GL.EnableVertexAttribArray(2);
             GL.VertexAttribDivisor(2, 1);
+
+            // Instance Culling orientation
+            GL.VertexAttribPointer(3, 1, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 3 * sizeof(float));
+            GL.EnableVertexAttribArray(3);
+            GL.VertexAttribDivisor(3, 1);
 
             CheckGlError();
         }
@@ -126,6 +138,35 @@ internal partial class Clyde
             GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
             GL.EnableVertexAttribArray(0);
             CheckGlError();
+
+            _fovInstanceVbo = new GLBuffer(this,
+                BufferTarget.ArrayBuffer,
+                BufferUsageHint.StaticDraw,
+                nameof(_fovInstanceVbo));
+
+            // FOV rendering always has two instances, one of which culls back faces while the other culls front faces.
+            // For details about the front-face culling, see comments in UpdateOcclusionGeometry()
+            Span<DepthDrawInstance> instances =
+                [
+                    new(default, ImageIndexToV(0,2), 1),
+                    new(default, ImageIndexToV(1,2), -1)
+                ];
+            _fovInstanceVbo.Reallocate(instances);
+
+            // Light instance position
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), IntPtr.Zero);
+            GL.EnableVertexAttribArray(1);
+            GL.VertexAttribDivisor(1, 1);
+
+            // Light instance index
+            GL.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 2 * sizeof(float));
+            GL.EnableVertexAttribArray(2);
+            GL.VertexAttribDivisor(2, 1);
+
+            // Instance Culling orientation
+            GL.VertexAttribPointer(3, 1, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 3 * sizeof(float));
+            GL.EnableVertexAttribArray(3);
+            GL.VertexAttribDivisor(3, 1);
         }
 
         // Set up VAO for drawing occluder mask.
@@ -168,10 +209,10 @@ internal partial class Clyde
             return;
 
         BindVertexArray(_fovOcclusionVao.Handle);
-        DrawOcclusionDepth(_fovOcclusionIndex, 2);
+        DrawOcclusionDepth(_fovOcclusionVertexCount, 2);
     }
 
-    private void DrawShadowDepths(int count, Vector2 eyePos)
+    private void DrawShadowDepths()
     {
         if (!_lightManager.DrawShadows)
             return;
@@ -181,13 +222,7 @@ internal partial class Clyde
 
         PrepareDepthTarget(RtToLoaded(_shadowRenderTarget));
         BindVertexArray(_lightOcclusionVao.Handle);
-
-        for (var i = 0; i < count; i++)
-        {
-            ref var light = ref _lightsToRenderList[i];
-            if (light.CastShadows)
-                DrawOcclusionDepth(light.Properties.LightPos-eyePos, light.Properties.Index, _lightOcclusionIndex, cullClockwise: true);
-        }
+        DrawOcclusionDepth(_lightOcclusionVertexCount, _shadowCastingLightCount);
     }
 
     /// <summary>
@@ -211,7 +246,6 @@ internal partial class Clyde
 
         // Yup, it's the other draw call.
         _depthProgram.SetUniform("OverlapSide", 1.0f);
-        GL.DrawArrays(PrimitiveType.Lines, 0, lineCount);
 
         GL.DrawArraysInstanced(PrimitiveType.Lines, 0, lineCount, instanceCount);
         CheckGlError();
@@ -283,8 +317,8 @@ internal partial class Clyde
         using var __ = DebugGroup(nameof(UpdateOcclusionGeometry));
 
         _occluderCount = 0;
-        _lightOcclusionIndex = 0;
-        _fovOcclusionIndex = 0;
+        _lightOcclusionVertexCount = 0;
+        _fovOcclusionVertexCount = 0;
         _occlusionMaskIndex = 0;
 
         var eyePos = eye.Position.Position;
@@ -469,31 +503,32 @@ internal partial class Clyde
 
         Array.Clear(_occluders);
         DebugTools.AssertEqual(_occlusionMaskIndex, _occluderCount * 4);
-        DebugTools.Assert(_lightOcclusionIndex <= _fovOcclusionIndex);
+        DebugTools.Assert(_lightOcclusionVertexCount <= _fovOcclusionVertexCount);
 
         // Upload geometry to OpenGL.
         GL.BindVertexArray(0);
         CheckGlError();
 
         _occlusionMaskVbo.Reallocate(_occlusionMaskBuffer.AsSpan(0, _occlusionMaskIndex));
-        _lightOcclusionVbo.Reallocate(_lightOcclusionBuffer.AsSpan(0, _lightOcclusionIndex));
-        _fovOcclusionVbo.Reallocate(_fovOcclusionBuffer.AsSpan(0, _fovOcclusionIndex));
+        _lightOcclusionVbo.Reallocate(_lightOcclusionBuffer.AsSpan(0, _lightOcclusionVertexCount));
+        _lightInstanceVbo.Reallocate(_lightInstancesBuffer.AsSpan(0, _shadowCastingLightCount));
+        _fovOcclusionVbo.Reallocate(_fovOcclusionBuffer.AsSpan(0, _fovOcclusionVertexCount));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteLightBuffer(SysVec4 vec)
     {
-        _lightOcclusionBuffer[_lightOcclusionIndex + 0] = vec;
-        _lightOcclusionBuffer[_lightOcclusionIndex + 1] = vec;
-        _lightOcclusionIndex += 2;
+        _lightOcclusionBuffer[_lightOcclusionVertexCount + 0] = vec;
+        _lightOcclusionBuffer[_lightOcclusionVertexCount + 1] = vec;
+        _lightOcclusionVertexCount += 2;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteFovBuffer(SysVec4 vec)
     {
-        _fovOcclusionBuffer[_fovOcclusionIndex + 0] = vec;
-        _fovOcclusionBuffer[_fovOcclusionIndex + 1] = vec;
-        _fovOcclusionIndex += 2;
+        _fovOcclusionBuffer[_fovOcclusionVertexCount + 0] = vec;
+        _fovOcclusionBuffer[_fovOcclusionVertexCount + 1] = vec;
+        _fovOcclusionVertexCount += 2;
     }
 
     /// <summary>
@@ -564,5 +599,28 @@ internal partial class Clyde
         _occlusionMaskEbo.Reallocate(_occlusionMaskIndices.AsSpan());
     }
 
-    public
+    [StructLayout((LayoutKind.Sequential))]
+    public readonly struct DepthDrawInstance(Vector2 origin, float index, float cullClockwise)
+    {
+        /// <summary>
+        /// Location of the light (or eye) relative to the eye that was used to construct the geometry in
+        /// <see cref="Clyde.UpdateOcclusionGeometry"/>
+        /// </summary>
+        public readonly Vector2 Origin = origin;
+
+        /// <summary>
+        /// The vertical UV coordinate of the row in the target texture where the depth will get drawn.
+        /// </summary>
+        public readonly float Index = index;
+
+        /// <summary>
+        /// Whether to cull clockwise or counter-clockwise traveling lines.
+        /// </summary>
+        /// <remarks>
+        /// Note that we draw occluder boxes in a clockwise manner. I.e., the top left -> tr -> br -> bl -> tl.
+        /// Hence, culling lines that appear to be traveling clockwise from the origin's POV is equivalent to culling
+        /// the back faces of occluder boxes (obviously assuming the eye isn't stuck inside of an occluder).
+        /// </remarks>
+        public readonly float CullClockwise = cullClockwise;
+    }
 }

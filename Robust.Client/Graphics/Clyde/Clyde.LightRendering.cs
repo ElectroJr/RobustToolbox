@@ -68,6 +68,7 @@ namespace Robust.Client.Graphics.Clyde
         private ClydeTexture FovTexture => _fovRenderTarget.Texture;
         private ClydeTexture ShadowTexture => _shadowRenderTarget.Texture;
 
+        private int _shadowCastingLightCount;
         private PointLight[] _lightsToRenderList = default!;
         private ClydeTexture _lightMaskTexture = default!;
 
@@ -287,13 +288,7 @@ namespace Robust.Client.Graphics.Clyde
                 return;
             }
 
-            int count;
-            Box2 expandedBounds;
-            using (_prof.Group("LightsToRender"))
-            {
-                (count, expandedBounds) = GetLightsToRender(mapId, worldBounds, worldAABB);
-            }
-
+            var (count, expandedBounds) = GetLightsToRender(eye, worldBounds, worldAABB);
             UpdateOcclusionGeometry(expandedBounds, eye);
 
             PrepareDepthDraw();
@@ -308,7 +303,7 @@ namespace Robust.Client.Graphics.Clyde
                 return;
             }
 
-            DrawShadowDepths(count, eye.Position.Position);
+            DrawShadowDepths();
             FinalizeDepthDraw();
 
             GL.Enable(EnableCap.StencilTest);
@@ -417,6 +412,8 @@ namespace Robust.Client.Graphics.Clyde
         }
 
         // TODO LIGHTING PARALLELIZE
+        // Also just clean up this mess.
+        // This is a giant query state.
         private static bool LightQuery(ref (
             Clyde clyde,
             int count,
@@ -424,7 +421,9 @@ namespace Robust.Client.Graphics.Clyde
             TransformSystem xformSystem,
             EntityQuery<TransformComponent> xforms,
             Box2 worldAABB,
-            int textureHeight) state,
+            int textureHeight,
+            DepthDrawInstance[] instances,
+            Vector2 eyePos) state,
             in ComponentTreeEntry<PointLightComponent> value)
         {
             ref var count = ref state.count;
@@ -450,13 +449,23 @@ namespace Robust.Client.Graphics.Clyde
                 ? (float) (light.Rotation + rot)
                 : (float) light.Rotation;
 
+            float index = -1;
+            if (light.CastShadows)
+            {
+                index = ImageIndexToV(shadowCount, state.textureHeight);
+                if (shadowCount < state.instances.Length)
+                    state.instances[shadowCount] = new(lightPos - state.eyePos, index, 1f);
+
+                shadowCount++;
+            }
+
             var props = new LightProperties(
                 light.Color,
                 lightPos,
                 light.Radius,
                 light.Energy,
                 light.Softness,
-                light.CastShadows ? ImageIndexToV(shadowCount++, state.textureHeight) : -1,
+                index,
                 angle
             );
 
@@ -485,24 +494,26 @@ namespace Robust.Client.Graphics.Clyde
         }
 
         private (int count, Box2 expandedBounds) GetLightsToRender(
-            MapId map,
+            IEye eye,
             in Box2Rotated worldBounds,
             in Box2 worldAABB)
         {
+            using var _ = _prof.Group(nameof(GetLightsToRender));
             var lightTreeSys = _entitySystemManager.GetEntitySystem<LightTreeSystem>();
             var xformSystem = _entitySystemManager.GetEntitySystem<TransformSystem>();
 
             // Use worldbounds for this one as we only care if the light intersects our actual bounds
             var xforms = _entityManager.GetEntityQuery<TransformComponent>();
-            var state = (this, count: 0, shadowCastingCount: 0, xformSystem, xforms, worldAABB, ShadowTexture.Height);
+            var state = (this, count: 0, shadowCastingCount: 0, xformSystem, xforms, worldAABB, ShadowTexture.Height, instances: _lightInstancesBuffer, eye.Position.Position);
 
-            foreach (var (uid, comp) in lightTreeSys.GetIntersectingTrees(map, worldAABB))
+            foreach (var (uid, comp) in lightTreeSys.GetIntersectingTrees(eye.Position.MapId, worldAABB))
             {
                 var bounds = xformSystem.GetInvWorldMatrix(uid, xforms).TransformBox(worldBounds);
                 comp.Tree.QueryAabb(ref state, LightQuery, bounds);
             }
 
-            if (state.shadowCastingCount > _maxShadowcastingLights)
+            _shadowCastingLightCount = state.shadowCastingCount;
+            if (_shadowCastingLightCount > _maxShadowcastingLights)
             {
                 // There are too many lights casting shadows to fit in the scene.
                 // This check must occur before occluder expansion, or else bad things happen.
@@ -519,16 +530,17 @@ namespace Robust.Client.Graphics.Clyde
                 state.count -= state.shadowCastingCount - _maxShadowcastingLights;
 
                 // Reassign shadow map indices
-                var shadowCount = 0;
+                _shadowCastingLightCount = 0;
                 foreach (ref var light in _lightsToRenderList.AsSpan()[(state.count - _maxShadowcastingLights)..])
                 {
                     DebugTools.Assert(light.CastShadows);
-                    light.Properties.Index = ImageIndexToV(shadowCount++, ShadowTexture.Height);
+                    var index = ImageIndexToV(_shadowCastingLightCount, ShadowTexture.Height);
+                    light.Properties.Index = index;
+                    _lightInstancesBuffer[_shadowCastingLightCount] = new(light.Properties.LightPos - eye.Position.Position, index, 1f);
+                    _shadowCastingLightCount++;
                 }
 
-                aaaa
-
-                DebugTools.AssertEqual(shadowCount, _maxShadowcastingLights);
+                DebugTools.AssertEqual(_shadowCastingLightCount, _maxShadowcastingLights);
             }
 
             // When culling occluders later, we can't just remove any occluders outside the worldBounds.
@@ -545,7 +557,7 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             _debugStats.TotalLights += state.count;
-            _debugStats.ShadowLights += Math.Min(state.shadowCastingCount, _maxShadowcastingLights);
+            _debugStats.ShadowLights += _shadowCastingLightCount;
 
             return (state.count, expandedBounds);
         }
@@ -904,7 +916,7 @@ namespace Robust.Client.Graphics.Clyde
                 new TextureSampleParameters { WrapMode = TextureWrapMode.Repeat, Filter = true },
                 nameof(_shadowRenderTarget));
 
-            Array.Resize(ref _lightInstanceBuffer, 3 * _maxShadowcastingLights);
+            Array.Resize(ref _lightInstancesBuffer, _maxShadowcastingLights);
         }
 
         private void SoftShadowsChanged(bool newValue)
