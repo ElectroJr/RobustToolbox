@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.Intrinsics;
 using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
 using Robust.Client.ResourceManagement;
@@ -124,51 +123,63 @@ namespace Robust.Client.Graphics.Clyde
             // Other...
             LoadLightingShaders();
 
-            // Set up VAO for drawing occluder depths.
+            // Set up VAO for drawing occluder depths for lights.
             {
-                _lightOcclusionVbo = new GLHandle(GenVertexArray());
-                BindVertexArray(_lightOcclusionVbo.Handle);
+                _lightOcclusionVao = new GLHandle(GenVertexArray());
+                BindVertexArray(_lightOcclusionVao.Handle);
                 CheckGlError();
-                ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _lightOcclusionVbo, nameof(_lightOcclusionVbo));
+                ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _lightOcclusionVao, nameof(_lightOcclusionVao));
 
-                _occlusionMaskVbo = new GLBuffer(this,
+                _lightOcclusionVbo = new GLBuffer(this,
                     BufferTarget.ArrayBuffer,
                     BufferUsageHint.DynamicDraw,
-                    nameof(_occlusionMaskVbo));
+                    nameof(_lightOcclusionVbo));
 
-                GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
+                GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
                 GL.EnableVertexAttribArray(0);
-                GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
-                GL.EnableVertexAttribArray(1);
-
-                // TODO LIGHTING Maybe use static instead of BufferUsageHint.DynamicDraw
-                // But apparently it doesnt make much of a difference and is just a hint?
-                // And im scared of hidden footguns when using static indices into a dynamic draw buffer?
-                _occluderDepthEbo = new GLBuffer(this,
-                    BufferTarget.ElementArrayBuffer,
-                    BufferUsageHint.DynamicDraw,
-                    nameof(_occluderDepthEbo));
-
                 CheckGlError();
             }
 
-            // Set up VAO for drawing occluder stencil.
+            // Set up VAO for drawing occluder depths for FOV.
+            {
+                _fovOcclusionVao = new GLHandle(GenVertexArray());
+                BindVertexArray(_fovOcclusionVao.Handle);
+                CheckGlError();
+                ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _fovOcclusionVao, nameof(_fovOcclusionVao));
+
+                _fovOcclusionVbo = new GLBuffer(this,
+                    BufferTarget.ArrayBuffer,
+                    BufferUsageHint.DynamicDraw,
+                    nameof(_fovOcclusionVbo));
+
+                GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
+                GL.EnableVertexAttribArray(0);
+                CheckGlError();
+            }
+
+            // Set up VAO for drawing occluder mask.
             {
                 _occlusionMaskVao = new GLHandle(GenVertexArray());
                 BindVertexArray(_occlusionMaskVao.Handle);
                 CheckGlError();
                 ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _occlusionMaskVao, nameof(_occlusionMaskVao));
 
-                GL.BindBuffer(BufferTarget.ElementArrayBuffer, _occlusionMaskVbo.ObjectHandle);
-
-                _occlusionMaskEbo = new GLBuffer(this,
-                    BufferTarget.ElementArrayBuffer,
+                _occlusionMaskVbo = new GLBuffer(this,
+                    BufferTarget.ArrayBuffer,
                     BufferUsageHint.DynamicDraw,
-                    nameof(_occlusionMaskEbo));
+                    nameof(_occlusionMaskVbo));
 
                 GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, sizeof(Vector2), IntPtr.Zero);
                 GL.EnableVertexAttribArray(0);
                 CheckGlError();
+
+                // TODO LIGHTING Maybe use static instead of BufferUsageHint.DynamicDraw
+                // But apparently it doesnt make much of a difference and is just a hint?
+                // And im scared of hidden footguns when using static indices into a dynamic draw buffer?
+                _occlusionMaskEbo = new GLBuffer(this,
+                    BufferTarget.ElementArrayBuffer,
+                    BufferUsageHint.DynamicDraw,
+                    nameof(_occlusionMaskEbo));
             }
 
             {
@@ -378,11 +389,16 @@ namespace Robust.Client.Graphics.Clyde
 
         private void DrawFov(IEye eye)
         {
+            return;
             if (!eye.DrawFov)
                 return;
 
             using var _ = DebugGroup(nameof(DrawFov));
             using var __ = _prof.Group(nameof(DrawFov));
+
+            // TODO need to use both FOV and non FOV VAO
+
+            CheckGlError();
 
             PrepareDepthTarget(RtToLoaded(_fovRenderTarget));
             DrawOcclusionDepth(eye.Position.Position, ImageIndexToV(0, 2));
@@ -397,6 +413,7 @@ namespace Robust.Client.Graphics.Clyde
             using var __ = _prof.Group(nameof(DrawShadowDepths));
 
             PrepareDepthTarget(RtToLoaded(_shadowRenderTarget));
+            BindVertexArray(_lightOcclusionVao.Handle);
 
             for (var i = 0; i < count; i++)
             {
@@ -473,9 +490,6 @@ namespace Robust.Client.Graphics.Clyde
             GL.DepthFunc(DepthFunction.Lequal);
             CheckGlError();
             GL.DepthMask(true);
-            CheckGlError();
-
-            BindVertexArray(_lightOcclusionVbo.Handle);
             CheckGlError();
 
             _fovCalculationProgram.Use();
@@ -1232,11 +1246,14 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             Array.Clear(_occluders);
+            DebugTools.AssertEqual(_occlusionMaskCount, _occluderCount * 4);
 
             // Upload geometry to OpenGL.
             GL.BindVertexArray(0);
             CheckGlError();
-            _occlusionMaskVbo.Reallocate(_occlusionMaskBuffer.AsSpan(0, vertexIndex));
+            _occlusionMaskVbo.Reallocate(_occlusionMaskBuffer.AsSpan(0, _occlusionMaskCount));
+            _lightOcclusionVbo.Reallocate(_lightOcclusionBuffer.AsSpan(0, _lightOcclusionCount));
+            _fovOcclusionVbo.Reallocate(_fovOcclusionBuffer.AsSpan(0, _fovOcclusionCount));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1380,32 +1397,20 @@ namespace Robust.Client.Graphics.Clyde
         {
             _maxOccluders = Math.Clamp(value, 1024, 8192);
 
-            // Instead of updating occluer indices every frame, we just update them once. The indices are always the
-            // same anyways, and _maxOccluders ensures that the buffers don't need to be ridiculously long.
-
             GL.BindVertexArray(0);
             CheckGlError();
 
+            // Each occluder has four corners
+            Array.Resize(ref _occlusionMaskBuffer, _maxOccluders * 4);
 
-            // Update _occluderDepthEbo indices
-            // The depth draw will draw 4 disconnected lines per occluder quad (i.e., 8 lines per quad).
-            // And each two consists of two vertices that fetch data from the same area of the occluder position buffer.
-            // Hence the repeated indices here.
-            Array.Resize(ref _occluderDepthIndices, _maxOccluders);
-            var depthIndexOffsets = Vector128.Create((ushort)0, 0, 1, 1, 2, 2, 3, 3);
-            var vertexIndex = Vector128.Create((ushort)0);
-            for (var i = 0; i < _maxOccluders; i++)
-            {
-                vertexIndex += depthIndexOffsets;
-                _occluderDepthIndices[i] = vertexIndex + depthIndexOffsets;
-                vertexIndex += Vector128.Create((ushort)4);
-            }
-            _occluderDepthEbo.Reallocate(_occluderDepthIndices.AsSpan());
-
-            // Update _occlusionMaskEbo indices
-            // This is just used for drawing normal quads from the occluder position buffer.
+            // And each occluder makes up 8 lines
+            Array.Resize(ref _fovOcclusionBuffer, _maxOccluders * 8);
+            Array.Resize(ref _lightOcclusionBuffer, _maxOccluders * 8);
             Array.Resize(ref _occlusionMaskIndices, _maxOccluders * GetQuadBatchIndexCount());
-            int index = 0;
+
+            // Instead of updating occluder indices every frame, we just update them once. The indices are always the
+            // same anyways, and _maxOccluders ensures that the buffers don't need to be ridiculously long.
+            var index = 0;
             ushort vertex = 0;
             for (var i = 0; i < _maxOccluders; i++)
             {
