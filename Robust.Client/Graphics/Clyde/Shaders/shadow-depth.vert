@@ -46,8 +46,9 @@ void main()
     angleA -= lrSignBias;
     angleB += lrSignBias;
 
-    // TODO LIGHTING
-    // on pass 2, just discard any non-clipping lines
+    // If we are running the second pass to handle overlaps, we will cull any lines that don't actually overlap.
+    // We do this by just nudging them past the clipping plane
+    float clip = OverlapSide;
 
     // We need to reliably detect a clip, as opposed to, say, a backdrawn face.
     // So a clip is when the angular area is >= 180 degrees (which is not possible with a quad and always occurs when wrapping)
@@ -74,6 +75,7 @@ void main()
             // ...and we're adjusting the right edge...
             angleB -= sign * PI * 2.0;
             sign = - sign;
+            clip = 0.0;
         }
     }
 
@@ -110,6 +112,9 @@ void main()
     // the clipping plane to cull it. This behaviour can be controlled with the cullClockwise uniform, which should be
     // either -1 or +1;
     highp float depth = 1.0 - CullClockwise * sign / (length(point) + 1.0);
+
+    if (clip > 0.5)
+        depth = 2.0;
 
     // Note that for exactly the same reason that we cannot linearly interpolate distances, linearly interpolating the
     // depth value will also give incorrect results. However, I am about 70% sure that linear interpolating the distance
