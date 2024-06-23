@@ -273,11 +273,8 @@ namespace Robust.Client.Graphics.Clyde
 
         private void DrawLightsAndFov(Viewport viewport, Box2Rotated worldBounds, Box2 worldAABB, IEye eye)
         {
-            eye.DrawFov = false;
             if (!_lightManager.Enabled || !eye.DrawLight)
-            {
                 return;
-            }
 
             var mapId = eye.Position.MapId;
             if (mapId == MapId.Nullspace)
@@ -311,7 +308,7 @@ namespace Robust.Client.Graphics.Clyde
                 return;
             }
 
-            DrawShadowDepths(count);
+            DrawShadowDepths(count, eye.Position.Position);
             FinalizeDepthDraw();
 
             GL.Enable(EnableCap.StencilTest);

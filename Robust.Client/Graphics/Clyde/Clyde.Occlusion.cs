@@ -139,21 +139,21 @@ namespace Robust.Client.Graphics.Clyde
 
         private void DrawFov(IEye eye)
         {
-            if (!eye.DrawFov)
-                return;
-
             using var _ = DebugGroup(nameof(DrawFov));
             using var __ = _prof.Group(nameof(DrawFov));
 
-            // TODO need to use both FOV and non FOV VAO
+            // Bind & clear the FOV depth even if we do not draw with it.
+            PrepareDepthTarget(RtToLoaded(_fovRenderTarget));
+
+            if (!eye.DrawFov)
+                return;
 
             CheckGlError();
 
-            PrepareDepthTarget(RtToLoaded(_fovRenderTarget));
-            DrawOcclusionDepth(eye.Position.Position, ImageIndexToV(0, 2), _fovOcclusionIndex / 2);
+            DrawOcclusionDepth(eye.Position.Position, ImageIndexToV(0, 2), _fovOcclusionIndex);
         }
 
-        private void DrawShadowDepths(int count)
+        private void DrawShadowDepths(int count, Vector2 eyePos)
         {
             if (!_lightManager.DrawShadows)
                 return;
@@ -168,7 +168,7 @@ namespace Robust.Client.Graphics.Clyde
             {
                 ref var light = ref _lightsToRenderList[i];
                 if (light.CastShadows)
-                    DrawOcclusionDepth(light.Properties.LightPos, light.Properties.Index, _lightOcclusionIndex / 2);
+                    DrawOcclusionDepth(light.Properties.LightPos-eyePos, light.Properties.Index, _lightOcclusionIndex);
             }
         }
 
