@@ -17,7 +17,6 @@ void fragment()
     // NOTE: This shader does NOT work correctly!!!
     // This assumes the depth is projected onto a circle, which it IS NOT.
 
-    highp float PI = 3.1415;
     highp vec2 uv = (UV * 2.0) - 1.0;
     highp float angle = atan(uv.y, -uv.x) + PI + radians(135.0);
 

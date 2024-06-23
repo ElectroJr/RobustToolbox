@@ -1,25 +1,24 @@
 
-// x: Angle being queried, y: Angle of closest point of line (is of 90-degree angle to line angle), z: Distance at y
-varying highp vec3 fragControl;
+// Three floats that define the line via a*x + b*y = c, where Line=(a,b,c).
+// Equivalent line in polar coordintes is given by r = c / (a * cos(angle) + b * sin(angle))
+flat varying highp vec3 Line;
+varying highp float Angle;
 
 void main()
 {
-    // Thanks to Radrark for finding this for me. There's also a useful diagram, but this is text, so:
-    // r = p / cos(theta - phi)
-    // r: Distance to line *given angle theta*
-    // p: Distance to closest point of line
-    // theta: Angle being queried
-    // phi: Angle of closest point of line - inherently on 90-degree angle to line angle
-    highp float dist = abs(fragControl.z / cos(fragControl.x - fragControl.y));
+    highp float dist = Line.z/(Line.x*cos(Angle) + Line.y*sin(Angle));
 
-    // Main body.
+    // The shadow depth stores both the distance & it's square value for an (attempt?) to variance shadow maps.
+    // We also bias the variance using the derivative WRT the angle.
+    //
+    // TBH I'm not even sure if we should still be using this or if its important.
+    // I think the soft light stuff is just an ensemble of things that were tried that ended up getting nice looking
+    // results.
 #ifdef HAS_DFDX
     highp float dx = dFdx(dist);
-    highp float dy = dFdy(dist); // I'm aware derivative of y makes no sense here but oh well.
 #else
     highp float dx = 1.0;
     highp float dy = 1.0;
 #endif
-    gl_FragColor = zClydeShadowDepthPack(vec2(dist, dist * dist + 0.25 * (dx*dx + dy*dy)));
+    gl_FragColor = zClydeShadowDepthPack(vec2(dist, dist * dist + 0.25 * dx*dx));
 }
-

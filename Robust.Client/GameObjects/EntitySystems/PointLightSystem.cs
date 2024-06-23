@@ -1,23 +1,28 @@
 using System.Diagnostics.CodeAnalysis;
 using Robust.Client.ComponentTrees;
-using Robust.Client.ResourceManagement;
 using Robust.Shared.GameObjects;
 using Robust.Shared.GameStates;
 using Robust.Shared.IoC;
+using Robust.Shared.Light;
 using Robust.Shared.Maths;
+using Robust.Shared.Prototypes;
 
 namespace Robust.Client.GameObjects
 {
     public sealed class PointLightSystem : SharedPointLightSystem
     {
-        [Dependency] private readonly IResourceCache _resourceCache = default!;
         [Dependency] private readonly LightTreeSystem _lightTree = default!;
+        [Dependency] private readonly IPrototypeManager _protoMan = default!;
+
+        public static ProtoId<LightMaskPrototype> DefaultMask = "default";
+        private LightMaskPrototype _defaultMask = default!;
 
         public override void Initialize()
         {
             base.Initialize();
             SubscribeLocalEvent<PointLightComponent, ComponentInit>(HandleInit);
             SubscribeLocalEvent<PointLightComponent, ComponentHandleState>(OnLightHandleState);
+            _defaultMask = _protoMan.Index(DefaultMask);
         }
 
         private void OnLightHandleState(EntityUid uid, PointLightComponent component, ref ComponentHandleState args)
@@ -72,17 +77,17 @@ namespace Robust.Client.GameObjects
         {
         }
 
-        private void HandleInit(EntityUid uid, PointLightComponent component, ComponentInit args)
+        private void HandleInit(Entity<PointLightComponent> light, ref ComponentInit args)
         {
-            SetMask(component.MaskPath, component);
+            SetMask(light!, light.Comp.Mask);
         }
 
-        public void SetMask(string? maskPath, PointLightComponent component)
+        public void SetMask(Entity<PointLightComponent?> light, ProtoId<LightMaskPrototype>? mask)
         {
-            if (maskPath is not null)
-                component.Mask = _resourceCache.GetResource<TextureResource>(maskPath);
-            else
-                component.Mask = null;
+            if (!Resolve(light.Owner, ref light.Comp))
+                return;
+
+            light.Comp.MaskPrototype = mask == null ? _defaultMask : _protoMan.Index(mask.Value);
         }
 
         #region Setters

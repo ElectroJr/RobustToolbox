@@ -1,12 +1,25 @@
 using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using OpenToolkit.Graphics.OpenGL4;
-using Robust.Shared.Graphics;
 using Robust.Shared.Maths;
 using Robust.Shared.Utility;
 using ES20 = OpenToolkit.Graphics.ES20;
+
+
+// Replace triangle fan w face culling with just drawing lines.
+// I.e., instead of 2 triangle / 4 vertices PER LINE, we just draw a line per line.
+// replace face culling with clipping planes. I.e., adjust depth such that they get culled.
+//
+// so 4 vertices + primitive restart down to just 2
+// face culling -> clipping
+// Gl.Viewport -> just draw a line
+// FOV drawing can use modified clipping mode. I.e., instead dof clipping, move the line down/up
+//
+//
+//
+// Fuck me all the code in get occluder geometry is also uneccesary
+// whoever wrote this was drunk or high.
 
 namespace Robust.Client.Graphics.Clyde
 {

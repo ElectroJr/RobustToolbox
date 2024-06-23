@@ -19,6 +19,13 @@ namespace Robust.Client.GameObjects;
 [UsedImplicitly]
 internal sealed class ClientOccluderSystem : OccluderSystem
 {
+
+    // problem:
+    // Cannot use gl_vertexId
+    // If we use indexed rendering
+    // because currently I am using repeated indices
+    // so it still cannot distinguish left and right
+
     private readonly HashSet<EntityUid> _dirtyEntities = new();
 
     /// <inheritdoc />
