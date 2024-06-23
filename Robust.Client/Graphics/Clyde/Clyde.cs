@@ -161,6 +161,7 @@ namespace Robust.Client.Graphics.Clyde
         {
             _drawingSplash = false;
 
+            InitOcclusion();
             InitLighting();
         }
 
