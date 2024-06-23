@@ -20,12 +20,12 @@ flat varying highp vec3 Line;
 // The angle could be inferred from gl_FragCoord, but I am lazy.
 varying highp float Angle;
 
-uniform vec2 origin;
-uniform float index;
-uniform float shadowOverlapSide;
+uniform vec2 Origin;
+uniform float Index;
+uniform float OverlapSide;
 
 // Whether to clip out clockwise or counter-clockwise traveling lines.
-uniform float cullClockwise;
+uniform float CullClockwise;
 
 // expands wall edges a little to prevent holes
 const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
@@ -33,8 +33,8 @@ const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
 void main()
 {
     // aPos is clockwise, but we need anticlockwise so swap it here
-    vec2 pointA = aPos.xy - origin;
-    vec2 pointB = aPos.zw - origin;
+    vec2 pointA = aPos.xy - Origin;
+    vec2 pointB = aPos.zw - Origin;
     float angleA = atan(pointA.y, pointA.x);
     float angleB = atan(pointB.y, pointB.x);
 
@@ -63,7 +63,7 @@ void main()
         //  Pass 1: Adjust left boundary past right edge
         //  Pass 2: Adjust right boundary past left edge
 
-        if (shadowOverlapSide < 0.5)
+        if (OverlapSide < 0.5)
         {
             // ...and we're adjusting the left edge...
             angleA += sign * PI * 2.0;
@@ -109,12 +109,12 @@ void main()
     // If the angle is decreasing, then this line is on the rear side of the occluder. So we simply move it out beyond
     // the clipping plane to cull it. This behaviour can be controlled with the cullClockwise uniform, which should be
     // either -1 or +1;
-    highp float depth = 1.0 - cullClockwise * sign / (length(point) + 1.0);
+    highp float depth = 1.0 - CullClockwise * sign / (length(point) + 1.0);
 
     // Note that for exactly the same reason that we cannot linearly interpolate distances, linearly interpolating the
     // depth value will also give incorrect results. However, I am about 70% sure that linear interpolating the distance
     // (or depth) as a function of the angle will never result in a shorter distance. So the depth testing shouldn't
     // ever accidentally be occluding lines that it shouldn't be. But it is still useful for getting rid of many lines.
 
-    gl_Position = vec4(Angle / PI, mix(-1.0, 1.0, index), depth, 1.0);
+    gl_Position = vec4(Angle / PI, mix(-1.0, 1.0, Index), depth, 1.0);
 }

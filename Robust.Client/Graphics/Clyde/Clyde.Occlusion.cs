@@ -194,23 +194,23 @@ namespace Robust.Client.Graphics.Clyde
         /// <param name="cullClockwise">Whether to cull clockwise or counter-clockwise traveling lines</param>
         private void DrawOcclusionDepth(Vector2 origin, float index, int count, bool cullClockwise)
         {
-            _depthProgram.SetUniform("origin", origin);
-            _depthProgram.SetUniform("index", index);
+            _depthProgram.SetUniform("Origin", origin);
+            _depthProgram.SetUniform("Index", index);
 
             // Note that we draw occluder boxes in a clockwise manner. I.e., the top left -> tr -> br -> bl -> tl.
             // Hence, culling lines that appear to be traveling clockwise from the eye's POV is equivalent to culling
             // the back faces of occluder boxes (obviously assuming the eye isn't stuck inside of an occluder).
 
-            _depthProgram.SetUniform("cullClockwise", cullClockwise ? 1f : -1f);
+            _depthProgram.SetUniform("CullClockwise", cullClockwise ? 1f : -1f);
 
             // Make two draw calls. This allows a faked "generation" of additional polygons.
-            _depthProgram.SetUniform("shadowOverlapSide", 0.0f);
+            _depthProgram.SetUniform("OverlapSide", 0.0f);
             GL.DrawArrays(PrimitiveType.Lines, 0, count);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
 
             // Yup, it's the other draw call.
-            _depthProgram.SetUniform("shadowOverlapSide", 1.0f);
+            _depthProgram.SetUniform("OverlapSide", 1.0f);
             GL.DrawArrays(PrimitiveType.Lines, 0, count);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
