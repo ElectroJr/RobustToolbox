@@ -45,7 +45,9 @@ namespace Robust.Client.Graphics.Clyde
         // Rendering data for drawing the light depth map (i.e., distance to nearest occluder).
         private int _lightOcclusionIndex;
         private SysVec4[] _lightOcclusionBuffer = default!;
+        private float[] _lightInstanceBuffer = default!;
         private GLBuffer _lightOcclusionVbo = default!;
+        private GLBuffer _lightInstanceVbo = default!;
         private GLHandle _lightOcclusionVao;
 
         // Rendering data for drawing the fov depth map. This is a variant of the light data that allows the FOV
@@ -53,6 +55,7 @@ namespace Robust.Client.Graphics.Clyde
         private int _fovOcclusionIndex;
         private SysVec4[] _fovOcclusionBuffer = default!;
         private GLBuffer _fovOcclusionVbo = default!;
+        private GLBuffer _fovInstanceVbo = default!;
         private GLHandle _fovOcclusionVao;
 
         // Rendering data for drawing the FOV mask when bleeding lights onto walls.
@@ -87,8 +90,25 @@ namespace Robust.Client.Graphics.Clyde
                     BufferUsageHint.DynamicDraw,
                     nameof(_lightOcclusionVbo));
 
+                // Line positions
                 GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
                 GL.EnableVertexAttribArray(0);
+
+                _lightInstanceVbo = new GLBuffer(this,
+                    BufferTarget.ArrayBuffer,
+                    BufferUsageHint.DynamicDraw,
+                    nameof(_lightOcclusionVbo));
+
+                // Light instance position
+                GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, 3 * sizeof(float), IntPtr.Zero);
+                GL.EnableVertexAttribArray(1);
+                GL.VertexAttribDivisor(1, 1);
+
+                // Light instance index
+                GL.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, 3 * sizeof(float), 2 * sizeof(float));
+                GL.EnableVertexAttribArray(2);
+                GL.VertexAttribDivisor(2, 1);
+
                 CheckGlError();
             }
 
@@ -149,15 +169,7 @@ namespace Robust.Client.Graphics.Clyde
                 return;
 
             BindVertexArray(_fovOcclusionVao.Handle);
-
-            // The first row we write functions like the normal light depth draw.
-            // I.e, we cull back faces and draw only un-blocked lines
-            // In principle we could use the _lightOcclusionVao here to reduce the number of lines that get drawn.
-            // But I'm not sure if that's worth switching VAOs for.
-            DrawOcclusionDepth(default, ImageIndexToV(0, 2), _fovOcclusionIndex, cullClockwise: true);
-
-            // For the second row, we cull front-facing occluders, as described in UpdateOcclusionGeometry()
-            DrawOcclusionDepth(default, ImageIndexToV(1, 2), _fovOcclusionIndex, cullClockwise: false);
+            DrawOcclusionDepth(_fovOcclusionIndex, 2);
         }
 
         private void DrawShadowDepths(int count, Vector2 eyePos)
@@ -188,34 +200,24 @@ namespace Robust.Client.Graphics.Clyde
         /// <summary>
         ///     Draws depths for lighting & FOV into the currently bound framebuffer.
         /// </summary>
-        /// <param name="origin">The position of the light or eye for which we want to draw the depths.</param>
-        /// <param name="index">UV y-index of the row to render the depth at in the framebuffer.</param>
-        /// <param name="count">Total number of line vertices</param>
-        /// <param name="cullClockwise">Whether to cull clockwise or counter-clockwise traveling lines</param>
-        private void DrawOcclusionDepth(Vector2 origin, float index, int count, bool cullClockwise)
+        /// <param name="lineCount">Total number of line vertices</param>
+        /// <param name="instanceCount">Total number of instances (eyes or lights) to draw</param>
+        private void DrawOcclusionDepth(int lineCount, int instanceCount)
         {
-            _depthProgram.SetUniform("Origin", origin);
-            _depthProgram.SetUniform("Index", index);
-
-            // Note that we draw occluder boxes in a clockwise manner. I.e., the top left -> tr -> br -> bl -> tl.
-            // Hence, culling lines that appear to be traveling clockwise from the eye's POV is equivalent to culling
-            // the back faces of occluder boxes (obviously assuming the eye isn't stuck inside of an occluder).
-
-            _depthProgram.SetUniform("CullClockwise", cullClockwise ? 1f : -1f);
-
             // Make two draw calls. This allows a faked "generation" of additional polygons.
             _depthProgram.SetUniform("OverlapSide", 0.0f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, count);
+            GL.DrawArraysInstanced(PrimitiveType.Lines, 0, lineCount, instanceCount);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
 
             // Yup, it's the other draw call.
             _depthProgram.SetUniform("OverlapSide", 1.0f);
-            GL.DrawArrays(PrimitiveType.Lines, 0, count);
+            GL.DrawArrays(PrimitiveType.Lines, 0, lineCount);
+
+            GL.DrawArraysInstanced(PrimitiveType.Lines, 0, lineCount, instanceCount);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
         }
-
 
         /// <summary>
         /// Bind and clear the target for a depth/fov draw.
@@ -562,5 +564,7 @@ namespace Robust.Client.Graphics.Clyde
             }
             _occlusionMaskEbo.Reallocate(_occlusionMaskIndices.AsSpan());
         }
+
+        public
     }
 }

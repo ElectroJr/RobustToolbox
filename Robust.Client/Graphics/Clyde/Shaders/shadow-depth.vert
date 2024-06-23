@@ -13,6 +13,11 @@
 // Coordinates of the two points A & B that make up the line being drawn.
 attribute vec4 aPos;
 
+// Instanced vertex attributes:
+attribute vec2 Origin; // Relative position of the current eye/light instance we want to draw the depth for.
+attribute float Index; // y-index of the current eye/light instance in the render target
+attribute float CullClockwise; // Whether to clip out clockwise or counter-clockwise traveling lines.
+
 // Set of three parameters describing the line currently being drawn via: a*x + b*y = c
 // where Line=(a,b,c)
 flat varying highp vec3 Line;
@@ -20,12 +25,10 @@ flat varying highp vec3 Line;
 // The angle could be inferred from gl_FragCoord, but I am lazy.
 varying highp float Angle;
 
-uniform vec2 Origin;
-uniform float Index;
+
+// How to handle lines overlap across -Pi/Pi
 uniform float OverlapSide;
 
-// Whether to clip out clockwise or counter-clockwise traveling lines.
-uniform float CullClockwise;
 
 // expands wall edges a little to prevent holes
 const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;

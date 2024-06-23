@@ -416,6 +416,7 @@ namespace Robust.Client.Graphics.Clyde
             _lightVertexIndex = 0;
         }
 
+        // TODO LIGHTING PARALLELIZE
         private static bool LightQuery(ref (
             Clyde clyde,
             int count,
@@ -524,6 +525,9 @@ namespace Robust.Client.Graphics.Clyde
                     DebugTools.Assert(light.CastShadows);
                     light.Properties.Index = ImageIndexToV(shadowCount++, ShadowTexture.Height);
                 }
+
+                aaaa
+
                 DebugTools.AssertEqual(shadowCount, _maxShadowcastingLights);
             }
 
@@ -899,6 +903,8 @@ namespace Robust.Client.Graphics.Clyde
                     _hasGLFloatFramebuffers ? RenderTargetColorFormat.RG32F : RenderTargetColorFormat.Rgba8, true),
                 new TextureSampleParameters { WrapMode = TextureWrapMode.Repeat, Filter = true },
                 nameof(_shadowRenderTarget));
+
+            Array.Resize(ref _lightInstanceBuffer, 3 * _maxShadowcastingLights);
         }
 
         private void SoftShadowsChanged(bool newValue)
