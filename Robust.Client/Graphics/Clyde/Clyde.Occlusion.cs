@@ -148,9 +148,16 @@ namespace Robust.Client.Graphics.Clyde
             if (!eye.DrawFov)
                 return;
 
-            CheckGlError();
+            BindVertexArray(_fovOcclusionVao.Handle);
 
-            DrawOcclusionDepth(eye.Position.Position, ImageIndexToV(0, 2), _fovOcclusionIndex);
+            // The first row we write functions like the normal light depth draw.
+            // I.e, we cull back faces and draw only un-blocked lines
+            // In principle we could use the _lightOcclusionVao here to reduce the number of lines that get drawn.
+            // But I'm not sure if that's worth switching VAOs for.
+            DrawOcclusionDepth(default, ImageIndexToV(0, 2), _fovOcclusionIndex, cullClockwise: true);
+
+            // For the second row, we cull front-facing occluders, as described in UpdateOcclusionGeometry()
+            DrawOcclusionDepth(default, ImageIndexToV(1, 2), _fovOcclusionIndex, cullClockwise: false);
         }
 
         private void DrawShadowDepths(int count, Vector2 eyePos)
@@ -168,7 +175,7 @@ namespace Robust.Client.Graphics.Clyde
             {
                 ref var light = ref _lightsToRenderList[i];
                 if (light.CastShadows)
-                    DrawOcclusionDepth(light.Properties.LightPos-eyePos, light.Properties.Index, _lightOcclusionIndex);
+                    DrawOcclusionDepth(light.Properties.LightPos-eyePos, light.Properties.Index, _lightOcclusionIndex, cullClockwise: true);
             }
         }
 
@@ -183,10 +190,18 @@ namespace Robust.Client.Graphics.Clyde
         /// </summary>
         /// <param name="origin">The position of the light or eye for which we want to draw the depths.</param>
         /// <param name="index">UV y-index of the row to render the depth at in the framebuffer.</param>
-        private void DrawOcclusionDepth(Vector2 origin, float index, int count)
+        /// <param name="count">Total number of line vertices</param>
+        /// <param name="cullClockwise">Whether to cull clockwise or counter-clockwise traveling lines</param>
+        private void DrawOcclusionDepth(Vector2 origin, float index, int count, bool cullClockwise)
         {
             _depthProgram.SetUniform("origin", origin);
             _depthProgram.SetUniform("index", index);
+
+            // Note that we draw occluder boxes in a clockwise manner. I.e., the top left -> tr -> br -> bl -> tl.
+            // Hence, culling lines that appear to be traveling clockwise from the eye's POV is equivalent to culling
+            // the back faces of occluder boxes (obviously assuming the eye isn't stuck inside of an occluder).
+
+            _depthProgram.SetUniform("cullClockwise", cullClockwise ? 1f : -1f);
 
             // Make two draw calls. This allows a faked "generation" of additional polygons.
             _depthProgram.SetUniform("shadowOverlapSide", 0.0f);
@@ -335,8 +350,9 @@ namespace Robust.Client.Graphics.Clyde
                 // > └─┴─┴─┴─╜
                 //
                 // Note that this culling is completely optional for lights, it just helps reduce the number of lines
-                // we need to draw. However, for FOV we want to also have a separate pass that let us see into the first
-                // layer of the walls, but not trough them. I.e., for FOV the end result we want should look like this:
+                // we need to draw. For FOV, one of the draw calls will behave in the same way as lights. However, we
+                // also want to have a separate FOV pass that let us see into the first layer of the walls but blockes
+                // everything else behind them. For this FOV pass, the end result we want should look like this:
                 // >            x
                 // > ╓─┬─┬─┬─┐
                 // > ╠═╪═╪═╬─┤
@@ -352,17 +368,18 @@ namespace Robust.Client.Graphics.Clyde
                 // > ╠═╬═╬═╬═╡
                 // > ╚═╩═╩═╩═╛
                 //
-                // If we then also drop any internal lines that connect to front-facing external points, this leaves us with:
+                // If we then also drop any internal lines that connect to front-facing external points, this leaves
+                // us with:
                 // >            x
                 // > ╓─┬─┬─┬─┐
                 // > ╠═╬═╬═╬─┤
                 // > ╠═╬═╬═╬─┤
                 // > ╚═╩═╩═╩═╛
                 //
-                // While this contains many more lines that we actually need for drawing the FOV, it gets the job done.
-                // I don't know if it matters much, but as we only need to draw FOV once, while light maps get drawn
-                // many times, I want to minimize the number of unnecessary occlusion lines that get used by the light
-                // depth drawing. Hence the FOV & light depths will use two different buffers.
+                // While this contains many more lines that we actually need for drawing the second FOV pass, it gets
+                // the job done. I don't know if it matters much, but as we only need to draw FOV once, while light maps
+                // get drawn many times, I want to minimize the number of unnecessary occlusion lines that get used by
+                // the light depth drawing. Hence the FOV & light depths will use two different buffers.
 
                 // find which directions have adjacent occluders, so that we can neglect some internal lines
                 // Note that the cardinal directions here are defined relative to the occluder entity, not how
@@ -451,6 +468,7 @@ namespace Robust.Client.Graphics.Clyde
 
             Array.Clear(_occluders);
             DebugTools.AssertEqual(_occlusionMaskIndex, _occluderCount * 4);
+            DebugTools.Assert(_lightOcclusionIndex <= _fovOcclusionIndex);
 
             // Upload geometry to OpenGL.
             GL.BindVertexArray(0);

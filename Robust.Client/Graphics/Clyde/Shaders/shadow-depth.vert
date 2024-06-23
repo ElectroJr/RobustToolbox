@@ -20,6 +20,9 @@ uniform vec2 origin;
 uniform float index;
 uniform float shadowOverlapSide;
 
+// Whether to clip out clockwise or counter-clockwise traveling lines.
+uniform float cullClockwise;
+
 // expands wall edges a little to prevent holes
 const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
 
@@ -88,7 +91,8 @@ void main()
 
     // We use sign here to perform back-face culling. I.e., if the angle is decreasing, this line is on the rear side
     // of the occluder. So we simply move it out beyond the clipping plane to cull it.
-    float depth = 1.0 - sign / (dist + 1.0);
+    // This behavious can be controlled with the cullClockwise uniform, which should be either -1 or +1
+    float depth = 1.0 - cullClockwise * sign / (dist + 1.0);
 
     gl_Position = vec4(angle / PI, mix(-1.0, 1.0, index), depth, 1.0);
 }
