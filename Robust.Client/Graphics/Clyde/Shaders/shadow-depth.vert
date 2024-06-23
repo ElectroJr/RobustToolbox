@@ -13,8 +13,12 @@
 // Coordinates of the two points A & B that make up the line being drawn.
 attribute vec4 aPos;
 
-// Distance to the line being drawn.
-varying float dist;
+// Set of three parameters describing the line currently being drawn via: a*x + b*y = c
+// where Line=(a,b,c)
+flat varying highp vec3 Line;
+
+// The angle could be inferred from gl_FragCoord, but I am lazy.
+varying highp float Angle;
 
 uniform vec2 origin;
 uniform float index;
@@ -73,26 +77,44 @@ void main()
         }
     }
 
-    float angle;
     vec2 point;
     if (gl_VertexID == (gl_VertexID / 2) * 2)
     {
         // Even numbered vertex -> this is the start of the line
-        angle = angleA;
+        Angle = angleA;
         point = pointA;
     }
     else
     {
-        angle = angleB;
+        Angle = angleB;
         point = pointB;
     }
 
-    dist = length(point);
+    // In order to get the distance to the occluder in the fragment shader, we cannot simply linearly interpolate the,
+    // the distance is not a linear function of the angle.
+    //
+    // However, we can just re-write the line in polar coordinates.
+    // Specifically, for a line given by: a*x + b*y = c
+    // The definition in polar coordiantes is just r = c / (a * cos(angle) + b * sin(angle)).
+    // Hence we just pass the definition of a,b,c to the fragment shader.
 
-    // We use sign here to perform back-face culling. I.e., if the angle is decreasing, this line is on the rear side
-    // of the occluder. So we simply move it out beyond the clipping plane to cull it.
-    // This behavious can be controlled with the cullClockwise uniform, which should be either -1 or +1
-    float depth = 1.0 - cullClockwise * sign / (dist + 1.0);
+    // Line = (a,b,c)
+    Line = vec3(
+        pointB.y - pointA.y,
+        pointA.x - pointB.x,
+        pointA.x * pointB.y - pointA.y * pointB.x
+    );
 
-    gl_Position = vec4(angle / PI, mix(-1.0, 1.0, index), depth, 1.0);
+    // Next we use the z/depth coordinate to perform a kind of face culling.
+    // If the angle is decreasing, then this line is on the rear side of the occluder. So we simply move it out beyond
+    // the clipping plane to cull it. This behaviour can be controlled with the cullClockwise uniform, which should be
+    // either -1 or +1;
+    highp float depth = 1.0 - cullClockwise * sign / (length(point) + 1.0);
+
+    // Note that for exactly the same reason that we cannot linearly interpolate distances, linearly interpolating the
+    // depth value will also give incorrect results. However, I am about 70% sure that linear interpolating the distance
+    // (or depth) as a function of the angle will never result in a shorter distance. So the depth testing shouldn't
+    // ever accidentally be occluding lines that it shouldn't be. But it is still useful for getting rid of many lines.
+
+    gl_Position = vec4(Angle / PI, mix(-1.0, 1.0, index), depth, 1.0);
 }

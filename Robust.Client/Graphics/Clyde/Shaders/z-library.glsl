@@ -33,6 +33,20 @@ out highp vec4 colourOutput;
 
 // -- shadow depth --
 
+// If float textures are supported, puts the values in the R/G fields.
+// This assumes RG32F format.
+// If float textures are NOT supported.
+// This assumes RGBA8 format.
+// Operational range is "whatever works for FOV depth"
+highp vec4 zClydeShadowDepthPack(highp vec2 val) {
+    #ifdef HAS_FLOAT_TEXTURES
+    return vec4(val, 0.0, 1.0);
+    #else
+    highp vec2 valH = floor(val);
+    return vec4(valH / 255.0, val - valH);
+    #endif
+}
+
 // Inverts the previous function.
 highp vec2 zClydeShadowDepthUnpack(highp vec4 val) {
 #ifdef HAS_FLOAT_TEXTURES
@@ -194,7 +208,7 @@ highp float zCircleGradient(highp vec2 ps, highp vec2 coord, highp float maxi, h
 
 const highp float g_MinVariance = 0.0;
 
-// This returns a vec2 because of VSM moments.
+// This returns a vec2 because of variance shadow mapping (VSM) moments.
 highp vec2 occludeDepth(highp vec2 rel, sampler2D shadowMap, highp float mapOffsetY)
 {
     highp float deflect = (atan(rel.y, rel.x) / PI);

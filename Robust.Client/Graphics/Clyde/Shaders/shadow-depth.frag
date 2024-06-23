@@ -1,22 +1,19 @@
-varying highp float dist;
 
-// If float textures are supported, puts the values in the R/G fields.
-// This assumes RG32F format.
-// If float textures are NOT supported.
-// This assumes RGBA8 format.
-// Operational range is "whatever works for FOV depth"
-highp vec4 zClydeShadowDepthPack(highp vec2 val) {
-    #ifdef HAS_FLOAT_TEXTURES
-    return vec4(val, 0.0, 1.0);
-    #else
-    highp vec2 valH = floor(val);
-    return vec4(valH / 255.0, val - valH);
-    #endif
-}
+// Three floats that define the line via a*x + b*y = c, where Line=(a,b,c).
+// Equivalent line in polar coordintes is given by r = c / (a * cos(angle) + b * sin(angle))
+flat varying highp vec3 Line;
+varying highp float Angle;
 
 void main()
 {
-    // Main body.
+    highp float dist = Line.z/(Line.x*cos(Angle) + Line.y*sin(Angle));
+
+    // The shadow depth stores both the distance & it's square value for an (attempt?) to variance shadow maps.
+    // We also bias the variance using the derivative WRT the angle.
+    //
+    // TBH I'm not even sure if we should still be using this or if its important.
+    // I think the soft light stuff is just an ensemble of things that were tried that ended up getting nice looking
+    // results.
 #ifdef HAS_DFDX
     highp float dx = dFdx(dist);
 #else
