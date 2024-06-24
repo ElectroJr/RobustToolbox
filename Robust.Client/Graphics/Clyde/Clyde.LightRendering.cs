@@ -68,6 +68,7 @@ namespace Robust.Client.Graphics.Clyde
         private ClydeTexture FovTexture => _fovRenderTarget.Texture;
         private ClydeTexture ShadowTexture => _shadowRenderTarget.Texture;
 
+        private int _lightCount;
         private int _shadowCastingLightCount;
         private PointLight[] _lightsToRenderList = default!;
         private ClydeTexture _lightMaskTexture = default!;
@@ -288,10 +289,25 @@ namespace Robust.Client.Graphics.Clyde
                 return;
             }
 
-            var (count, expandedBounds) = GetLightsToRender(eye, worldBounds, worldAABB);
-            UpdateOcclusionGeometry(expandedBounds, eye);
+            // TODO LIGHTING PARALLELIZE
+            // Maybe run the light & occluder queries in parallel? The expanded occluder bounds can just be fudged.
+            // TBH with PVS enabled I assume the bound is often larger than PVS range anyways.
+            GetLightsToRender(eye, worldBounds, worldAABB);
+            var expandedAABB = worldAABB;
+            {
+                using var _ = _prof.Group("Expand Bounds");
+                // TODO LIGHTING SIMD/parallelize
+                // Or maybe just drop this altogether
+                for (var i = 0; i < _lightCount; i++)
+                {
+                    expandedAABB = expandedAABB.ExtendToContain(_lightsToRenderList[i].Properties.LightPos);
+                }
+            }
+            UpdateOcclusionGeometry(expandedAABB, eye);
 
-            PrepareDepthDraw();
+            _debugStats.TotalLights += _lightCount;
+            _debugStats.ShadowLights += _shadowCastingLightCount;
+
             DrawFov(eye);
 
             if (!_lightManager.DrawLighting)
@@ -304,7 +320,6 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             DrawShadowDepths();
-            FinalizeDepthDraw();
 
             GL.Enable(EnableCap.StencilTest);
             _isStencilling = true;
@@ -345,12 +360,17 @@ namespace Robust.Client.Graphics.Clyde
             using (_prof.Group("Draw Lights"))
             {
                 var idxCount = GetQuadBatchIndexCount();
-                for (var i = 0; i < count; i++)
+                for (var i = 0; i < _lightCount; i++)
                 {
                     ref var light = ref _lightsToRenderList[i];
                     if (_lightVertexIndex + 4 >= _lightVertexData.Length || _lightIndexIndex + idxCount > _lightIndexData.Length)
                         FlushLights();
 
+                    // TODO LIGHTING
+                    // light.Properties is a flat uniform. So only the initiating vertex needs it.
+                    // This is complicated by the has-primitive-restart checks, but maybe its faster if we just don't bother to set light.properties
+                    // for each vertex. Also, we could just cache a LightComponent.LightVertex[4], update the properties, and copy it across into the array here,
+                    // instead of setting 4 different indices. I.e., just populate _lightVertexData when initially iterating over light components.
                     _lightVertexData[_lightVertexIndex + 0] = new LightVertex(light.Mask.BottomLeft, new Vector2(0,0), light.Properties);
                     _lightVertexData[_lightVertexIndex + 1] = new LightVertex(light.Mask.BottomRight, new Vector2(1,0), light.Properties);
                     _lightVertexData[_lightVertexIndex + 2] = new LightVertex(light.Mask.TopRight, new Vector2(1,1), light.Properties);
@@ -385,11 +405,8 @@ namespace Robust.Client.Graphics.Clyde
             GL.Viewport(0, 0, viewport.Size.X, viewport.Size.Y);
             CheckGlError();
 
-            Array.Clear(_lightsToRenderList, 0, count);
-
             _lightingReady = true;
         }
-
 
         private void FlushLights()
         {
@@ -412,6 +429,7 @@ namespace Robust.Client.Graphics.Clyde
         }
 
         // TODO LIGHTING PARALLELIZE
+        // Or at the very least run in parallel with UpdateOcclusionGeometry
         // Also just clean up this mess.
         // This is a giant query state.
         private static bool LightQuery(ref (
@@ -493,10 +511,7 @@ namespace Robust.Client.Graphics.Clyde
             }
         }
 
-        private (int count, Box2 expandedBounds) GetLightsToRender(
-            IEye eye,
-            in Box2Rotated worldBounds,
-            in Box2 worldAABB)
+        private void GetLightsToRender(IEye eye, Box2Rotated worldBounds, Box2 worldAABB)
         {
             using var _ = _prof.Group(nameof(GetLightsToRender));
             var lightTreeSys = _entitySystemManager.GetEntitySystem<LightTreeSystem>();
@@ -512,54 +527,38 @@ namespace Robust.Client.Graphics.Clyde
                 comp.Tree.QueryAabb(ref state, LightQuery, bounds);
             }
 
+            _lightCount = state.count;
             _shadowCastingLightCount = state.shadowCastingCount;
-            if (_shadowCastingLightCount > _maxShadowcastingLights)
+
+            if (_shadowCastingLightCount <= _maxShadowcastingLights)
+                return;
+
+            // There are too many lights casting shadows to fit in the scene.
+            // This check must occur before occluder expansion, or else bad things happen.
+
+            // First, partition the array based on whether the lights are shadow casting or not
+            // (non shadow casting lights should be the first partition, shadow casting lights the second)
+            Array.Sort(_lightsToRenderList, 0, _lightCount, _lightCap);
+
+            // Next, sort just the shadow casting lights by distance.
+            Array.Sort(_lightsToRenderList, _lightCount - _shadowCastingLightCount, _shadowCastingLightCount, _shadowCap);
+
+            // Then effectively delete the furthest lights, by setting the end of the array to exclude N
+            // number of shadow casting lights (where N is the number above the max number per scene.)
+            _lightCount -=  _shadowCastingLightCount - _maxShadowcastingLights;
+
+            // Reassign shadow map indices
+            _shadowCastingLightCount = 0;
+            foreach (ref var light in _lightsToRenderList.AsSpan()[(_lightCount - _maxShadowcastingLights).._lightCount])
             {
-                // There are too many lights casting shadows to fit in the scene.
-                // This check must occur before occluder expansion, or else bad things happen.
-
-                // First, partition the array based on whether the lights are shadow casting or not
-                // (non shadow casting lights should be the first partition, shadow casting lights the second)
-                Array.Sort(_lightsToRenderList, 0, state.count, _lightCap);
-
-                // Next, sort just the shadow casting lights by distance.
-                Array.Sort(_lightsToRenderList, state.count - state.shadowCastingCount, state.shadowCastingCount, _shadowCap);
-
-                // Then effectively delete the furthest lights, by setting the end of the array to exclude N
-                // number of shadow casting lights (where N is the number above the max number per scene.)
-                state.count -= state.shadowCastingCount - _maxShadowcastingLights;
-
-                // Reassign shadow map indices
-                _shadowCastingLightCount = 0;
-                foreach (ref var light in _lightsToRenderList.AsSpan()[(state.count - _maxShadowcastingLights)..])
-                {
-                    DebugTools.Assert(light.CastShadows);
-                    var index = ImageIndexToV(_shadowCastingLightCount, ShadowTexture.Height);
-                    light.Properties.Index = index;
-                    _lightInstancesBuffer[_shadowCastingLightCount] = new(light.Properties.LightPos - eye.Position.Position, index, 1f);
-                    _shadowCastingLightCount++;
-                }
-
-                DebugTools.AssertEqual(_shadowCastingLightCount, _maxShadowcastingLights);
+                DebugTools.Assert(light.CastShadows);
+                var index = ImageIndexToV(_shadowCastingLightCount, ShadowTexture.Height);
+                light.Properties.Index = index;
+                _lightInstancesBuffer[_shadowCastingLightCount] = new(light.Properties.LightPos - eye.Position.Position, index, 1f);
+                _shadowCastingLightCount++;
             }
 
-            // When culling occluders later, we can't just remove any occluders outside the worldBounds.
-            // As they could still affect the shadows of (large) light sources.
-            // We expand the world bounds so that it encompasses the center of every light source.
-            // This should make it so no culled occluder can make a difference.
-            // (if the occluder is in the current lights at all, it's still not between the light and the world bounds).
-            var expandedBounds = worldAABB;
-
-            // TODO SIMD
-            for (var i = 0; i < state.count; i++)
-            {
-                expandedBounds = expandedBounds.ExtendToContain(_lightsToRenderList[i].Properties.LightPos);
-            }
-
-            _debugStats.TotalLights += state.count;
-            _debugStats.ShadowLights += _shadowCastingLightCount;
-
-            return (state.count, expandedBounds);
+            DebugTools.AssertEqual(_shadowCastingLightCount, _maxShadowcastingLights);
         }
 
         private void BlurLights(Viewport viewport, IEye eye)

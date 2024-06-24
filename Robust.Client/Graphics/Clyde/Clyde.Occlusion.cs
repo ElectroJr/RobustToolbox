@@ -202,6 +202,8 @@ internal partial class Clyde
         using var _ = DebugGroup(nameof(DrawFov));
         using var __ = _prof.Group(nameof(DrawFov));
 
+        PrepareDepthDraw();
+
         // Bind & clear the FOV depth even if we do not draw with it.
         PrepareDepthTarget(RtToLoaded(_fovRenderTarget));
 
@@ -223,6 +225,8 @@ internal partial class Clyde
         PrepareDepthTarget(RtToLoaded(_shadowRenderTarget));
         BindVertexArray(_lightOcclusionVao.Handle);
         DrawOcclusionDepth(_lightOcclusionVertexCount, _shadowCastingLightCount);
+
+        FinalizeDepthDraw();
     }
 
     /// <summary>
@@ -307,7 +311,7 @@ internal partial class Clyde
         CheckGlError();
     }
 
-    // TODO LIGHTING
+    // TODO LIGHTING PARALLELIZE
     // Lazy occlusion updating.
     // I.e., cache occlusion geometry per occlusion tree.
     // Then draw each tree with its own transformation applied in the vertex shader
@@ -327,7 +331,8 @@ internal partial class Clyde
         FindOccluders(expandedBounds, eye, xformSystem);
 
         // TODO LIGHTING parallelize.
-        // Specifically:
+        // Or at the very least run in parallel with GetLightsToRender.
+        // Some of this can be expensive, specifically:
         // - getting world position & rotation
         // - computing corner visibility
 
@@ -386,7 +391,7 @@ internal partial class Clyde
             //
             // Note that this culling is completely optional for lights, it just helps reduce the number of lines
             // we need to draw. For FOV, one of the draw calls will behave in the same way as lights. However, we
-            // also want to have a separate FOV pass that let us see into the first layer of the walls but blockes
+            // also want to have a separate FOV pass that let us see into the first layer of the walls but blocks
             // everything else behind them. For this FOV pass, the end result we want should look like this:
             // >            x
             // > ╓─┬─┬─┬─┐
