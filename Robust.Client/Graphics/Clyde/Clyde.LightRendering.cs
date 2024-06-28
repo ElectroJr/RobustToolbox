@@ -22,6 +22,7 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using Color = Robust.Shared.Maths.Color;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
+using Vector4 = System.Numerics.Vector4;
 
 namespace Robust.Client.Graphics.Clyde
 {
@@ -58,11 +59,20 @@ namespace Robust.Client.Graphics.Clyde
         private int _lightVertexIndex;
         private int _lightIndexIndex;
 
+        private GLBuffer _shadowVbo = default!;
+        private GLBuffer _shadowEbo = default!;
+        private GLHandle _shadowVao;
+        private Vector4[] _shadowVertexData = default!;
+        private int _shadowVertexCount;
+        private int _shadowIndexCount;
+        private int _shadowIndexSize;
+
         // For depth calculation for FOV.
         private RenderTexture _fovRenderTarget = default!;
 
         // For depth calculation of lighting shadows.
         private RenderTexture _shadowRenderTarget = default!;
+        private RenderTexture _lightAtlasTarget  = default!;
 
         // Proxies to textures of the above render targets.
         private ClydeTexture FovTexture => _fovRenderTarget.Texture;
@@ -80,8 +90,8 @@ namespace Robust.Client.Graphics.Clyde
         {
             LoadLightingShaders();
 
+            // Light VAO.
             {
-                // Light VAO.
                 _lightVao = new GLHandle(GenVertexArray());
                 BindVertexArray(_lightVao.Handle);
                 CheckGlError();
@@ -320,6 +330,7 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             DrawShadowDepths();
+            DrawShadows();
 
             GL.Enable(EnableCap.StencilTest);
             _isStencilling = true;
@@ -908,11 +919,20 @@ namespace Robust.Client.Graphics.Clyde
             if (_shadowRenderTarget != null)
                 DeleteRenderTexture(_shadowRenderTarget.Handle);
 
+            // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
+            if (_lightAtlasTarget != null)
+                DeleteRenderTexture(_lightAtlasTarget.Handle);
+
             // Shadow FBO.
             _shadowRenderTarget = CreateRenderTarget((ShadowMapSize, _maxShadowcastingLights),
                 new RenderTargetFormatParameters(
                     _hasGLFloatFramebuffers ? RenderTargetColorFormat.RG32F : RenderTargetColorFormat.Rgba8, true),
                 new TextureSampleParameters { WrapMode = TextureWrapMode.Repeat, Filter = true },
+                nameof(_shadowRenderTarget));
+
+            _lightAtlasTarget = CreateRenderTarget((LightAtlasSize, LightAtlasSize),
+                new RenderTargetFormatParameters(RenderTargetColorFormat.Rgba8),
+                new TextureSampleParameters { Filter = true },
                 nameof(_shadowRenderTarget));
 
             Array.Resize(ref _lightInstancesBuffer, _maxShadowcastingLights);
