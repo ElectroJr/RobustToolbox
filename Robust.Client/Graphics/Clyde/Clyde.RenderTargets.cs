@@ -92,7 +92,9 @@ namespace Robust.Client.Graphics.Clyde
                 {
                     switch (colorFormat)
                     {
+                        case RTCF.R16F:
                         case RTCF.R32F:
+                        case RTCF.RG16F:
                         case RTCF.RG32F:
                         case RTCF.R11FG11FB10F:
                         case RTCF.Rgba16F:
@@ -111,9 +113,12 @@ namespace Robust.Client.Graphics.Clyde
                     RTCF.Rgba16F =>      (PIF.Rgba16f,      PF.Rgba, PT.Float),
                     RTCF.Rgba8Srgb =>    (PIF.Srgb8Alpha8,  PF.Rgba, PT.UnsignedByte),
                     RTCF.R11FG11FB10F => (PIF.R11fG11fB10f, PF.Rgb,  PT.Float),
+                    RTCF.R16F =>         (PIF.R16f,         PF.Red,  PT.HalfFloat),
                     RTCF.R32F =>         (PIF.R32f,         PF.Red,  PT.Float),
+                    RTCF.RG16F =>        (PIF.Rg16f,        PF.Rg,   PT.HalfFloat),
                     RTCF.RG32F =>        (PIF.Rg32f,        PF.Rg,   PT.Float),
                     RTCF.R8 =>           (PIF.R8,           PF.Red,  PT.UnsignedByte),
+                    RTCF.R16 =>          (PIF.R16,          PF.Red,  PT.UnsignedShort),
                     _ => throw new ArgumentOutOfRangeException(nameof(format.ColorFormat), format.ColorFormat, null)
                 };
                 // @formatter:on
