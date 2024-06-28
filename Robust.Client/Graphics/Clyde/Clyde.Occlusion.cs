@@ -96,6 +96,7 @@ internal partial class Clyde
         {
             ("aPos", 0),
             ("Origin", 1),
+            ("Range", 1),
         };
 
         _shadowProgram = _compileProgram(shadowVert, shadowFrag, shadowAttribLocations, "Occlusion Depth Program");
@@ -167,8 +168,8 @@ internal partial class Clyde
             // For details about the front-face culling, see comments in UpdateOcclusionGeometry()
             Span<DepthDrawInstance> instances =
                 [
-                    new(default, ImageIndexToV(0,2), 1),
-                    new(default, ImageIndexToV(1,2), -1)
+                    new(default, ImageIndexToV(0,2), 1, 123123),
+                    new(default, ImageIndexToV(1,2), -1, 123123)
                 ];
             _fovInstanceVbo.Reallocate(instances);
 
@@ -231,9 +232,13 @@ internal partial class Clyde
 
             _lightInstanceVbo.Use();
 
-            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 0);
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 0 * sizeof(float));
             GL.EnableVertexAttribArray(1);
             GL.VertexAttribDivisor(1, 1);
+
+            GL.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 4 * sizeof(float));
+            GL.EnableVertexAttribArray(2);
+            GL.VertexAttribDivisor(2, 1);
 
             _shadowEbo = new GLBuffer(this,
                 BufferTarget.ElementArrayBuffer,
@@ -746,7 +751,7 @@ internal partial class Clyde
     }
 
     [StructLayout((LayoutKind.Sequential))]
-    public readonly struct DepthDrawInstance(Vector2 origin, float index, float cullClockwise)
+    public readonly struct DepthDrawInstance(Vector2 origin, float index, float cullClockwise, float range)
     {
         /// <summary>
         /// Location of the light (or eye) relative to the eye that was used to construct the geometry in
@@ -768,5 +773,7 @@ internal partial class Clyde
         /// the back faces of occluder boxes (obviously assuming the eye isn't stuck inside of an occluder).
         /// </remarks>
         public readonly float CullClockwise = cullClockwise;
+
+        public readonly float Range = range;
     }
 }
