@@ -48,8 +48,7 @@ namespace Robust.Client.Graphics.Clyde
 
         // Shader program used to calculate depth for shadows/FOV.
         // Sadly not .swsl since it has a different vertex format and such.
-        private GLShaderProgram _softLightProgram = default!;
-        private GLShaderProgram _hardLightProgram = default!;
+        private GLShaderProgram _lightProgram = default!;
 
         private GLBuffer _lightVbo = default!;
         private GLBuffer _lightEbo = default!;
@@ -72,7 +71,7 @@ namespace Robust.Client.Graphics.Clyde
 
         // For depth calculation of lighting shadows.
         private RenderTexture _shadowRenderTarget = default!;
-        private RenderTexture _lightAtlasTarget  = default!;
+        private RenderTexture _shadowmapAtlas  = default!;
 
         // Proxies to textures of the above render targets.
         private ClydeTexture FovTexture => _fovRenderTarget.Texture;
@@ -100,34 +99,29 @@ namespace Robust.Client.Graphics.Clyde
                 _lightVbo = new GLBuffer(this,
                     BufferTarget.ArrayBuffer,
                     BufferUsageHint.DynamicDraw,
-                    sizeof(LightVertex) * _lightVertexData.Length,
                     nameof(_lightVbo));
 
-                // Texture coordinates in the texture atlas.
+                // Light mask UV coordinates
                 GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, false, sizeof(LightVertex), 0 * sizeof(float));
                 GL.EnableVertexAttribArray(0);
 
-                // Atlas sub-texture UV coordinates.
-                GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, sizeof(LightVertex), 2 * sizeof(float));
+                // Light colour.
+                GL.VertexAttribPointer(1, 4, VertexAttribPointerType.Float, false, sizeof(LightVertex), 2 * sizeof(float));
                 GL.EnableVertexAttribArray(1);
 
-                // Light colour.
-                GL.VertexAttribPointer(2, 4, VertexAttribPointerType.Float, false, sizeof(LightVertex), 4 * sizeof(float));
+                // Light world position.
+                GL.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, sizeof(LightVertex), 6 * sizeof(float));
                 GL.EnableVertexAttribArray(2);
 
-                // Light world position.
-                GL.VertexAttribPointer(3, 2, VertexAttribPointerType.Float, false, sizeof(LightVertex), 8 * sizeof(float));
+                // Light properties.
+                GL.VertexAttribPointer(3, 4, VertexAttribPointerType.Float, false, sizeof(LightVertex), 8 * sizeof(float));
                 GL.EnableVertexAttribArray(3);
 
-                // Light properties.
-                GL.VertexAttribPointer(4, 4, VertexAttribPointerType.Float, false, sizeof(LightVertex), 10 * sizeof(float));
+                // Light angle
+                GL.VertexAttribPointer(4, 1, VertexAttribPointerType.Float, false, sizeof(LightVertex), 12 * sizeof(float));
                 GL.EnableVertexAttribArray(4);
 
-                // Light angle
-                GL.VertexAttribPointer(5, 1, VertexAttribPointerType.Float, false, sizeof(LightVertex), 14 * sizeof(float));
-                GL.EnableVertexAttribArray(5);
-
-                DebugTools.AssertEqual(sizeof(LightVertex), 15*sizeof(float));
+                DebugTools.AssertEqual(sizeof(LightVertex), 13*sizeof(float));
                 DebugTools.AssertEqual(sizeof(LightProperties), 11*sizeof(float));
 
                 CheckGlError();
@@ -136,7 +130,6 @@ namespace Robust.Client.Graphics.Clyde
                 _lightEbo = new GLBuffer(this,
                     BufferTarget.ElementArrayBuffer,
                     BufferUsageHint.DynamicDraw,
-                    sizeof(ushort) * _lightIndexData.Length,
                     nameof(_lightEbo));
 
                 CheckGlError();
@@ -256,26 +249,18 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             var lightVert = ReadEmbeddedShader("light.vert");
-            var lightSoftFrag = ReadEmbeddedShader("light-soft.frag");
-            var lightHardFrag = ReadEmbeddedShader("light-hard.frag");
-            var lightSharedFrag = ReadEmbeddedShader("light-shared.frag");
-
-            lightSoftFrag = lightSharedFrag.Replace("// [CreateOcclusion]", lightSoftFrag);
-            lightHardFrag = lightSharedFrag.Replace("// [CreateOcclusion]", lightHardFrag);
+            var lightFrag = ReadEmbeddedShader("light.frag");
 
             (string, uint)[] lightAttribLocations =
             {
-                ("tCoord", 0),
-                ("tCoord2", 1),
-                ("lightColor", 2),
-                ("lightPos", 3),
-                ("lightData", 4),
-                ("lightAngle", 5),
+                ("aMaskUV", 0),
+                ("aLightColor", 1),
+                ("aLightPos", 2),
+                ("aLightData", 3),
+                ("aLightAngle", 4),
             };
 
-            _softLightProgram = _compileProgram(lightVert, lightSoftFrag, lightAttribLocations, "Soft Light Program");
-            _hardLightProgram = _compileProgram(lightVert, lightHardFrag, lightAttribLocations, "Hard Light Program");
-
+            _lightProgram = _compileProgram(lightVert, lightFrag, lightAttribLocations, "Light Program");
             _fovShaderHandle = LoadShaderHandle("/Shaders/Internal/fov.swsl");
             _fovLightShaderHandle = LoadShaderHandle("/Shaders/Internal/fov-lighting.swsl");
             _wallBleedBlurShaderHandle = LoadShaderHandle("/Shaders/Internal/wall-bleed-blur.swsl");
@@ -349,15 +334,14 @@ namespace Robust.Client.Graphics.Clyde
 
             ApplyLightingFovToBuffer(viewport, eye);
 
-            var lightShader = _enableSoftShadows ? _softLightProgram : _hardLightProgram;
-            lightShader.Use();
+            _lightProgram.Use();
 
-            SetupGlobalUniformsImmediate(lightShader, ShadowTexture);
+            SetupGlobalUniformsImmediate(_lightProgram, ShadowTexture);
 
             SetTexture(TextureUnit.Texture0, _lightMaskTexture);
-            lightShader.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
-            SetTexture(TextureUnit.Texture1, ShadowTexture);
-            lightShader.SetUniformTextureMaybe("shadowMap", TextureUnit.Texture1);
+            _lightProgram.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
+            SetTexture(TextureUnit.Texture1, _shadowmapAtlas.Texture);
+            _lightProgram.SetUniformTexture("ShadowMap", TextureUnit.Texture1);
 
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.One);
             CheckGlError();
@@ -367,25 +351,54 @@ namespace Robust.Client.Graphics.Clyde
             GL.StencilOp(TKStencilOp.Keep, TKStencilOp.Keep, TKStencilOp.Keep);
             CheckGlError();
 
-            using (DebugGroup("Draw Lights"))
-            using (_prof.Group("Draw Lights"))
+            using (DebugGroup("Draw Shadowcasting Lights"))
+            using (_prof.Group("Draw Shadowcasting Lights"))
             {
+                _lightProgram.SetUniform("CastShadows", 1f);
                 var idxCount = GetQuadBatchIndexCount();
                 for (var i = 0; i < _lightCount; i++)
                 {
                     ref var light = ref _lightsToRenderList[i];
+                    if (!light.CastShadows) // TODO LIGHTING have two separate arrays
+                        continue;
+
                     if (_lightVertexIndex + 4 >= _lightVertexData.Length || _lightIndexIndex + idxCount > _lightIndexData.Length)
                         FlushLights();
 
                     // TODO LIGHTING
-                    // light.Properties is a flat uniform. So only the initiating vertex needs it.
-                    // This is complicated by the has-primitive-restart checks, but maybe its faster if we just don't bother to set light.properties
-                    // for each vertex. Also, we could just cache a LightComponent.LightVertex[4], update the properties, and copy it across into the array here,
-                    // instead of setting 4 different indices. I.e., just populate _lightVertexData when initially iterating over light components.
-                    _lightVertexData[_lightVertexIndex + 0] = new LightVertex(light.Mask.BottomLeft, new Vector2(0,0), light.Properties);
-                    _lightVertexData[_lightVertexIndex + 1] = new LightVertex(light.Mask.BottomRight, new Vector2(1,0), light.Properties);
-                    _lightVertexData[_lightVertexIndex + 2] = new LightVertex(light.Mask.TopRight, new Vector2(1,1), light.Properties);
-                    _lightVertexData[_lightVertexIndex + 3] = new LightVertex(light.Mask.TopLeft, new Vector2(0,1), light.Properties);
+                    // Make setting this faster / copy span?
+                    _lightVertexData[_lightVertexIndex + 0] = new LightVertex(light.Mask.BottomLeft, light.Properties);
+                    _lightVertexData[_lightVertexIndex + 1] = new LightVertex(light.Mask.BottomRight, light.Properties);
+                    _lightVertexData[_lightVertexIndex + 2] = new LightVertex(light.Mask.TopRight, light.Properties);
+                    _lightVertexData[_lightVertexIndex + 3] = new LightVertex(light.Mask.TopLeft, light.Properties);
+                    QuadBatchIndexWrite(_lightIndexData, ref _lightIndexIndex, (ushort) _lightVertexIndex);
+                    _lightVertexIndex += 4;
+                }
+
+                FlushLights();
+            }
+
+            using (DebugGroup("Draw Lights"))
+            using (_prof.Group("Draw Lights"))
+            {
+                _lightProgram.SetUniform("CastShadows", -1f);
+                var idxCount = GetQuadBatchIndexCount();
+                for (var i = 0; i < _lightCount; i++)
+                {
+                    ref var light = ref _lightsToRenderList[i];
+                    if (light.CastShadows)
+                        continue;
+                    if (_lightVertexIndex + 4 >= _lightVertexData.Length || _lightIndexIndex + idxCount > _lightIndexData.Length)
+                        FlushLights();
+
+                    // TODO LIGHTING
+                    // Make setting this faster / copy span?
+                    _lightVertexData[_lightVertexIndex + 0] = new LightVertex(light.Mask.BottomLeft, light.Properties);
+                    _lightVertexData[_lightVertexIndex + 1] = new LightVertex(light.Mask.BottomRight, light.Properties);
+                    _lightVertexData[_lightVertexIndex + 2] = new LightVertex(light.Mask.TopRight, light.Properties);
+                    _lightVertexData[_lightVertexIndex + 3] = new LightVertex(light.Mask.TopLeft, light.Properties);
+
+                    // TODO LIGHTING CACHE _lightIndexData
                     QuadBatchIndexWrite(_lightIndexData, ref _lightIndexIndex, (ushort) _lightVertexIndex);
                     _lightVertexIndex += 4;
                 }
@@ -425,8 +438,6 @@ namespace Robust.Client.Graphics.Clyde
                 return;
 
             BindVertexArray(_lightVao.Handle);
-            CheckGlError();
-
             _lightVbo.Reallocate(new Span<LightVertex>(_lightVertexData, 0, _lightVertexIndex));
             _lightEbo.Reallocate(new Span<ushort>(_lightIndexData, 0, _lightIndexIndex));
 
@@ -920,8 +931,8 @@ namespace Robust.Client.Graphics.Clyde
                 DeleteRenderTexture(_shadowRenderTarget.Handle);
 
             // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
-            if (_lightAtlasTarget != null)
-                DeleteRenderTexture(_lightAtlasTarget.Handle);
+            if (_shadowmapAtlas != null)
+                DeleteRenderTexture(_shadowmapAtlas.Handle);
 
             // Shadow FBO.
             _shadowRenderTarget = CreateRenderTarget((ShadowMapSize, _maxShadowcastingLights),
@@ -930,7 +941,7 @@ namespace Robust.Client.Graphics.Clyde
                 new TextureSampleParameters { WrapMode = TextureWrapMode.Repeat, Filter = true },
                 nameof(_shadowRenderTarget));
 
-            _lightAtlasTarget = CreateRenderTarget((LightAtlasSize, LightAtlasSize),
+            _shadowmapAtlas = CreateRenderTarget((LightAtlasSize, LightAtlasSize),
                 new RenderTargetFormatParameters(RenderTargetColorFormat.R16),
                 new TextureSampleParameters { Filter = true },
                 nameof(_shadowRenderTarget));

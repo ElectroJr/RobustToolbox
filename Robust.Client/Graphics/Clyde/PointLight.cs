@@ -16,10 +16,9 @@ struct PointLight(LightProperties properties, float distance, bool cast, Box2 ma
 /// Struct containing light rendering vertex data
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct LightVertex(Vector2 tex, Vector2 tex2, LightProperties properties)
+public readonly struct LightVertex(Vector2 maskUV, LightProperties properties)
 {
-    public readonly Vector2 Tex = tex; // UV Coordinates in the texture atlas
-    public readonly Vector2 Tex2 = tex2; // UV for the sub-texture
+    public readonly Vector2 MaskUV = maskUV;
     public readonly LightProperties Properties = properties;
 }
 

@@ -285,7 +285,7 @@ internal partial class Clyde
         _shadowProgram.Use();
         SetupGlobalUniformsImmediate(_shadowProgram, null);
 
-        var target = RtToLoaded(_lightAtlasTarget);
+        var target = RtToLoaded(_shadowmapAtlas);
         BindRenderTargetImmediate(target);
         CheckGlError();
 

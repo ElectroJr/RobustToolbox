@@ -1,40 +1,65 @@
-/*layout (location = 0)*/ attribute vec2 tCoord;
-/*layout (location = 1)*/ attribute vec2 tCoord2;
-/*layout (location = 2)*/ attribute vec4 lightColor;
-/*layout (location = 3)*/ attribute vec2 lightPos;
-/*layout (location = 4)*/ attribute vec4 lightData;
-/*layout (location = 5)*/ attribute float lightAngle;
+/*layout (location = 0)*/ attribute vec2 aMaskUV;
+/*layout (location = 1)*/ attribute vec4 aLightColor;
+/*layout (location = 2)*/ attribute vec2 aLightPos;
+/*layout (location = 3)*/ attribute vec4 aLightData;
+/*layout (location = 4)*/ attribute float aLightAngle;
 
-// TODO LIGHTING AFAIK this can be inferred from UV & Range in the fragment shader, is doing that better?
+const int MAX_LIGHTS = 12;
+const highp float SHADOW_SIZE = 1.0/12.0;
+
 // Distance from the current fragment to the center of the light source, in world coordinates
 varying highp vec2 DeltaWorldPos;
-varying highp vec2 UV;
+varying highp vec2 MaskUV;
+varying highp vec2 ShadowUV;
 
 flat varying highp vec4 LightColor;
 flat varying highp vec4 LightData; // (Range, Power, Softness, Index)
 
 void main()
 {
-    // Input position aPos should just be the corners of a square with side length 2 centered at 0,0.
-
-    // TODO LIGHTING is it better to do these transformation on the CPU?
-    // I'm guessing the answer is no, but should probably check.
-    float s = sin(lightAngle);
-    float c = cos(lightAngle);
+    float s = sin(aLightAngle);
+    float c = cos(aLightAngle);
     mat2 rotate = mat2(c, s, -s, c);
 
-    // scale UV coordinates up to a 2*2 square centered at (0,0)
-    highp vec2 pos = tCoord2 * 2 - vec2(1);
+    // TODO LIGHTING
+    // if the batch breaks, this needs an offset.
+    int lightId = gl_VertexID/4;
 
-    // Rotate the square, scale it by the lights radius,
-    pos = (rotate * pos) * lightData.x;
+    int row = lightId/MAX_LIGHTS;
+    int column = lightId - row * MAX_LIGHTS;
 
+    // UV coordiantes for the corner of this light's shadowmap in the shadowmap atlas.
+    highp vec2 shadowOrigin = vec2(column * SHADOW_SIZE, row * SHADOW_SIZE);
+
+    highp vec2 pos;
+    switch (gl_VertexID - lightId * 4)
+    {
+        case 0:
+            pos = vec2(-1.0, -1.0);
+            break;
+        case 1:
+            pos = vec2(+1.0, -1.0);
+            break;
+        case 2:
+            pos = vec2(+1.0, +1.0);
+            break;
+        default:
+            pos = vec2(-1.0, +1.0);
+    }
+
+    // TODO LIGHTING
+    // Fix bilinear interpolation bleed
+    // probably: make shadowUV centered ON THE PIXELS
+    // Requires shifting it in or out by 0.5*pixel_size;
+    // in the previous switch block.
+    ShadowUV = shadowOrigin + SHADOW_SIZE * (pos + 1.0)/2.0;
+    pos = (rotate * pos) * aLightData.x;
     DeltaWorldPos = pos;
-    UV = tCoord;
+    MaskUV = aMaskUV;
 
-    LightColor = zFromSrgb(lightColor);
-    LightData = lightData;
+    LightColor = zFromSrgb(aLightColor);
+    LightData = aLightData;
 
-    highp vec3 transformed = projectionMatrix * viewMatrix * vec3(pos + lightPos, 1.0);
+    highp vec3 transformed = projectionMatrix * viewMatrix * vec3(pos + aLightPos, 1.0);
     gl_Position = vec4(transformed.xy, 0.0, 1.0);
 }
