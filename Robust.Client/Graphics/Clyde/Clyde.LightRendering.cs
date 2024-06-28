@@ -931,7 +931,7 @@ namespace Robust.Client.Graphics.Clyde
                 nameof(_shadowRenderTarget));
 
             _lightAtlasTarget = CreateRenderTarget((LightAtlasSize, LightAtlasSize),
-                new RenderTargetFormatParameters(RenderTargetColorFormat.Rgba8),
+                new RenderTargetFormatParameters(RenderTargetColorFormat.R16),
                 new TextureSampleParameters { Filter = true },
                 nameof(_shadowRenderTarget));
 
