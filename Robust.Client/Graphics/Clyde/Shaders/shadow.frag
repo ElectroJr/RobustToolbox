@@ -1,6 +1,6 @@
-varying highp vec2 UV;
-
 void main()
 {
-    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    // Blend-mode is subtraction.
+    // This fragment is fully occluded, subtract evetything.
+    gl_FragColor = vec4(1.0);
 }

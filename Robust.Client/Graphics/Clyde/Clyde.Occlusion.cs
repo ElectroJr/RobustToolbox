@@ -289,10 +289,15 @@ internal partial class Clyde
         BindRenderTargetImmediate(target);
         CheckGlError();
 
-        // TODO LIGHTING SOFT SHADOW
-        // Need to enable blending, but also need to ensure that two adjacent lines completely occlude.
-        // I.e, their penumbras must add up to no light.
-        GL.Disable(EnableCap.Blend);
+
+        // Occluders will (sometimes partially) block light.
+        // This means each occluder will only ever reduce the visibility of a light source is visible.
+        // However this isn't ideal, because we might end up over-subtracting.
+        // I.e., if two occluders sit at the some point, and the light is half-visible in each penumbra, this will
+        // result in the light not being visible at all.
+        GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
+        CheckGlError();
+        GL.BlendEquation(BlendEquationMode.FuncReverseSubtract);
         CheckGlError();
 
         GL.Viewport(0, 0, target.Size.X, target.Size.Y);
@@ -323,8 +328,9 @@ internal partial class Clyde
             _debugStats.LastGLDrawCalls += 1;
         }
 
-        // TODO LIGHTING SOFT SHADOW BLENDING
-        GL.Enable(EnableCap.Blend);
+        GL.BlendEquation(BlendEquationMode.FuncAdd);
+        CheckGlError();
+        ResetBlendFunc();
         CheckGlError();
     }
 

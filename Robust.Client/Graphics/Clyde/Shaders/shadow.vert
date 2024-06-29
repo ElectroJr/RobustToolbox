@@ -57,34 +57,38 @@ void main()
 
     // If the line is going clockwise, we clip it
     float depth = sign < 0.0 ? 2.0 : 0.0;
-    highp float r;
     highp float angle;
 
     switch (pointId)
     {
+        // is the light flikering caused by errors in cos(angle - t0)??
+        // try just clamping that to some minimum value.
+        // then see if that fixes it
         case 0:
         // This is just pointA, but with the DEPTH_LEFTRIGHT_EXPAND_BIAS applied to the angle
         angle = angleA;
-        r = r0/cos(angle - t0);
         break;
 
         case 1:
         // The is the "shadow" of point A, cast out to some point beyond the box.
         angle = angleA;
-        r = (r0 + 2.0)/cos(angle - t0);
+        r0 += 2.0;
         break;
 
         case 2:
         // The is the "shadow" of point B, cast out to some point beyond the box.
         angle = angleB;
-        r = (r0 + 2.0)/cos(angle - t0);
+        r0 += 2.0;
         break;
 
         default:
         // This is just pointB, but with the DEPTH_LEFTRIGHT_EXPAND_BIAS applied to the angle
         angle = angleB;
-        r = r0/cos(angle - t0);
     }
+
+    // This is the fomula for a the line in polar coordinates.
+    // We clamp the denominator, as it should never be negative, but due to floating point errors it sometimes is.
+    highp float r = r0/clamp(cos(angle - t0),1e-5, 1.0);
 
     highp vec2 point = r * vec2(cos(angle), sin(angle));;
     gl_Position = vec4(point, depth, 1.0);
