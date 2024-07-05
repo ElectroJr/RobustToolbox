@@ -23,6 +23,27 @@ void main()
     vec2 pointA = (aPos.xy - lightPos)/lightRange;
     vec2 pointB = (aPos.zw - lightPos)/lightRange;
 
+    float angleA = atan(pointA.y, pointA.x);
+    float angleB = atan(pointB.y, pointB.x);
+    float delta = angleB - angleA;
+
+    // Check if the line clips over the [Pi, -Pi] range.
+    if (delta >= PI)
+    {
+        angleB -= PI * 2.0;
+        delta = angleB - angleA;
+    }
+    else if (delta <= -PI)
+    {
+        angleB += PI * 2.0;
+        delta = angleB - angleA;
+    }
+
+    // If the occluder line is going clockwise, we clip it by moving it out of the view box
+    // TODO LIGHTING
+    // Why does not clipping anything occlude the whole screen????
+    float depth = delta < -0.1 ? 2.0 : 0.0;
+
     // For drawing the penumbra, we offset the origin / light position when we try to find the "shadows" of points A & B.
     // The actual shape of the penumbra is not fully accurate. instead of treating the light as a ball or some other shape,
     // each line occluder assumes that the light is a parallel line located at the origin with a length equal to the light's softness.
@@ -55,11 +76,9 @@ void main()
 
     pointA -= offset;
     pointB -= offset;
-
-    float angleA = atan(pointA.y, pointA.x);
-    float angleB = atan(pointB.y, pointB.x);
-
-    float delta = angleB - angleA;
+    angleA = atan(pointA.y, pointA.x);
+    angleB = atan(pointB.y, pointB.x);
+    delta = angleB - angleA;
 
     // Check if the line clips over the [Pi, -Pi] range.
     if (delta >= PI)
@@ -73,10 +92,8 @@ void main()
         delta = angleB - angleA;
     }
 
-    float sign = sign(delta);
-
     // expand angles
-    float lrSignBias = sign * DEPTH_LEFTRIGHT_EXPAND_BIAS;
+    float lrSignBias = sign(delta) * DEPTH_LEFTRIGHT_EXPAND_BIAS;
     angleA -= lrSignBias;
     angleB += lrSignBias;
 
@@ -140,7 +157,5 @@ void main()
     highp vec2 point = r * vec2(cos(angle), sin(angle));;
     point += offset;
 
-    // If the occluder line is going clockwise, we clip it by moving it out of the view box
-    float depth = sign < 0.0 ? 2.0 : 0.0;
     gl_Position = vec4(point, depth, 1.0);
 }

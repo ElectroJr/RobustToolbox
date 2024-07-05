@@ -494,7 +494,7 @@ namespace Robust.Client.Graphics.Clyde
             {
                 index = ImageIndexToV(shadowCount, state.textureHeight);
                 if (shadowCount < state.instances.Length)
-                    state.instances[shadowCount] = new(lightPos - state.eyePos, index, 1f, light.Radius);
+                    state.instances[shadowCount] = new(lightPos - state.eyePos, index, 1f, light.Radius, light.Softness);
 
                 shadowCount++;
             }
@@ -576,7 +576,7 @@ namespace Robust.Client.Graphics.Clyde
                 DebugTools.Assert(light.CastShadows);
                 var index = ImageIndexToV(_shadowCastingLightCount, ShadowTexture.Height);
                 light.Properties.Index = index;
-                _lightInstancesBuffer[_shadowCastingLightCount] = new(light.Properties.LightPos - eye.Position.Position, index, 1f, light.Properties.Range);
+                _lightInstancesBuffer[_shadowCastingLightCount] = new(light.Properties.LightPos - eye.Position.Position, index, 1f, light.Properties.Range, light.Properties.Softness);
                 _shadowCastingLightCount++;
             }
 

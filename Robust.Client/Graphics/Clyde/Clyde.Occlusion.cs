@@ -169,8 +169,8 @@ internal partial class Clyde
             // For details about the front-face culling, see comments in UpdateOcclusionGeometry()
             Span<DepthDrawInstance> instances =
                 [
-                    new(default, ImageIndexToV(0,2), 1, 123123),
-                    new(default, ImageIndexToV(1,2), -1, 123123)
+                    new(default, ImageIndexToV(0,2), 1, 123123, 123123),
+                    new(default, ImageIndexToV(1,2), -1, 123123, 123123)
                 ];
             _fovInstanceVbo.Reallocate(instances);
 
@@ -316,7 +316,7 @@ internal partial class Clyde
         {
             ref var light = ref _lightInstancesBuffer[i];
             // TODO LIGHTING per-light softness
-            _shadowProgram.SetUniform("LightData", new Vector4(light.Origin.X, light.Origin.Y, light.Range, 0.1f));
+            _shadowProgram.SetUniform("LightData", new Vector4(light.Origin.X, light.Origin.Y, light.Range, light.Softness));
 
             // Light quads are drawn to the light atlas left to right, top to bottom
             var row = i/12;
@@ -770,7 +770,7 @@ internal partial class Clyde
     }
 
     [StructLayout((LayoutKind.Sequential))]
-    public readonly struct DepthDrawInstance(Vector2 origin, float index, float cullClockwise, float range)
+    public readonly struct DepthDrawInstance(Vector2 origin, float index, float cullClockwise, float range, float softness)
     {
         /// <summary>
         /// Location of the light (or eye) relative to the eye that was used to construct the geometry in
@@ -794,5 +794,6 @@ internal partial class Clyde
         public readonly float CullClockwise = cullClockwise;
 
         public readonly float Range = range;
+        public readonly float Softness = softness;
     }
 }
