@@ -18,6 +18,9 @@ void main()
     highp float dist = length(DeltaWorldPos);
     highp float occlusion = CastShadows < 0.0 ? 1.0 : texture2D(ShadowMap, ShadowUV).r;
 
+    // Non-linear occlusion scalling makes it easier to see how multiple penumbras interact
+    // occlusion = 1.0 - (1.0-occlusion)*(1.0-occlusion);
+
     if (occlusion == 0.0)
         discard;
 
