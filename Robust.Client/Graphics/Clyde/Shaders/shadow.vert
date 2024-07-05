@@ -1,7 +1,7 @@
 // Coordinates of the two points A & B that make up the line being drawn.
 attribute highp vec4 aPos;
 
-uniform highp vec3 LightData; // (lightPos.x, lightPos.y, lightRange);
+uniform highp vec4 LightData; // (x position, y position, range, softness);
 
 // expands wall edges a little to prevent holes
 const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
@@ -10,15 +10,52 @@ const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
 const highp float MAX_LIGHTS = 12.0;
 const highp float SHADOW_SIZE = 2.0/MAX_LIGHTS;
 
+varying highp vec2 occlusion;
+
 void main()
 {
-    int pointId = gl_VertexID - (gl_VertexID / 4) * 4;
-
     highp vec2 lightPos = LightData.xy;
     highp float lightRange = LightData.z;
+    highp float lightSoftness = LightData.w;
 
+    // Each line occluder is defined using two points, A & B.
+    // We scale all distanes such that 1.0 = max light range.
     vec2 pointA = (aPos.xy - lightPos)/lightRange;
     vec2 pointB = (aPos.zw - lightPos)/lightRange;
+
+    // For drawing the penumbra, we offset the origin / light position when we try to find the "shadows" of points A & B.
+    // The actual shape of the penumbra is not fully accurate. instead of treating the light as a ball or some other shape,
+    // each line occluder assumes that the light is a parallel line located at the origin with a length equal to the light's softness.
+    // However, we limit the "length" of the light source to be at most the length of the occluder. This is mainly just
+    // a simplification that leads to decent soft shadows, while avoiding ever having to deal with an antumbra.
+    highp float occluderLength = length(pointB - pointA);
+    highp float lightLength = min(lightSoftness/lightRange, occluderLength);
+    highp vec2 offset = vec2(0.0);
+
+    // When drawing the shadow for each line occluder, which part of the shape should this vertex refer to?
+    // 0: The is the "shadow" of point A that makes up the outer part of the penumbra (i.e., barely occluded).
+    // 1: This is just point A
+    // 2: The is the "shadow" of point A that makes up the inner part of the penumbra (i.e., touching the umbra).
+    // 3: This is just point B
+    // 4: The is the "shadow" of point B that makes up the inner part of the penumbra (i.e., touching the umbra).
+    // 5: The is the "shadow" of point B that makes up the outer part of the penumbra (i.e., barely occluded).
+    int pointId = gl_VertexID - (gl_VertexID / 6) * 6;
+    switch (pointId)
+    {
+        case 0:
+        case 4:
+        offset = (pointB - pointA)/occluderLength * 0.5 * lightLength;
+        break;
+
+        case 2:
+        case 5:
+        offset = (pointA - pointB)/occluderLength * 0.5 * lightLength;
+        break;
+    }
+
+    pointA -= offset;
+    pointB -= offset;
+
     float angleA = atan(pointA.y, pointA.x);
     float angleB = atan(pointB.y, pointB.x);
 
@@ -54,42 +91,56 @@ void main()
     // Line defined via r = r0/cos(theta-t0)
     highp float r0 = line.z/sqrt(line.x*line.x + line.y*line.y);
     highp float t0 = atan(line.y, line.x);
-
-    // If the line is going clockwise, we clip it
-    float depth = sign < 0.0 ? 2.0 : 0.0;
     highp float angle;
 
+    // For each "shadow" of point a or B, we push the A->B line to lie entirely outside of the quad that will get drawn
+    // for this. We do this by just increasing r0, the point of closest approach in the equation for the line in polar
+    // coordiantes. Given that coordiantes are normalized to the light's range, we just add 2.0 to (though sqrt(2) would
+    // suffice).
     switch (pointId)
     {
-        // is the light flikering caused by errors in cos(angle - t0)??
-        // try just clamping that to some minimum value.
-        // then see if that fixes it
         case 0:
-        // This is just pointA, but with the DEPTH_LEFTRIGHT_EXPAND_BIAS applied to the angle
         angle = angleA;
+        r0 += 2.0 + length(offset);
+        occlusion = vec2(1.0, 1.0);
         break;
 
         case 1:
-        // The is the "shadow" of point A, cast out to some point beyond the box.
         angle = angleA;
-        r0 += 2.0;
+        occlusion = vec2(0.0, 0.0);
         break;
 
         case 2:
-        // The is the "shadow" of point B, cast out to some point beyond the box.
+        angle = angleA;
+        r0 += 2.0 + length(offset);
+        occlusion = vec2(0.0, 1.0);
+        break;
+
+        case 3:
         angle = angleB;
-        r0 += 2.0;
+        occlusion = vec2(0.0, 0.0);
+        break;
+
+        case 4:
+        angle = angleB;
+        r0 += 2.0 + length(offset);
+        occlusion = vec2(0.0, 1.0);
         break;
 
         default:
-        // This is just pointB, but with the DEPTH_LEFTRIGHT_EXPAND_BIAS applied to the angle
         angle = angleB;
+        r0 += 2.0 + length(offset);
+        occlusion = vec2(1.0, 1.0);
+        break;
     }
-
     // This is the fomula for a the line in polar coordinates.
     // We clamp the denominator, as it should never be negative, but due to floating point errors it sometimes is.
     highp float r = r0/clamp(cos(angle - t0),1e-5, 1.0);
 
     highp vec2 point = r * vec2(cos(angle), sin(angle));;
+    point += offset;
+
+    // If the occluder line is going clockwise, we clip it by moving it out of the view box
+    float depth = sign < 0.0 ? 2.0 : 0.0;
     gl_Position = vec4(point, depth, 1.0);
 }

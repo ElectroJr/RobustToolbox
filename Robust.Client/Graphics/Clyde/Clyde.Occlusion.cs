@@ -13,7 +13,7 @@ using Robust.Shared.Graphics;
 using Robust.Shared.Utility;
 using SysVec4 = System.Numerics.Vector4;
 using static Robust.Shared.GameObjects.OccluderComponent;
-using Vector3 = Robust.Shared.Maths.Vector3;
+using Vector4 = Robust.Shared.Maths.Vector4;
 
 namespace Robust.Client.Graphics.Clyde;
 // This file handles everything about light rendering.
@@ -315,7 +315,8 @@ internal partial class Clyde
         for (var i = 0; i < _shadowCastingLightCount; i++)
         {
             ref var light = ref _lightInstancesBuffer[i];
-            _shadowProgram.SetUniform("LightData", new Vector3(light.Origin.X, light.Origin.Y, light.Range));
+            // TODO LIGHTING per-light softness
+            _shadowProgram.SetUniform("LightData", new Vector4(light.Origin.X, light.Origin.Y, light.Range, 0.1f));
 
             // Light quads are drawn to the light atlas left to right, top to bottom
             var row = i/12;
@@ -323,7 +324,7 @@ internal partial class Clyde
             GL.Viewport(column * LightShadowSize, row * LightShadowSize, LightShadowSize, LightShadowSize);
             CheckGlError();
 
-            GL.DrawElements(GetQuadGLPrimitiveType(), _shadowIndexCount, DrawElementsType.UnsignedShort, 0);
+            GL.DrawElements(_hasGLPrimitiveRestart ? PrimitiveType.TriangleStrip : PrimitiveType.Triangles, _shadowIndexCount, DrawElementsType.UnsignedShort, 0);
             CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
         }
@@ -639,7 +640,9 @@ internal partial class Clyde
         _shadowVertexData[_shadowVertexCount + 1] = vec;
         _shadowVertexData[_shadowVertexCount + 2] = vec;
         _shadowVertexData[_shadowVertexCount + 3] = vec;
-        _shadowVertexCount += 4;
+        _shadowVertexData[_shadowVertexCount + 4] = vec;
+        _shadowVertexData[_shadowVertexCount + 5] = vec;
+        _shadowVertexCount += 6;
         _shadowIndexCount += _shadowIndexSize;
     }
 
@@ -692,12 +695,14 @@ internal partial class Clyde
         // For now: assume that if there is no geometry shader, then there are no primitive restarts either.
         // The line of each occluder gets turned into a
 
-        // Each line fo the occluder becomes a shadow pentagon.
         var maxLines = _maxOccluders * 4;
-        Array.Resize(ref _shadowVertexData, maxLines * 5);
 
-        // How many indices do we need to specify each pentagon?
-        _shadowIndexSize = _hasGLPrimitiveRestart ? 5 : 6;
+        // Each line occluder casts a shadow consisting of 6 vertices
+        // (2 triangles for the penumbra, and 2 triangles / 1 quad for the umbra)
+        Array.Resize(ref _shadowVertexData, maxLines * 6);
+
+        // How many indices do we need to get open gl to draw the 4 triangle for the umbra/penumbra?
+        _shadowIndexSize = _hasGLPrimitiveRestart ? 7 : 12;
 
         // Instead of updating occluder indices every frame, we just update them once. The indices are always the
         // same anyways, and _maxOccluders ensures that the buffers don't need to be ridiculously long.
@@ -737,6 +742,8 @@ internal partial class Clyde
                 shadowIndexData[index++] = (ushort)(vertex + 1);
                 shadowIndexData[index++] = (ushort)(vertex + 2);
                 shadowIndexData[index++] = (ushort)(vertex + 3);
+                shadowIndexData[index++] = (ushort)(vertex + 4);
+                shadowIndexData[index++] = (ushort)(vertex + 5);
                 shadowIndexData[index++] = PrimitiveRestartIndex;
             }
             else
@@ -744,12 +751,18 @@ internal partial class Clyde
                 shadowIndexData[index++] = (ushort)(vertex + 0);
                 shadowIndexData[index++] = (ushort)(vertex + 1);
                 shadowIndexData[index++] = (ushort)(vertex + 2);
-                shadowIndexData[index++] = (ushort)(vertex + 0);
+                shadowIndexData[index++] = (ushort)(vertex + 1);
                 shadowIndexData[index++] = (ushort)(vertex + 2);
                 shadowIndexData[index++] = (ushort)(vertex + 3);
+                shadowIndexData[index++] = (ushort)(vertex + 2);
+                shadowIndexData[index++] = (ushort)(vertex + 3);
+                shadowIndexData[index++] = (ushort)(vertex + 4);
+                shadowIndexData[index++] = (ushort)(vertex + 3);
+                shadowIndexData[index++] = (ushort)(vertex + 4);
+                shadowIndexData[index++] = (ushort)(vertex + 5);
             }
 
-            vertex += 4;
+            vertex += 6;
         }
 
         _occlusionMaskEbo.Reallocate(occlusionMaskIndices.AsSpan());
