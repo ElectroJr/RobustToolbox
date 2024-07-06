@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
 using OpenToolkit.Graphics.OpenGL4;
@@ -248,24 +249,59 @@ namespace Robust.Client.Graphics.Clyde
                 return default;
             }
 
-            var lightVert = ReadEmbeddedShader("light.vert");
-            var lightFrag = ReadEmbeddedShader("light.frag");
-
-            (string, uint)[] lightAttribLocations =
-            {
-                ("aMaskUV", 0),
-                ("aLightColor", 1),
-                ("aLightPos", 2),
-                ("aLightData", 3),
-                ("aLightAngle", 4),
-            };
-
-            _lightProgram = _compileProgram(lightVert, lightFrag, lightAttribLocations, "Light Program");
             _fovShaderHandle = LoadShaderHandle("/Shaders/Internal/fov.swsl");
             _fovLightShaderHandle = LoadShaderHandle("/Shaders/Internal/fov-lighting.swsl");
             _wallBleedBlurShaderHandle = LoadShaderHandle("/Shaders/Internal/wall-bleed-blur.swsl");
             _lightBlurShaderHandle = LoadShaderHandle("/Shaders/Internal/light-blur.swsl");
             _mergeWallLayerShaderHandle = LoadShaderHandle("/Shaders/Internal/wall-merge.swsl");
+            ReloadInternalShaders();
+        }
+
+        [SuppressMessage("ReSharper", "ConditionalAccessQualifierIsNonNullableAccordingToAPIContract")]
+        public void ReloadInternalShaders()
+        {
+            var program = _compileProgram(
+                _resManager.ContentFileReadAllText("/Shaders/lighting/shadow-depth.vert"),
+                _resManager.ContentFileReadAllText("/Shaders/lighting/shadow-depth.frag"),
+                [
+                    ("aPos", 0),
+                    ("Origin", 1),
+                    ("Index", 2),
+                    ("CullClockwise", 3)
+                ],
+                "Occlusion Depth Program");
+
+            _depthProgram?.Delete();
+            _depthProgram = program;
+
+            program = _compileProgram(
+                _resManager.ContentFileReadAllText("/Shaders/lighting/shadow.vert"),
+                _resManager.ContentFileReadAllText("/Shaders/lighting/shadow.frag"),
+                [
+                    ("aPos", 0),
+                    ("Origin", 1),
+                    ("Range", 1)
+                ],
+                "Occlusion Depth Program");
+
+            _shadowProgram?.Delete();
+            _shadowProgram = program;
+
+
+            program = _compileProgram(
+                _resManager.ContentFileReadAllText("/Shaders/lighting/light.vert"),
+                _resManager.ContentFileReadAllText("/Shaders/lighting/light.frag"),
+                [
+                    ("aMaskUV", 0),
+                    ("aLightColor", 1),
+                    ("aLightPos", 2),
+                    ("aLightData", 3),
+                    ("aLightAngle", 4)
+                ],
+                "Light Program");
+
+            _lightProgram?.Delete();
+            _lightProgram = program;
         }
 
         private void DrawLightsAndFov(Viewport viewport, Box2Rotated worldBounds, Box2 worldAABB, IEye eye)

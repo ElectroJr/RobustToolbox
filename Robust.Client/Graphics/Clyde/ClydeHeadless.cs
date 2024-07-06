@@ -279,6 +279,11 @@ namespace Robust.Client.Graphics.Clyde
             // Nada.
         }
 
+        public void ReloadInternalShaders()
+        {
+            // Nada.
+        }
+
         public void RunOnWindowThread(Action action)
         {
             action();

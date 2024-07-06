@@ -712,6 +712,7 @@ namespace Robust.Client.Console.Commands
         [Dependency] private readonly IResourceCache _cache = default!;
         [Dependency] private readonly IResourceManagerInternal _resManager = default!;
         [Dependency] private readonly ITaskManager _taskManager = default!;
+        [Dependency] private readonly IClydeInternal _clyde = default!;
 
         public override string Command => "rldshader";
 
@@ -867,6 +868,16 @@ namespace Robust.Client.Console.Commands
                 {
                     shell.WriteLine($"Failed to reload shader: {path}");
                 }
+            }
+
+            try
+            {
+                _clyde.ReloadInternalShaders();
+            }
+            catch (Exception e)
+            {
+                shell.WriteError($"Failed to reload internal shaders: {e}");
+                return;
             }
 
             shell.WriteLine("Done.");

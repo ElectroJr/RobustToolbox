@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -7,13 +6,10 @@ using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
 using Robust.Client.ResourceManagement;
 using Robust.Shared;
-using Robust.Shared.Console;
-using Robust.Shared.ContentPack;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Maths;
 using Robust.Shared.Physics;
 using Robust.Shared.Graphics;
-using Robust.Shared.IoC;
 using Robust.Shared.Utility;
 using SysVec4 = System.Numerics.Vector4;
 using static Robust.Shared.GameObjects.OccluderComponent;
@@ -81,25 +77,6 @@ internal partial class Clyde
 
     private unsafe void InitOcclusion()
     {
-        var depthVert = ReadEmbeddedShader("shadow-depth.vert");
-        var depthFrag = ReadEmbeddedShader("shadow-depth.frag");
-
-        (string, uint)[] attribLocations =
-        {
-            ("aPos", 0),
-            ("Origin", 1),
-            ("Index", 2),
-            ("CullClockwise", 3)
-        };
-
-        _depthProgram = _compileProgram(depthVert, depthFrag, attribLocations, "Occlusion Depth Program");
-
-
-
-
-        AAA();
-        IoCManager.Resolve<IConsoleHost>().RegisterCommand("aa",AAA);
-
         var debugShader = _resourceCache.GetResource<ShaderSourceResource>("/Shaders/Internal/depth-debug.swsl");
         _fovDebugShaderInstance = (ClydeShaderInstance)InstanceShader(debugShader);
 
@@ -238,30 +215,6 @@ internal partial class Clyde
         }
 
         _cfg.OnValueChanged(CVars.MaxOccluderCount, MaxOccludersChanged, true);
-    }
-
-    private void AAA(IConsoleShell shell, string argstr, string[] args) => AAA();
-    private void AAA()
-    {
-        var manager = IoCManager.Resolve<IResourceManager>();
-
-        using var fragstream = manager.ContentFileRead("/Shaders/shadow.frag");
-        using var vertstream = manager.ContentFileRead("/Shaders/shadow.vert");
-        using var fragreader = new StreamReader(fragstream, EncodingHelpers.UTF8);
-        using var vertreader = new StreamReader(vertstream, EncodingHelpers.UTF8);
-
-        var shadowVert = vertreader.ReadToEnd();
-        var shadowFrag = fragreader.ReadToEnd();
-
-        (string, uint)[] shadowAttribLocations =
-        {
-            ("aPos", 0),
-            ("Origin", 1),
-            ("Range", 1),
-        };
-
-        _shadowProgram = _compileProgram(shadowVert, shadowFrag, shadowAttribLocations, "Occlusion Depth Program");
-
     }
 
     private void DrawFov(IEye eye)
