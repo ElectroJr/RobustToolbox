@@ -87,6 +87,7 @@ void main()
 
         case 4:
         offset = pointB/length(pointB) * 0.5 * lightLength;
+        offset = vec2(-offset.y, offset.x);
         break;
 
         case 5:
@@ -94,7 +95,6 @@ void main()
         offset = vec2(offset.y, -offset.x);
         break;
     }
-    offset *= 1.0;
 
     pointA -= offset;
     pointB -= offset;
