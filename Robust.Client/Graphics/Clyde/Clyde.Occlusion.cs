@@ -13,6 +13,7 @@ using Robust.Shared.Graphics;
 using Robust.Shared.Utility;
 using SysVec4 = System.Numerics.Vector4;
 using static Robust.Shared.GameObjects.OccluderComponent;
+using Vector3 = Robust.Shared.Maths.Vector3;
 using Vector4 = Robust.Shared.Maths.Vector4;
 
 namespace Robust.Client.Graphics.Clyde;
@@ -144,8 +145,8 @@ internal partial class Clyde
             // For details about the front-face culling, see comments in UpdateOcclusionGeometry()
             Span<DepthDrawInstance> instances =
                 [
-                    new(default, ImageIndexToV(0,2), 1, 123123, 123123),
-                    new(default, ImageIndexToV(1,2), -1, 123123, 123123)
+                    new(default, ImageIndexToV(0,2), 0, 1, 123123, 123123),
+                    new(default, ImageIndexToV(1,2), 0, -1, 123123, 123123)
                 ];
             _fovInstanceVbo.Reallocate(instances);
 
@@ -264,7 +265,6 @@ internal partial class Clyde
         BindRenderTargetImmediate(target);
         CheckGlError();
 
-
         // Occluders will (sometimes partially) block light.
         // This means each occluder will only ever reduce the visibility of a light source is visible.
         // However this isn't ideal, because we might end up over-subtracting.
@@ -290,7 +290,8 @@ internal partial class Clyde
         for (var i = 0; i < _shadowCastingLightCount; i++)
         {
             ref var light = ref _lightInstancesBuffer[i];
-            _shadowProgram.SetUniform("LightData", new Vector4(light.Origin.X, light.Origin.Y, light.Range, light.Softness));
+            _shadowProgram.SetUniform("LightPosition", new Vector3(light.Origin.X, light.Origin.Y, light.Rotation));
+            _shadowProgram.SetUniform("LightData", new Vector2(light.Range, light.Softness));
 
             // Light quads are drawn to the light atlas left to right, top to bottom
             var row = i/12;
@@ -744,7 +745,7 @@ internal partial class Clyde
     }
 
     [StructLayout((LayoutKind.Sequential))]
-    public readonly struct DepthDrawInstance(Vector2 origin, float index, float cullClockwise, float range, float softness)
+    public readonly struct DepthDrawInstance(Vector2 origin, float rotation, float index, float cullClockwise, float range, float softness)
     {
         /// <summary>
         /// Location of the light (or eye) relative to the eye that was used to construct the geometry in
@@ -769,5 +770,7 @@ internal partial class Clyde
 
         public readonly float Range = range;
         public readonly float Softness = softness;
+
+        public readonly float Rotation = rotation;
     }
 }

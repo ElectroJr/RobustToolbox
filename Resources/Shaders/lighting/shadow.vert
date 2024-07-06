@@ -1,7 +1,8 @@
 // Coordinates of the two points A & B that make up the line being drawn.
 attribute highp vec4 aPos;
 
-uniform highp vec4 LightData; // (x position, y position, range, softness);
+uniform highp vec3 LightPosition; // (x position, y position, rotation)
+uniform highp vec2 LightData; // (range, softness)
 
 // expands wall edges a little to prevent holes
 const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
@@ -14,9 +15,10 @@ varying highp vec2 occlusion;
 
 void main()
 {
-    highp vec2 lightPos = LightData.xy;
-    highp float lightRange = LightData.z;
-    highp float lightSoftness = LightData.w;
+    highp vec2 lightPos = LightPosition.xy;
+    highp float lightRot = LightPosition.z;
+    highp float lightRange = LightData.x;
+    highp float lightSoftness = LightData.y;
 
     // Each line occluder is defined using two points, A & B.
     // We scale all distanes such that 1.0 = max light range.
@@ -42,14 +44,17 @@ void main()
     // If the occluder line is going clockwise, we clip it by moving it out of the view box
     // TODO LIGHTING
     // Why does not clipping anything occlude the whole screen????
-    float depth = delta < -0.1 ? 2.0 : 0.0;
+    float depth = delta < -0.0 ? 2.0 : 0.0;
 
     // For drawing the penumbra, we offset the origin / light position when we try to find the "shadows" of points A & B.
     // The actual shape of the penumbra is not fully accurate. instead of treating the light as a ball or some other shape,
     // each line occluder assumes that the light is a parallel line located at the origin with a length equal to the light's softness.
     // However, we limit the "length" of the light source to be at most the length of the occluder. This is mainly just
     // a simplification that leads to decent soft shadows, while avoiding ever having to deal with an antumbra.
+
     highp float occluderLength = length(pointB - pointA);
+    // The above implicitly assumes all sides of an occluder have the same length.
+    // If they don't then the two penumbras of each line won't add up to full occlusion.
     highp float lightLength = min(lightSoftness/lightRange, occluderLength);
     highp vec2 offset = vec2(0.0);
 
@@ -156,6 +161,10 @@ void main()
 
     highp vec2 point = r * vec2(cos(angle), sin(angle));;
     point += offset;
+
+    float s = sin(lightRot);
+    float c = cos(lightRot);
+    point = mat2(c, -s, s, c) * point;
 
     gl_Position = vec4(point, depth, 1.0);
 }
