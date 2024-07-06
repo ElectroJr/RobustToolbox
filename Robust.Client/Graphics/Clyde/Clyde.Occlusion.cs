@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -6,10 +7,13 @@ using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
 using Robust.Client.ResourceManagement;
 using Robust.Shared;
+using Robust.Shared.Console;
+using Robust.Shared.ContentPack;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Maths;
 using Robust.Shared.Physics;
 using Robust.Shared.Graphics;
+using Robust.Shared.IoC;
 using Robust.Shared.Utility;
 using SysVec4 = System.Numerics.Vector4;
 using static Robust.Shared.GameObjects.OccluderComponent;
@@ -90,17 +94,11 @@ internal partial class Clyde
 
         _depthProgram = _compileProgram(depthVert, depthFrag, attribLocations, "Occlusion Depth Program");
 
-        var shadowVert = ReadEmbeddedShader("shadow.vert");
-        var shadowFrag = ReadEmbeddedShader("shadow.frag");
 
-        (string, uint)[] shadowAttribLocations =
-        {
-            ("aPos", 0),
-            ("Origin", 1),
-            ("Range", 1),
-        };
 
-        _shadowProgram = _compileProgram(shadowVert, shadowFrag, shadowAttribLocations, "Occlusion Depth Program");
+
+        AAA();
+        IoCManager.Resolve<IConsoleHost>().RegisterCommand("aa",AAA);
 
         var debugShader = _resourceCache.GetResource<ShaderSourceResource>("/Shaders/Internal/depth-debug.swsl");
         _fovDebugShaderInstance = (ClydeShaderInstance)InstanceShader(debugShader);
@@ -242,6 +240,30 @@ internal partial class Clyde
         _cfg.OnValueChanged(CVars.MaxOccluderCount, MaxOccludersChanged, true);
     }
 
+    private void AAA(IConsoleShell shell, string argstr, string[] args) => AAA();
+    private void AAA()
+    {
+        var manager = IoCManager.Resolve<IResourceManager>();
+
+        using var fragstream = manager.ContentFileRead("/Shaders/shadow.frag");
+        using var vertstream = manager.ContentFileRead("/Shaders/shadow.vert");
+        using var fragreader = new StreamReader(fragstream, EncodingHelpers.UTF8);
+        using var vertreader = new StreamReader(vertstream, EncodingHelpers.UTF8);
+
+        var shadowVert = vertreader.ReadToEnd();
+        var shadowFrag = fragreader.ReadToEnd();
+
+        (string, uint)[] shadowAttribLocations =
+        {
+            ("aPos", 0),
+            ("Origin", 1),
+            ("Range", 1),
+        };
+
+        _shadowProgram = _compileProgram(shadowVert, shadowFrag, shadowAttribLocations, "Occlusion Depth Program");
+
+    }
+
     private void DrawFov(IEye eye)
     {
         using var _ = DebugGroup(nameof(DrawFov));
@@ -315,7 +337,6 @@ internal partial class Clyde
         for (var i = 0; i < _shadowCastingLightCount; i++)
         {
             ref var light = ref _lightInstancesBuffer[i];
-            // TODO LIGHTING per-light softness
             _shadowProgram.SetUniform("LightData", new Vector4(light.Origin.X, light.Origin.Y, light.Range, light.Softness));
 
             // Light quads are drawn to the light atlas left to right, top to bottom
@@ -572,7 +593,7 @@ internal partial class Clyde
                 WriteFovBuffer(vec);
             }
 
-            if (!eastBlocked)
+            /*if (!eastBlocked)
             {
                 var vec = new SysVec4(tr, br.X, br.Y);
                 WriteLightBuffer(vec);
@@ -606,7 +627,7 @@ internal partial class Clyde
             {
                 var vec = new SysVec4(bl, tl.X, tl.Y);
                 WriteFovBuffer(vec);
-            }
+            }*/
 
             // TODO LIGHTING
             // Currently the above code uses two float/position buffers. But is it maybe better to have one float

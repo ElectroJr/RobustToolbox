@@ -21,7 +21,7 @@ void main()
     // Non-linear occlusion scalling makes it easier to see how multiple penumbras interact
     // occlusion = 1.0 - (1.0-occlusion)*(1.0-occlusion);
 
-    if (occlusion == 0.0)
+    if (occlusion == -1.0)
         discard;
 
     highp float lightRange = LightData.x;
@@ -32,5 +32,5 @@ void main()
     highp float mask = zTextureSpec(TEXTURE, MaskUV).r;
 
     val *= lightPower * mask * occlusion;
-    gl_FragColor = zAdjustResult(LightColor * vec4(vec3(1.0), val));
+    gl_FragColor = vec4(texture2D(ShadowMap, ShadowUV).xyz,1.0);
 }

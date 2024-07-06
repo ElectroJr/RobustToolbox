@@ -412,7 +412,7 @@ namespace Robust.Client.Graphics.Clyde
 
             CheckGlError();
 
-            if (_cfg.GetCVar(CVars.LightBlur))
+            /*if (_cfg.GetCVar(CVars.LightBlur))
                 BlurLights(viewport, eye);
 
             using (_prof.Group("BlurOntoWalls"))
@@ -423,7 +423,7 @@ namespace Robust.Client.Graphics.Clyde
             using (_prof.Group("MergeWallLayer"))
             {
                 MergeWallLayer(viewport);
-            }
+            }*/
 
             BindRenderTargetFull(viewport.RenderTarget);
             GL.Viewport(0, 0, viewport.Size.X, viewport.Size.Y);
@@ -942,7 +942,7 @@ namespace Robust.Client.Graphics.Clyde
                 nameof(_shadowRenderTarget));
 
             _shadowmapAtlas = CreateRenderTarget((LightAtlasSize, LightAtlasSize),
-                new RenderTargetFormatParameters(RenderTargetColorFormat.R16),
+                new RenderTargetFormatParameters(RenderTargetColorFormat.Rgba8),
                 new TextureSampleParameters { Filter = true },
                 nameof(_shadowRenderTarget));
 

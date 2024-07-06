@@ -11,6 +11,7 @@ const highp float MAX_LIGHTS = 12.0;
 const highp float SHADOW_SIZE = 2.0/MAX_LIGHTS;
 
 varying highp vec2 occlusion;
+flat varying highp vec3 Color;
 
 void main()
 {
@@ -22,6 +23,7 @@ void main()
     // We scale all distanes such that 1.0 = max light range.
     vec2 pointA = (aPos.xy - lightPos)/lightRange;
     vec2 pointB = (aPos.zw - lightPos)/lightRange;
+
 
     float angleA = atan(pointA.y, pointA.x);
     float angleB = atan(pointB.y, pointB.x);
@@ -106,19 +108,20 @@ void main()
 
     // Convert to polar coordinates.
     // Line defined via r = r0/cos(theta-t0)
-    highp float r0 = line.z/sqrt(line.x*line.x + line.y*line.y);
-    highp float t0 = atan(line.y, line.x);
+    highp float r0 = abs(line.z)/sqrt(line.x*line.x + line.y*line.y);
+    highp float t0 = atan(line.y, line.x) + PI*(sign(line.z)-1.0)/2.0;
     highp float angle;
 
     // For each "shadow" of point a or B, we push the A->B line to lie entirely outside of the quad that will get drawn
     // for this. We do this by just increasing r0, the point of closest approach in the equation for the line in polar
     // coordiantes. Given that coordiantes are normalized to the light's range, we just add 2.0 to (though sqrt(2) would
     // suffice).
+    Color = vec3(1.0);
     switch (pointId)
     {
         case 0:
         angle = angleA;
-        r0 += 2.0 + length(offset);
+        r0 += 0.5 + length(offset);
         occlusion = vec2(1.0, 1.0);
         break;
 
@@ -129,25 +132,29 @@ void main()
 
         case 2:
         angle = angleA;
-        r0 += 2.0 + length(offset);
+        r0 += 0.5 + length(offset);
         occlusion = vec2(0.0, 1.0);
+        Color = vec3(1.0, 0.0, 0.0);
         break;
 
         case 3:
         angle = angleB;
         occlusion = vec2(0.0, 0.0);
+        Color = vec3(0.0, 1.0, 0.0);
         break;
 
         case 4:
         angle = angleB;
-        r0 += 2.0 + length(offset);
+        r0 += 0.5 + length(offset);
         occlusion = vec2(0.0, 1.0);
+        Color = vec3(0.0, 0.0, 1.0);
         break;
 
         default:
         angle = angleB;
-        r0 += 2.0 + length(offset);
+        r0 += 0.5 + length(offset);
         occlusion = vec2(1.0, 1.0);
+        Color = vec3(0.0, 1.0, 1.0);
         break;
     }
     // This is the fomula for a the line in polar coordinates.
@@ -157,5 +164,5 @@ void main()
     highp vec2 point = r * vec2(cos(angle), sin(angle));;
     point += offset;
 
-    gl_Position = vec4(point, depth, 1.0);
+    gl_Position = vec4(point, 0.0, 1.0);
 }
