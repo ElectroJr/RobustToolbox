@@ -58,6 +58,13 @@ void main()
     highp float lightLength = min(lightSoftness/lightRange, occluderLength);
     highp vec2 offset = vec2(0.0);
 
+
+    // TODO LIGHTING now that lines are no longer parallel, what do we do if the light length is larger than the
+    // (projected) occluder length?
+    //
+    //
+    // TODO LIGHTING penumbra does not appear to nicely go from 0->1 ???
+
     // When drawing the shadow for each line occluder, which part of the shape should this vertex refer to?
     // 0: The is the "shadow" of point A that makes up the outer part of the penumbra (i.e., barely occluded).
     // 1: This is just point A
@@ -69,15 +76,25 @@ void main()
     switch (pointId)
     {
         case 0:
-        case 4:
-        offset = (pointB - pointA)/occluderLength * 0.5 * lightLength;
+        offset = pointA/length(pointA) * 0.5 * lightLength;
+        offset = vec2(-offset.y, offset.x);
         break;
 
         case 2:
+        offset = pointA/length(pointA) * 0.5 * lightLength;
+        offset = vec2(offset.y, -offset.x);
+        break;
+
+        case 4:
+        offset = pointB/length(pointB) * 0.5 * lightLength;
+        break;
+
         case 5:
-        offset = (pointA - pointB)/occluderLength * 0.5 * lightLength;
+        offset = pointB/length(pointB) * 0.5 * lightLength;
+        offset = vec2(offset.y, -offset.x);
         break;
     }
+    offset *= 1.0;
 
     pointA -= offset;
     pointB -= offset;
