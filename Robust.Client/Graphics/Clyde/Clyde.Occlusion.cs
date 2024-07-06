@@ -593,7 +593,7 @@ internal partial class Clyde
                 WriteFovBuffer(vec);
             }
 
-            /*if (!eastBlocked)
+            if (!eastBlocked)
             {
                 var vec = new SysVec4(tr, br.X, br.Y);
                 WriteLightBuffer(vec);
@@ -627,7 +627,7 @@ internal partial class Clyde
             {
                 var vec = new SysVec4(bl, tl.X, tl.Y);
                 WriteFovBuffer(vec);
-            }*/
+            }
 
             // TODO LIGHTING
             // Currently the above code uses two float/position buffers. But is it maybe better to have one float

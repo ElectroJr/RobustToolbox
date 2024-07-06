@@ -17,8 +17,5 @@ void main()
 
     // [SHADER_CODE]
 
-    if (lightSample.r < 0.999 || lightSample.g < 0.999 || lightSample.b < 0.999)
-        gl_FragColor = vec4(lightSample, 1.0);
-    else
-        gl_FragColor = zAdjustResult(COLOR * VtxModulate * vec4(lightSample, 1.0));
+    gl_FragColor = zAdjustResult(COLOR * VtxModulate * vec4(lightSample, 1.0));
 }
