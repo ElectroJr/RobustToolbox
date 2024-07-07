@@ -18,7 +18,7 @@ void main()
     highp vec2 lightPos = LightPosition.xy;
     highp float lightRot = LightPosition.z;
     highp float lightRange = LightData.x;
-    highp float lightSoftness = LightData.y;
+    highp float lightSoftness = 1.0;// LightData.y;
 
     // Each line occluder is defined using two points, A & B.
     // We scale all distanes such that 1.0 = max light range.
@@ -131,7 +131,7 @@ void main()
     highp float angle;
 
     // For each "shadow" of point a or B, we push the A->B line to lie entirely outside of the quad that will get drawn
-    // for this. We do this by just increasing r0, the point of closest approach in the equation for the line in polar
+    // for this light. We do this by just increasing r0, the point of closest approach in the equation for the line in polar
     // coordiantes. Given that coordiantes are normalized to the light's range, we just add 2.0 to (though sqrt(2) would
     // suffice).
     switch (pointId)
@@ -180,6 +180,43 @@ void main()
     float s = sin(lightRot);
     float c = cos(lightRot);
     point = mat2(c, -s, s, c) * point;
+
+    // finally, we clamp the points so that they lie within the unit box. This ensures that the penumbra edges of adjacent
+    // occluders are at the same location, which is needed to ensure that the penumbras add up to full occlusion.
+    point /= max(1.0, max(abs(point.x), abs(point.y)));
+
+    // well fuck that fixed it, but now its back to the same problem
+    // the two poins on the box make a line that is IN the box.
+    // I.e., the "far part" of the shadow isn't outside of the lights range.
+    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    //
+    //
+    // Well
+    // I think I just need to do manual culling
+    // I wanted a geometry shader anyways.
+    //
+    //
+    //
+    // also fuck the box clamping isn't right either
+    // for the penumbra interpolation to be accurate the points that make up the far part of a shadow have to be quidistant
+    // i.e., form an isosceles  triangle
+    // TODO LIGHTING AAAAAAAAAAAAAAAAAA
+    // I guess I should just turn it into a proper geometry shader
+    // and while I'm at it, handle antumbras
+
+    // actually fuck theres another problem as well
+    // we can't just cull "back facing" occluders
+    // because the penumbra then allows for light leakage
+    // i.e., part of the penumbra should be blocked by a back facing part of the occluder.
+    //  AAAAAAAAA
+    // fuck
+    // but then we also can't  just not cull them because the penumras will overlap.
+    // I don't think that that has a solution
+    // AAAAAAAA
+    // Maybe just give up on this
+    // and float the idea of having a shader w/o soft shadows? fucking dammit.
+    // but then you can just disable soft shadows yourself.
+
 
     gl_Position = vec4(point, depth, 1.0);
 }
