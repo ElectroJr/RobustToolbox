@@ -42,9 +42,7 @@ void main()
     }
 
     // If the occluder line is going clockwise, we clip it by moving it out of the view box
-    // TODO LIGHTING
-    // Why does not clipping anything occlude the whole screen????
-    float depth = delta < -0.0 ? 2.0 : 0.0;
+    float depth = delta < 0.0 ? 2.0 : 0.0;
 
     // For drawing the penumbra, we offset the origin / light position when we try to find the "shadows" of points A & B.
     // The actual shape of the penumbra is not fully accurate. instead of treating the light as a ball or some other shape,
