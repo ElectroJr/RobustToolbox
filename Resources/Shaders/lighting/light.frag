@@ -18,9 +18,6 @@ void main()
     highp float dist = length(DeltaWorldPos);
     highp float occlusion = CastShadows < 0.0 ? 1.0 : texture2D(ShadowMap, ShadowUV).r;
 
-    // Non-linear occlusion scalling makes it easier to see how multiple penumbras interact
-    // occlusion = 1.0 - (1.0-occlusion)*(1.0-occlusion)*(1.0-occlusion)*(1.0-occlusion);
-
     if (occlusion == 0.0)
         discard;
 
@@ -28,9 +25,11 @@ void main()
     highp float lightPower = LightData.y;
 
     highp float dist2 = dist * dist + LIGHTING_HEIGHT * LIGHTING_HEIGHT;
-    highp float val = clamp((1.0 - clamp(sqrt(dist2) / lightRange, 0.0, 1.0)) * (1.0 / (sqrt(dist2 + 1.0))), 0.0, 1.0);
+
+    // TODO LIGHTING re-enable falloff
+    highp float val = 1.0;//clamp((1.0 - clamp(sqrt(dist2) / lightRange, 0.0, 1.0)) * (1.0 / (sqrt(dist2 + 1.0))), 0.0, 1.0);
     highp float mask = zTextureSpec(TEXTURE, MaskUV).r;
 
-    val *= lightPower * mask * occlusion;
+    val *= lightPower * mask * occlusion * occlusion;
     gl_FragColor = zAdjustResult(LightColor * vec4(vec3(1.0), val));
 }
