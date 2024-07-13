@@ -27,7 +27,7 @@ void main()
     highp float dist2 = dist * dist + LIGHTING_HEIGHT * LIGHTING_HEIGHT;
 
     // TODO LIGHTING re-enable falloff
-    highp float val = 1.0;//clamp((1.0 - clamp(sqrt(dist2) / lightRange, 0.0, 1.0)) * (1.0 / (sqrt(dist2 + 1.0))), 0.0, 1.0);
+    highp float val = clamp((1.0 - clamp(sqrt(dist2) / lightRange, 0.0, 1.0)) * (1.0 / (sqrt(dist2 + 1.0))), 0.0, 1.0);
     highp float mask = zTextureSpec(TEXTURE, MaskUV).r;
 
     val *= lightPower * mask * occlusion * occlusion;
