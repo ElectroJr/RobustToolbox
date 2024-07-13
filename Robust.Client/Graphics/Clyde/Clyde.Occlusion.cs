@@ -283,7 +283,11 @@ internal partial class Clyde
         {
             ref var light = ref _lightInstancesBuffer[i];
             _shadowProgram.SetUniform("uLightPosition", new Vector3(light.Origin.X, light.Origin.Y, light.Rotation));
-            _shadowProgram.SetUniform("uLightData", new Vector2(light.Range, light.Softness));
+
+            // The radius here for how "big" the light source is, not how far it shines.
+            var radius = light.Softness / 10;
+
+            _shadowProgram.SetUniform("uLightData", new Vector2(light.Range, radius));
 
             // Light quads are drawn to the light atlas left to right, top to bottom
             var row = i/12;

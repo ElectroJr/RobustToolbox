@@ -30,10 +30,10 @@
 attribute highp vec4 aOccluderSegment; // (pointA.x, pointA.y, pointB.x, pointB.y)
 
 varying highp vec4 vPenumbraCoords;
-varying highp float vClipEdge;
+// varying highp float vClipEdge;
 
 uniform highp vec3 uLightPosition; // (x position, y position, rotation)
-uniform highp vec2 uLightData; // (range, softness)
+uniform highp vec2 uLightData; // (range, radius)
 
 // expands wall edges a little to prevent holes
 const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
@@ -49,7 +49,7 @@ void main()
     highp vec2 lightPos = uLightPosition.xy;
     highp float lightRot = uLightPosition.z;
     highp float lightRange = uLightData.x;
-    highp float lightRadius = 0.5;// uLightData.y;
+    highp float lightRadius = uLightData.y;
 
     // Transform into light-relative coordinates, with all distances scaled by the light's range.
     highp vec2 deltaA = (aOccluderSegment.xy - lightPos)/lightRange;
@@ -127,11 +127,18 @@ void main()
     );
 
     // How close does the line come to the origin / light source?
-    highp float closest = 100.0;//abs(line.z)/sqrt(line.x*line.x + line.y*line.y);
+    highp float closest = abs(line.z)/sqrt(line.x*line.x + line.y*line.y);
 
     // We use the above distance to limit the "size" of the light that is used when generating soft shadows
     // This ensures that the occluder never "clips" the light, by effectively shrinking the light for nearby occluders.
     lightRadius = max(0, min(lightRadius, closest - 1e-5));
+    // this differs fromh how slembcke handles it.
+    // the upside is that IMO it leads less jarring artifacts (or did I just improperly implement their clipping?)
+    // the downside is that this means that adjacent occluder segments (i.e., the segments making up an occluder quad).
+    // will have different penumbras for the same light, as they may have different light radii.
+    // The effect is that some penumbras won't add up to one. However, AFAICT this is not a problem as long
+    // as we do not cull back-facing occluders. which I don't want to do anyways to prevent lights that are embeded
+    // inside walls from emmiting light.
 
     // Penumbra offsets.
     // Instead of casting the shadow from the lights origin, we cast the shadow from a slightly offset position.
@@ -139,15 +146,18 @@ void main()
     highp vec2 offsetB = -vec2(-lightRadius, lightRadius) * normalize(deltaB).yx;
 
     highp vec2 offset = mix(offsetA, offsetB, pointSelector);
-    highp vec2 delta =  mix(deltaA,  deltaB,  pointSelector);
+    highp vec2 delta = mix(deltaA,  deltaB,  pointSelector);
     highp vec2 point = mix(delta - offset, delta, shadowSelector);
 
     // Compute penumbra coordinates
     highp vec2 penumbraA = Adjugate(mat2( offsetA, -deltaA))*(delta - mix(offset, deltaA, shadowSelector));
     highp vec2 penumbraB = Adjugate(mat2(-offsetB,  deltaB))*(delta - mix(offset, deltaB, shadowSelector));
 
-    // Prevent the light from clipping 
-
     gl_Position = vec4(point, 0.0, shadowSelector);
     vPenumbraCoords = (lightRadius > 0.0) ? vec4(penumbraA, penumbraB) : vec4(0, 1, 0, 1);
+
+    // original clipping prevention
+    // highp vec2 normal = deltaB - deltaA;
+    // normal = normal.yx*vec2(-1.0, 1.0);
+    // vClipEdge = dot(normal, delta - offset)*(1.0 - shadowSelector);
 }
