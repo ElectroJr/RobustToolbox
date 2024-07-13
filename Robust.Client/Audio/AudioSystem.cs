@@ -208,7 +208,6 @@ public sealed partial class AudioSystem : SharedAudioSystem
             if (newSource == null)
             {
                 Log.Error($"Error creating audio source for {audioResource}");
-                DebugTools.Assert(false);
             }
             else
             {

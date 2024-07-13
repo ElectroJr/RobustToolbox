@@ -9,7 +9,7 @@ void main()
 }
 
 
-fuck me I should just do waht they do here
+/*fuck me I should just do waht they do here
 
 https://slembcke.github.io/SuperFastSoftShadows
 https://slembcke.github.io/SuperFastHardShadows
@@ -23,3 +23,4 @@ though I think antumba means we NEED backface culling to be disabled.
 
 also
 why am I drawing to a shadow map again? instead of just directly drawing to the light map?
+if I don't do instancing, theres no real point in not doing so.*/
