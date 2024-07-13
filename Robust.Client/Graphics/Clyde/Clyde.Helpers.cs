@@ -128,7 +128,11 @@ namespace Robust.Client.Graphics.Clyde
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void QuadBatchIndexWrite(Span<ushort> indexData, ref int nIdx, ushort tIdx)
         {
-            QuadBatchIndexWrite(indexData, ref nIdx, tIdx, (ushort) (tIdx + 1), (ushort) (tIdx + 2),
+            QuadBatchIndexWrite(indexData,
+                ref nIdx,
+                tIdx,
+                (ushort) (tIdx + 1),
+                (ushort) (tIdx + 2),
                 (ushort) (tIdx + 3));
         }
 

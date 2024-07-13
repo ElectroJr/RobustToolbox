@@ -11,10 +11,9 @@ using Robust.Shared.Maths;
 using Robust.Shared.Physics;
 using Robust.Shared.Graphics;
 using Robust.Shared.Utility;
-using SysVec4 = System.Numerics.Vector4;
 using static Robust.Shared.GameObjects.OccluderComponent;
 using Vector3 = Robust.Shared.Maths.Vector3;
-using Vector4 = Robust.Shared.Maths.Vector4;
+using Vector4 = System.Numerics.Vector4;
 
 namespace Robust.Client.Graphics.Clyde;
 // This file handles everything about light rendering.
@@ -55,7 +54,7 @@ internal partial class Clyde
 
     // Rendering data for drawing the light depth map (i.e., distance to nearest occluder).
     private int _lightOcclusionVertexCount;
-    private SysVec4[] _lightOcclusionBuffer = default!;
+    private Vector4[] _lightOcclusionBuffer = default!;
     private DepthDrawInstance[] _lightInstancesBuffer = default!;
     private GLBuffer _lightOcclusionVbo = default!;
     private GLBuffer _lightInstanceVbo = default!;
@@ -64,7 +63,7 @@ internal partial class Clyde
     // Rendering data for drawing the fov depth map. This is a variant of the light data that allows the FOV
     // to see into the first layer of walls.
     private int _fovOcclusionVertexCount;
-    private SysVec4[] _fovOcclusionBuffer = default!;
+    private Vector4[] _fovOcclusionBuffer = default!;
     private GLBuffer _fovOcclusionVbo = default!;
     private GLBuffer _fovInstanceVbo = default!;
     private GLHandle _fovOcclusionVao;
@@ -73,7 +72,6 @@ internal partial class Clyde
     private int _occlusionMaskIndex;
     private Vector2[] _occlusionMaskBuffer = default!;
     private GLBuffer _occlusionMaskVbo = default!;
-    private GLBuffer _occlusionMaskEbo = default!;
     private GLHandle _occlusionMaskVao;
 
     private unsafe void InitOcclusion()
@@ -94,7 +92,7 @@ internal partial class Clyde
                 nameof(_lightOcclusionVbo));
 
             // Line positions
-            GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
+            GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(Vector4), IntPtr.Zero);
             GL.EnableVertexAttribArray(0);
 
             _lightInstanceVbo = new GLBuffer(this,
@@ -132,7 +130,7 @@ internal partial class Clyde
                 BufferUsageHint.DynamicDraw,
                 nameof(_fovOcclusionVbo));
 
-            GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(SysVec4), IntPtr.Zero);
+            GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(Vector4), IntPtr.Zero);
             GL.EnableVertexAttribArray(0);
             CheckGlError();
 
@@ -182,13 +180,10 @@ internal partial class Clyde
             GL.EnableVertexAttribArray(0);
             CheckGlError();
 
-            // TODO LIGHTING Maybe use static instead of BufferUsageHint.DynamicDraw
-            // But apparently it doesnt make much of a difference and is just a hint?
-            // And im scared of hidden footguns when using static indices into a dynamic draw buffer?
-            _occlusionMaskEbo = new GLBuffer(this,
+            _quadIndicesEbo = new GLBuffer(this,
                 BufferTarget.ElementArrayBuffer,
-                BufferUsageHint.DynamicDraw,
-                nameof(_occlusionMaskEbo));
+                BufferUsageHint.StaticDraw,
+                nameof(_quadIndicesEbo));
         }
 
         // Shadow VAO.
@@ -203,14 +198,11 @@ internal partial class Clyde
                 BufferUsageHint.DynamicDraw,
                 nameof(_shadowVbo));
 
-            GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(SysVec4), 0 * sizeof(float));
+            GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(Vector4), 0 * sizeof(float));
             GL.EnableVertexAttribArray(0);
             CheckGlError();
 
-            _shadowEbo = new GLBuffer(this,
-                BufferTarget.ElementArrayBuffer,
-                BufferUsageHint.DynamicDraw,
-                nameof(_shadowEbo));
+            _quadIndicesEbo.Use();
 
             CheckGlError();
         }
@@ -290,8 +282,8 @@ internal partial class Clyde
         for (var i = 0; i < _shadowCastingLightCount; i++)
         {
             ref var light = ref _lightInstancesBuffer[i];
-            _shadowProgram.SetUniform("LightPosition", new Vector3(light.Origin.X, light.Origin.Y, light.Rotation));
-            _shadowProgram.SetUniform("LightData", new Vector2(light.Range, light.Softness));
+            _shadowProgram.SetUniform("uLightPosition", new Vector3(light.Origin.X, light.Origin.Y, light.Rotation));
+            _shadowProgram.SetUniform("uLightData", new Vector2(light.Range, light.Softness));
 
             // Light quads are drawn to the light atlas left to right, top to bottom
             var row = i/12;
@@ -537,49 +529,49 @@ internal partial class Clyde
 
             if (!northBlocked)
             {
-                var vec = new SysVec4(tl, tr.X, tr.Y);
+                var vec = new Vector4(tl, tr.X, tr.Y);
                 WriteLightBuffer(vec);
                 WriteFovBuffer(vec);
             }
             else if (!eastOrWestVisible)
             {
-                var vec = new SysVec4(tl, tr.X, tr.Y);
+                var vec = new Vector4(tl, tr.X, tr.Y);
                 WriteFovBuffer(vec);
             }
 
             if (!eastBlocked)
             {
-                var vec = new SysVec4(tr, br.X, br.Y);
+                var vec = new Vector4(tr, br.X, br.Y);
                 WriteLightBuffer(vec);
                 WriteFovBuffer(vec);
             }
             else if (!northOrSouthVisible)
             {
-                var vec = new SysVec4(tr, br.X, br.Y);
+                var vec = new Vector4(tr, br.X, br.Y);
                 WriteFovBuffer(vec);
             }
 
             if (!southBlocked)
             {
-                var vec = new SysVec4(br, bl.X, bl.Y);
+                var vec = new Vector4(br, bl.X, bl.Y);
                 WriteLightBuffer(vec);
                 WriteFovBuffer(vec);
             }
             else if (!eastOrWestVisible)
             {
-                var vec = new SysVec4(br, bl.X, bl.Y);
+                var vec = new Vector4(br, bl.X, bl.Y);
                 WriteFovBuffer(vec);
             }
 
             if (!westBlocked)
             {
-                var vec = new SysVec4(bl, tl.X, tl.Y);
+                var vec = new Vector4(bl, tl.X, tl.Y);
                 WriteLightBuffer(vec);
                 WriteFovBuffer(vec);
             }
             else if (!northOrSouthVisible)
             {
-                var vec = new SysVec4(bl, tl.X, tl.Y);
+                var vec = new Vector4(bl, tl.X, tl.Y);
                 WriteFovBuffer(vec);
             }
 
@@ -605,24 +597,24 @@ internal partial class Clyde
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteLightBuffer(SysVec4 vec)
+    private void WriteLightBuffer(Vector4 vec)
     {
         _lightOcclusionBuffer[_lightOcclusionVertexCount + 0] = vec;
         _lightOcclusionBuffer[_lightOcclusionVertexCount + 1] = vec;
         _lightOcclusionVertexCount += 2;
 
+        // I love redundant vertex data.
+        // TODO LIGHTING is there a faster way to populate this?
         _shadowVertexData[_shadowVertexCount + 0] = vec;
         _shadowVertexData[_shadowVertexCount + 1] = vec;
         _shadowVertexData[_shadowVertexCount + 2] = vec;
         _shadowVertexData[_shadowVertexCount + 3] = vec;
-        _shadowVertexData[_shadowVertexCount + 4] = vec;
-        _shadowVertexData[_shadowVertexCount + 5] = vec;
-        _shadowVertexCount += 6;
+        _shadowVertexCount += 4;
         _shadowIndexCount += _shadowIndexSize;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void WriteFovBuffer(SysVec4 vec)
+    private void WriteFovBuffer(Vector4 vec)
     {
         _fovOcclusionBuffer[_fovOcclusionVertexCount + 0] = vec;
         _fovOcclusionBuffer[_fovOcclusionVertexCount + 1] = vec;
@@ -666,82 +658,42 @@ internal partial class Clyde
         Array.Resize(ref _fovOcclusionBuffer, _maxOccluders * 8);
         Array.Resize(ref _lightOcclusionBuffer, _maxOccluders * 8);
 
-        // TODO LIGHTING add geometry shader variant.
-        // For now: assume that if there is no geometry shader, then there are no primitive restarts either.
-        // The line of each occluder gets turned into a
-
-        var maxLines = _maxOccluders * 4;
-
-        // Each line occluder casts a shadow consisting of 6 vertices
-        // (2 triangles for the penumbra, and 2 triangles / 1 quad for the umbra)
-        Array.Resize(ref _shadowVertexData, maxLines * 6);
+        // Each occluder line segment casts a shadow (a quad / 4 vertices)
+        var maxLineSegments = _maxOccluders * 4;
+        Array.Resize(ref _shadowVertexData, maxLineSegments * 4);
 
         // How many indices do we need to get open gl to draw the 4 triangle for the umbra/penumbra?
-        _shadowIndexSize = _hasGLPrimitiveRestart ? 7 : 12;
+        _shadowIndexSize = GetQuadBatchIndexCount();
 
         // Instead of updating occluder indices every frame, we just update them once. The indices are always the
         // same anyways, and _maxOccluders ensures that the buffers don't need to be ridiculously long.
         var index = 0;
         ushort vertex = 0;
-        var occlusionMaskIndices = new ushort[_maxOccluders * GetQuadBatchIndexCount()];
-        for (var i = 0; i < _maxOccluders; i++)
+        var indexData = new ushort[maxLineSegments * GetQuadBatchIndexCount()];
+        for (var i = 0; i < maxLineSegments; i++)
         {
             if (_hasGLPrimitiveRestart)
             {
-                occlusionMaskIndices[index++] = (ushort)(vertex + 0);
-                occlusionMaskIndices[index++] = (ushort)(vertex + 1);
-                occlusionMaskIndices[index++] = (ushort)(vertex + 2);
-                occlusionMaskIndices[index++] = (ushort)(vertex + 3);
-                occlusionMaskIndices[index++] = PrimitiveRestartIndex;
+                indexData[index++] = (ushort)(vertex + 0);
+                indexData[index++] = (ushort)(vertex + 1);
+                indexData[index++] = (ushort)(vertex + 2);
+                indexData[index++] = (ushort)(vertex + 3);
+                indexData[index++] = PrimitiveRestartIndex;
             }
             else
             {
-                occlusionMaskIndices[index++] = (ushort)(vertex + 0);
-                occlusionMaskIndices[index++] = (ushort)(vertex + 1);
-                occlusionMaskIndices[index++] = (ushort)(vertex + 2);
-                occlusionMaskIndices[index++] = (ushort)(vertex + 0);
-                occlusionMaskIndices[index++] = (ushort)(vertex + 2);
-                occlusionMaskIndices[index++] = (ushort)(vertex + 3);
+                indexData[index++] = (ushort)(vertex + 0);
+                indexData[index++] = (ushort)(vertex + 1);
+                indexData[index++] = (ushort)(vertex + 2);
+                indexData[index++] = (ushort)(vertex + 1);
+                indexData[index++] = (ushort)(vertex + 2);
+                indexData[index++] = (ushort)(vertex + 3);
             }
+
             vertex += 4;
         }
 
-        index = 0;
-        vertex = 0;
-        var shadowIndexData = new ushort[maxLines * _shadowIndexSize];
-        for (var i = 0; i < maxLines; i++)
-        {
-            if (_hasGLPrimitiveRestart)
-            {
-                shadowIndexData[index++] = (ushort)(vertex + 0);
-                shadowIndexData[index++] = (ushort)(vertex + 1);
-                shadowIndexData[index++] = (ushort)(vertex + 2);
-                shadowIndexData[index++] = (ushort)(vertex + 3);
-                shadowIndexData[index++] = (ushort)(vertex + 4);
-                shadowIndexData[index++] = (ushort)(vertex + 5);
-                shadowIndexData[index++] = PrimitiveRestartIndex;
-            }
-            else
-            {
-                shadowIndexData[index++] = (ushort)(vertex + 0);
-                shadowIndexData[index++] = (ushort)(vertex + 1);
-                shadowIndexData[index++] = (ushort)(vertex + 2);
-                shadowIndexData[index++] = (ushort)(vertex + 1);
-                shadowIndexData[index++] = (ushort)(vertex + 2);
-                shadowIndexData[index++] = (ushort)(vertex + 3);
-                shadowIndexData[index++] = (ushort)(vertex + 2);
-                shadowIndexData[index++] = (ushort)(vertex + 3);
-                shadowIndexData[index++] = (ushort)(vertex + 4);
-                shadowIndexData[index++] = (ushort)(vertex + 3);
-                shadowIndexData[index++] = (ushort)(vertex + 4);
-                shadowIndexData[index++] = (ushort)(vertex + 5);
-            }
-
-            vertex += 6;
-        }
-
-        _occlusionMaskEbo.Reallocate(occlusionMaskIndices.AsSpan());
-        _shadowEbo.Reallocate(shadowIndexData.AsSpan());
+        _quadIndicesEbo.Reallocate(indexData.AsSpan());
     }
 
     [StructLayout((LayoutKind.Sequential))]

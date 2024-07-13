@@ -60,7 +60,7 @@ namespace Robust.Client.Graphics.Clyde
         private int _lightIndexIndex;
 
         private GLBuffer _shadowVbo = default!;
-        private GLBuffer _shadowEbo = default!;
+        private GLBuffer _quadIndicesEbo = default!;
         private GLHandle _shadowVao;
         private Vector4[] _shadowVertexData = default!;
         private int _shadowVertexCount;
@@ -277,16 +277,11 @@ namespace Robust.Client.Graphics.Clyde
             program = _compileProgram(
                 _resManager.ContentFileReadAllText("/Shaders/lighting/shadow.vert"),
                 _resManager.ContentFileReadAllText("/Shaders/lighting/shadow.frag"),
-                [
-                    ("aPos", 0),
-                    ("Origin", 1),
-                    ("Range", 1)
-                ],
-                "Occlusion Depth Program");
+                [ ("aOccluderSegment", 0) ],
+                "Occlusion Shadow Program");
 
             _shadowProgram?.Delete();
             _shadowProgram = program;
-
 
             program = _compileProgram(
                 _resManager.ContentFileReadAllText("/Shaders/lighting/light.vert"),

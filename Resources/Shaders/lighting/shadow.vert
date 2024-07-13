@@ -1,129 +1,153 @@
-// Coordinates of the two points A & B that make up the line being drawn.
-attribute highp vec4 aPos;
+// While this was originally all custom code, I realised I was significantly overcomplicating getting antumbras to work
+// after reading some articles by Scott Lembcke, and I've now switched to using their method:
+// https://slembcke.github.io/SuperFastSoftShadows
+// https://slembcke.github.io/SuperFastHardShadows
+//
+// It's been modified signifcantly, but still uses some of their code, which can be found on Github  under both the MIT
+// and GPL 3+ licenses (https://github.com/slembcke/veridian-expanse). So to be safe:
+//
+// Copyright (c) 2021 Scott Lembcke and Howling Moon Software
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 
-uniform highp vec3 LightPosition; // (x position, y position, rotation)
-uniform highp vec2 LightData; // (range, softness)
+// Coordinates of the two points that define the occluder line segment
+attribute highp vec4 aOccluderSegment; // (pointA.x, pointA.y, pointB.x, pointB.y)
+
+varying highp vec4 vPenumbraCoords;
+varying highp float vClipEdge;
+
+uniform highp vec3 uLightPosition; // (x position, y position, rotation)
+uniform highp vec2 uLightData; // (range, softness)
 
 // expands wall edges a little to prevent holes
 const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
 
-// Size of a single light quad (in clip space coordinates)
-const highp float MAX_LIGHTS = 12.0;
-const highp float SHADOW_SIZE = 2.0/MAX_LIGHTS;
-
-varying highp vec2 occlusion;
+highp mat2 Adjugate(highp mat2 m)
+{
+    return mat2(m[1][1], -m[0][1], -m[1][0], m[0][0]);
+}
 
 void main()
 {
-    highp vec2 lightPos = LightPosition.xy;
-    highp float lightRot = LightPosition.z;
-    highp float lightRange = LightData.x;
-    highp float lightSoftness = 3.0;// LightData.y;
+    // Unpack uniforms
+    highp vec2 lightPos = uLightPosition.xy;
+    highp float lightRot = uLightPosition.z;
+    highp float lightRange = uLightData.x;
+    highp float lightRadius = 0.5;// uLightData.y;
 
-    // Each line occluder is defined using two points, A & B.
-    // We scale all distanes such that 1.0 = max light range.
-    vec2 pointA = (aPos.xy - lightPos)/lightRange;
-    vec2 pointB = (aPos.zw - lightPos)/lightRange;
+    // Transform into light-relative coordinates, with all distances scaled by the light's range.
+    highp vec2 deltaA = (aOccluderSegment.xy - lightPos)/lightRange;
+    highp vec2 deltaB = (aOccluderSegment.zw - lightPos)/lightRange;
+    lightRadius /= lightRange;
 
-    float angleA = atan(pointA.y, pointA.x);
-    float angleB = atan(pointB.y, pointB.x);
-    float delta = angleB - angleA;
+    highp float s = sin(lightRot);
+    highp float c = cos(lightRot);
+    highp mat2 rot = mat2(c, -s, s, c);
+    deltaA = rot * deltaA;
+    deltaB = rot * deltaB;
+
+    highp float angleA = atan(deltaA.y, deltaA.x);
+    highp float angleB = atan(deltaB.y, deltaB.x);
+    highp float angleDelta = angleB - angleA;
 
     // Check if the line clips over the [Pi, -Pi] range.
-    if (delta >= PI)
+    if (angleDelta >= PI)
     {
         angleB -= PI * 2.0;
-        delta = angleB - angleA;
+        angleDelta = angleB - angleA;
     }
-    else if (delta <= -PI)
+    else if (angleDelta <= -PI)
     {
         angleB += PI * 2.0;
-        delta = angleB - angleA;
+        angleDelta = angleB - angleA;
     }
 
-    // If the occluder line is going clockwise, we clip it by moving it out of the view box
-    float depth = delta < 0.0 ? 2.0 : 0.0;
+    // Ensure the occluder line segment is always traveling clockwise around the lightsource
+    if (angleDelta < 0.0)
+    {
+        highp vec2 tmp = deltaA;
+        deltaA = deltaB;
+        deltaB = tmp;
+        tmp.x = angleA;
+        angleA = angleB;
+        angleB = tmp.x;
+    }
 
     // expand angles
-    float lrSignBias = sign(delta) * DEPTH_LEFTRIGHT_EXPAND_BIAS;
-    angleA -= lrSignBias;
-    angleB += lrSignBias;
+    angleA -= DEPTH_LEFTRIGHT_EXPAND_BIAS;
+    angleB += DEPTH_LEFTRIGHT_EXPAND_BIAS;
+    deltaA = length(deltaA) * vec2(cos(angleA), sin(angleA));
+    deltaB = length(deltaB) * vec2(cos(angleB), sin(angleB));
 
-    // For drawing the penumbra, we offset the origin / light position when we try to find the "shadows" of points A & B.
-    // The actual shape of the penumbra is not fully accurate. instead of treating the light as a ball or some other shape,
-    // each line occluder assumes that the light is a parallel line located at the origin with a length equal to the light's softness.
-    // However, we limit the "length" of the light source to be at most the length of the occluder. This is mainly just
-    // a simplification that leads to decent soft shadows, while avoiding ever having to deal with an antumbra.
+    // Is this vertex associated with start or end of the line segment?
+    highp float pointSelector = 0.0;
 
-    highp float lightLength = lightSoftness/lightRange;
+    // 1 or 0 depending on whether this vertex is for a point that makes up the occluder line segment, or that points
+    // shadow. We also use this for perspective division, i.e., we use 0 for pointsthat lie out at infinity.
+    highp float shadowSelector = 0.0;
 
-    // Formula for line a*x + b*y = c
-    highp vec3 line = vec3(
-        pointB.y - pointA.y, // a
-        pointA.x - pointB.x, // b
-        pointA.x * pointB.y - pointA.y * pointB.x // c
-    );
-    float closest = abs(line.z)/sqrt(line.x*line.x + line.y*line.y);
-    lightLength = min(lightLength, 2.0 * closest - 1e-5);
-    lightLength = max(0, lightLength);
-
-    // TODO LIGHTING fix shadow atlas borders / interpolation.
-    // TODO LIGHTING try use geometry shader. Is it faster?
-
-    // When drawing the shadow for each line occluder, which part of the shape should this vertex refer to?
-    // 0: The is the "shadow" of point A that makes up the outer part of the penumbra (i.e., barely occluded).
-    // 1: This is just point A
-    // 2: The is the "shadow" of point A that makes up the inner part of the penumbra (i.e., touching the umbra).
-    // 3: This is just point B
-    // 4: The is the "shadow" of point B that makes up the inner part of the penumbra (i.e., touching the umbra).
-    // 5: The is the "shadow" of point B that makes up the outer part of the penumbra (i.e., barely occluded).
-    int pointId = gl_VertexID - (gl_VertexID / 6) * 6;
-
-    // perspective divide (using 0 for infinite homogeneous coordinates)
-    highp float w = 0.0;
-    highp vec2 point = vec2(0.0);
-
+    int pointId = gl_VertexID - (gl_VertexID / 4) * 4;
     switch (pointId)
     {
         case 0:
-        point = length(pointA) * vec2(cos(angleA), sin(angleA));
-        point -= normalize(point).yx * 0.5 * lightLength * vec2(-1.0, 1.0);
-        occlusion = vec2(1.0, 1.0);
-        break;
-
-        case 1:
-        point = length(pointA) * vec2(cos(angleA), sin(angleA));
-        w = 1.0;
-        occlusion = vec2(0.0, 0.0);
-        break;
+            shadowSelector = 1.0;
+            break;
 
         case 2:
-        point = length(pointA) * vec2(cos(angleA), sin(angleA));
-        occlusion = vec2(0.0, 1.0);
-        break;
+            shadowSelector = 1.0;
+            pointSelector = 1.0;
+            break;
 
         case 3:
-        point = length(pointB) * vec2(cos(angleB), sin(angleB));
-        w = 1.0;
-        occlusion = vec2(0.0, 0.0);
-        break;
-
-        case 4:
-        point = length(pointB) * vec2(cos(angleB), sin(angleB));
-        occlusion = vec2(0.0, 1.0);
-        break;
-
-        case 5:
-        point = length(pointB) * vec2(cos(angleB), sin(angleB));
-        point += normalize(point).yx * 0.5 * lightLength * vec2(-1.0, 1.0);
-        occlusion = vec2(1.0, 1.0);
-        break;
+            pointSelector = 1.0;
+            break;
     }
 
+    // Formula for the line segment a*x + b*y = c
+    highp vec3 line = vec3(
+        deltaB.y - deltaA.y, // a
+        deltaA.x - deltaB.x, // b
+        deltaA.x * deltaB.y - deltaA.y * deltaB.x // c
+    );
 
-    // TODO JUST COMBINE THESE
-    float s = sin(lightRot);
-    float c = cos(lightRot);
-    point = mat2(c, -s, s, c) * point;
-    gl_Position = vec4(point, depth, w);
+    // How close does the line come to the origin / light source?
+    highp float closest = 100.0;//abs(line.z)/sqrt(line.x*line.x + line.y*line.y);
+
+    // We use the above distance to limit the "size" of the light that is used when generating soft shadows
+    // This ensures that the occluder never "clips" the light, by effectively shrinking the light for nearby occluders.
+    lightRadius = max(0, min(lightRadius, closest - 1e-5));
+
+    // Penumbra offsets.
+    // Instead of casting the shadow from the lights origin, we cast the shadow from a slightly offset position.
+    highp vec2 offsetA =  vec2(-lightRadius, lightRadius) * normalize(deltaA).yx;
+    highp vec2 offsetB = -vec2(-lightRadius, lightRadius) * normalize(deltaB).yx;
+
+    highp vec2 offset = mix(offsetA, offsetB, pointSelector);
+    highp vec2 delta =  mix(deltaA,  deltaB,  pointSelector);
+    highp vec2 point = mix(delta - offset, delta, shadowSelector);
+
+    // Compute penumbra coordinates
+    highp vec2 penumbraA = Adjugate(mat2( offsetA, -deltaA))*(delta - mix(offset, deltaA, shadowSelector));
+    highp vec2 penumbraB = Adjugate(mat2(-offsetB,  deltaB))*(delta - mix(offset, deltaB, shadowSelector));
+
+    // Prevent the light from clipping 
+
+    gl_Position = vec4(point, 0.0, shadowSelector);
+    vPenumbraCoords = (lightRadius > 0.0) ? vec4(penumbraA, penumbraB) : vec4(0, 1, 0, 1);
 }
