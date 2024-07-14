@@ -317,7 +317,6 @@ namespace Robust.Client.Graphics.Clyde
         {
             // Quad drawing.
             {
-                // TODO shouldn't this have 2 more floats
                 Span<Vertex2D> quadVertices = stackalloc[]
                 {
                     new Vertex2D(1, 0, 1, 1, Color.White),

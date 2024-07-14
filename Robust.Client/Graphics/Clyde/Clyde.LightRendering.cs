@@ -24,6 +24,7 @@ using SixLabors.ImageSharp.PixelFormats;
 using Color = Robust.Shared.Maths.Color;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
 using Vector4 = System.Numerics.Vector4;
+using RVector4 = Robust.Shared.Maths.Vector4;
 
 namespace Robust.Client.Graphics.Clyde
 {
@@ -219,11 +220,6 @@ namespace Robust.Client.Graphics.Clyde
                 var r = box.Right / w;
                 var t = (h - box.Top) / h;
 
-
-                // I'm not sure whats wrong, but flashlights are pointing the wrong way.
-                // So uhhh... we'll just flip these.
-                (b, t) = (t, b);
-
                 proto.TextureBox = new Box2(l, b, r, t);
 
                 offset.X += mask.Width;
@@ -286,13 +282,7 @@ namespace Robust.Client.Graphics.Clyde
             program = _compileProgram(
                 _resManager.ContentFileReadAllText("/Shaders/lighting/light.vert"),
                 _resManager.ContentFileReadAllText("/Shaders/lighting/light.frag"),
-                [
-                    ("aMaskUV", 0),
-                    ("aLightColor", 1),
-                    ("aLightPos", 2),
-                    ("aLightData", 3),
-                    ("aLightAngle", 4)
-                ],
+                BaseShaderAttribLocations,
                 "Light Program");
 
             _lightProgram?.Delete();
@@ -326,7 +316,7 @@ namespace Robust.Client.Graphics.Clyde
                 // Or maybe just drop this altogether
                 for (var i = 0; i < _lightCount; i++)
                 {
-                    expandedAABB = expandedAABB.ExtendToContain(_lightsToRenderList[i].Properties.LightPos);
+                    expandedAABB = expandedAABB.ExtendToContain(_lightsToRenderList[i].Properties.LightPos + eye.Position.Position);
                 }
             }
             UpdateOcclusionGeometry(expandedAABB, eye);
@@ -346,9 +336,9 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             DrawShadowDepths();
-            DrawShadows();
 
             GL.Enable(EnableCap.StencilTest);
+            CheckGlError();
             _isStencilling = true;
 
             var (lightW, lightH) = GetLightMapSize(viewport.Size);
@@ -357,104 +347,23 @@ namespace Robust.Client.Graphics.Clyde
 
             BindRenderTargetImmediate(RtToLoaded(viewport.LightRenderTarget));
             CheckGlError();
-            GLClearColor(_entityManager.GetComponentOrNull<MapLightComponent>(mapUid)?.AmbientLightColor ?? MapLightComponent.DefaultColor);
-            GL.ClearStencil(0xFF);
+
+            var color = _entityManager.GetComponentOrNull<MapLightComponent>(mapUid)?.AmbientLightColor ?? MapLightComponent.DefaultColor;
+
+            GL.ClearColor(color.R, color.G, color.B, 0);
+            CheckGlError();
+            GL.ClearStencil(0x00);
+            CheckGlError();
             GL.StencilMask(0xFF);
+            CheckGlError();
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.StencilBufferBit);
             CheckGlError();
 
             ApplyLightingFovToBuffer(viewport, eye);
-
-            _lightProgram.Use();
-
-            SetupGlobalUniformsImmediate(_lightProgram, ShadowTexture);
-
-            SetTexture(TextureUnit.Texture0, _lightMaskTexture);
-            _lightProgram.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
-            SetTexture(TextureUnit.Texture1, _shadowmapAtlas.Texture);
-            _lightProgram.SetUniformTexture("ShadowMap", TextureUnit.Texture1);
-
-            GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.One);
-            CheckGlError();
-
-            GL.StencilFunc(StencilFunction.Equal, 0xFF, 0xFF);
-            CheckGlError();
-            GL.StencilOp(TKStencilOp.Keep, TKStencilOp.Keep, TKStencilOp.Keep);
-            CheckGlError();
-
-            using (DebugGroup("Draw Shadowcasting Lights"))
-            using (_prof.Group("Draw Shadowcasting Lights"))
-            {
-                _lightProgram.SetUniform("CastShadows", 1f);
-                var idxCount = GetQuadBatchIndexCount();
-                for (var i = 0; i < _lightCount; i++)
-                {
-                    ref var light = ref _lightsToRenderList[i];
-                    if (!light.CastShadows) // TODO LIGHTING have two separate arrays
-                        continue;
-
-                    if (_lightVertexIndex + 4 >= _lightVertexData.Length || _lightIndexIndex + idxCount > _lightIndexData.Length)
-                        FlushLights();
-
-                    // TODO LIGHTING
-                    // Make setting this faster / copy span?
-                    _lightVertexData[_lightVertexIndex + 0] = new LightVertex(light.Mask.BottomLeft, light.Properties);
-                    _lightVertexData[_lightVertexIndex + 1] = new LightVertex(light.Mask.BottomRight, light.Properties);
-                    _lightVertexData[_lightVertexIndex + 2] = new LightVertex(light.Mask.TopRight, light.Properties);
-                    _lightVertexData[_lightVertexIndex + 3] = new LightVertex(light.Mask.TopLeft, light.Properties);
-                    QuadBatchIndexWrite(_lightIndexData, ref _lightIndexIndex, (ushort) _lightVertexIndex);
-                    _lightVertexIndex += 4;
-                }
-
-                FlushLights();
-            }
-
-            using (DebugGroup("Draw Lights"))
-            using (_prof.Group("Draw Lights"))
-            {
-                _lightProgram.SetUniform("CastShadows", -1f);
-                var idxCount = GetQuadBatchIndexCount();
-                for (var i = 0; i < _lightCount; i++)
-                {
-                    ref var light = ref _lightsToRenderList[i];
-                    if (light.CastShadows)
-                        continue;
-                    if (_lightVertexIndex + 4 >= _lightVertexData.Length || _lightIndexIndex + idxCount > _lightIndexData.Length)
-                        FlushLights();
-
-                    // TODO LIGHTING
-                    // Make setting this faster / copy span?
-                    _lightVertexData[_lightVertexIndex + 0] = new LightVertex(light.Mask.BottomLeft, light.Properties);
-                    _lightVertexData[_lightVertexIndex + 1] = new LightVertex(light.Mask.BottomRight, light.Properties);
-                    _lightVertexData[_lightVertexIndex + 2] = new LightVertex(light.Mask.TopRight, light.Properties);
-                    _lightVertexData[_lightVertexIndex + 3] = new LightVertex(light.Mask.TopLeft, light.Properties);
-
-                    // TODO LIGHTING CACHE _lightIndexData
-                    QuadBatchIndexWrite(_lightIndexData, ref _lightIndexIndex, (ushort) _lightVertexIndex);
-                    _lightVertexIndex += 4;
-                }
-
-                FlushLights();
-            }
-
-            ResetBlendFunc();
-            GL.Disable(EnableCap.StencilTest);
-            _isStencilling = false;
-
-            CheckGlError();
-
-            //if (_cfg.GetCVar(CVars.LightBlur))
-            //    BlurLights(viewport, eye);
-
-            using (_prof.Group("BlurOntoWalls"))
-            {
-                BlurOntoWalls(viewport, eye);
-            }
-
-            using (_prof.Group("MergeWallLayer"))
-            {
-                MergeWallLayer(viewport);
-            }
+            DrawLights();
+            BlurLights(viewport, eye);
+            BlurOntoWalls(viewport, eye);
+            MergeWallLayer(viewport);
 
             BindRenderTargetFull(viewport.RenderTarget);
             GL.Viewport(0, 0, viewport.Size.X, viewport.Size.Y);
@@ -463,22 +372,99 @@ namespace Robust.Client.Graphics.Clyde
             _lightingReady = true;
         }
 
-        private void FlushLights()
+        private void DrawLights()
         {
-            if (_lightVertexIndex == 0)
-                return;
+            using var _ = DebugGroup("Draw Lights");
+            using var __ = _prof.Group("Draw Lights");
 
-            BindVertexArray(_lightVao.Handle);
-            _lightVbo.Reallocate(new Span<LightVertex>(_lightVertexData, 0, _lightVertexIndex));
-            _lightEbo.Reallocate(new Span<ushort>(_lightIndexData, 0, _lightIndexIndex));
+            SetTexture(TextureUnit.Texture0, _lightMaskTexture);
+            _lightProgram.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
+            SetupGlobalUniformsImmediate(_lightProgram, _lightMaskTexture);
+            SetupGlobalUniformsImmediate(_shadowProgram, null);
 
-            var type = MapPrimitiveType(GetQuadBatchPrimitiveType());
-            GL.DrawElements(type, _lightIndexIndex, DrawElementsType.UnsignedShort, 0);
-            _debugStats.LastGLDrawCalls += 1;
+            GL.BlendEquation(BlendEquationMode.FuncAdd);
+            CheckGlError();
+            GL.BlendFuncSeparate(BlendingFactorSrc.OneMinusDstAlpha, BlendingFactorDest.One, BlendingFactorSrc.One, BlendingFactorDest.One);
             CheckGlError();
 
-            _lightIndexIndex = 0;
-            _lightVertexIndex = 0;
+            GL.StencilFunc(StencilFunction.Equal, 0x00, 0xFF);
+            CheckGlError();
+            GL.StencilOp(TKStencilOp.Keep, TKStencilOp.Keep, TKStencilOp.Keep);
+            CheckGlError();
+            GL.ClearColor(0, 0, 0, 0);
+            CheckGlError();
+            GL.ColorMask(false, false, false, true);
+            CheckGlError();
+
+            for (var i = 0; i < _lightCount; i++)
+            {
+                DrawLight(_lightsToRenderList[i]);
+            }
+
+            GL.ColorMask(true, true, true, true);
+            CheckGlError();
+
+            ResetBlendFunc();
+            GL.Disable(EnableCap.StencilTest);
+            _isStencilling = false;
+            CheckGlError();
+        }
+
+        private void DrawLight(in PointLight light)
+        {
+            // TODO LIGHTING non-shadowcasting
+
+            // TODO LIGHTING Hard-light shader
+            // stop using & clearing alpha
+            // start using stencil buffer
+            //
+            // should we use bits in the stencil buffer to draw 7 lights at once (minimize shader changes)
+            // or use each bit to draw up to 256 lights without needing a Gl.Clear() call (minimize clears)
+
+            var props = light.Properties;
+            // TODO LIGHTING scissor
+
+            _shadowProgram.Use();
+
+            // single VBO for all light quads
+            // shadows use light quads as instanced data
+
+            // TODO LIGHTING consider using instanced rendering.
+            // I.e. populate a singe light data buffer once, then just draw one instance at a time with different offsets.
+            _shadowProgram.SetUniform("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Softness));
+            BindVertexArray(_shadowVao.Handle);
+            GL.DrawElements(
+                _hasGLPrimitiveRestart
+                    ? PrimitiveType.TriangleStrip
+                    : PrimitiveType.Triangles,
+                _shadowIndexCount,
+                DrawElementsType.UnsignedShort,
+                0);
+            CheckGlError();
+            _debugStats.LastGLDrawCalls += 1;
+
+            // Draw light
+            GL.ColorMask(true, true, true, false);
+            CheckGlError();
+            _lightProgram.Use();
+
+            // TODO LIGHTING consider using instanced rendering.
+            // I.e. populate a singe light data buffer once, then just draw one instance at a time with different offsets.
+            _lightProgram.SetUniform("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Angle));
+            _lightProgram.SetUniform("uLightPower", props.Power);
+            _lightProgram.SetUniform("uLightMask", light.Mask.AsVector4);
+            _lightProgram.SetUniform("uLightColor", light.Properties.Color);
+            BindVertexArray(QuadVAO.Handle);
+            CheckGlError();
+            GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+            CheckGlError();
+            _debugStats.LastGLDrawCalls += 1;
+
+            // Clear alpha
+            GL.ColorMask(false, false, false, true);
+            CheckGlError();
+            GL.Clear(ClearBufferMask.ColorBufferBit);
+            CheckGlError();
         }
 
         // TODO LIGHTING PARALLELIZE
@@ -520,12 +506,13 @@ namespace Robust.Client.Graphics.Clyde
                 ? (float) (light.Rotation + rot)
                 : (float) light.Rotation;
 
+            lightPos -= state.eyePos;
             float index = -1;
             if (light.CastShadows)
             {
                 index = ImageIndexToV(shadowCount, state.textureHeight);
                 if (shadowCount < state.instances.Length)
-                    state.instances[shadowCount] = new(lightPos - state.eyePos, angle, index, 1f, light.Radius, light.Softness);
+                    state.instances[shadowCount] = new(lightPos, angle, index, 1f, light.Radius, light.Softness);
 
                 shadowCount++;
             }
@@ -607,7 +594,7 @@ namespace Robust.Client.Graphics.Clyde
                 DebugTools.Assert(light.CastShadows);
                 var index = ImageIndexToV(_shadowCastingLightCount, ShadowTexture.Height);
                 light.Properties.Index = index;
-                _lightInstancesBuffer[_shadowCastingLightCount] = new(light.Properties.LightPos - eye.Position.Position, light.Properties.Angle, index, 1f, light.Properties.Range, light.Properties.Softness);
+                _lightInstancesBuffer[_shadowCastingLightCount] = new(light.Properties.LightPos, light.Properties.Angle, index, 1f, light.Properties.Range, light.Properties.Softness);
                 _shadowCastingLightCount++;
             }
 
@@ -616,7 +603,13 @@ namespace Robust.Client.Graphics.Clyde
 
         private void BlurLights(Viewport viewport, IEye eye)
         {
+            // TODO re-enable blur
+            return;
+            if (!_cfg.GetCVar(CVars.LightBlur))
+                return;
+
             using var _ = DebugGroup(nameof(BlurLights));
+            using var __ = _prof.Group(nameof(BlurLights));
 
             GL.Disable(EnableCap.Blend);
             CheckGlError();
@@ -680,6 +673,7 @@ namespace Robust.Client.Graphics.Clyde
         private void BlurOntoWalls(Viewport viewport, IEye eye)
         {
             using var _ = DebugGroup(nameof(BlurOntoWalls));
+            using var __ = _prof.Group(nameof(BlurOntoWalls));
 
             GL.Disable(EnableCap.Blend);
             CheckGlError();
@@ -741,6 +735,7 @@ namespace Robust.Client.Graphics.Clyde
         private void MergeWallLayer(Viewport viewport)
         {
             using var _ = DebugGroup(nameof(MergeWallLayer));
+            using var __ = _prof.Group(nameof(MergeWallLayer));
 
             BindRenderTargetFull(viewport.LightRenderTarget);
 
@@ -833,9 +828,8 @@ namespace Robust.Client.Graphics.Clyde
 
             fovShader.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
 
-            GL.StencilMask(0xFF);
             CheckGlError();
-            GL.StencilFunc(StencilFunction.Always, 0, 0);
+            GL.StencilFunc(StencilFunction.Always, 0xFF, 0xFF);
             CheckGlError();
             GL.StencilOp(TKStencilOp.Keep, TKStencilOp.Keep, TKStencilOp.Replace);
             CheckGlError();
@@ -889,9 +883,7 @@ namespace Robust.Client.Graphics.Clyde
 
             var lightMapSize = GetLightMapSize(viewport.Size);
             var lightMapSizeQuart = GetLightMapSize(viewport.Size, true);
-            var lightMapColorFormat = _hasGLFloatFramebuffers
-                ? RenderTargetColorFormat.R11FG11FB10F
-                : RenderTargetColorFormat.Rgba8;
+            var lightMapColorFormat = RenderTargetColorFormat.Rgba8;
             var lightMapSampleParameters = new TextureSampleParameters { Filter = true };
 
             viewport.LightRenderTarget?.Dispose();
@@ -973,7 +965,7 @@ namespace Robust.Client.Graphics.Clyde
                 nameof(_shadowRenderTarget));
 
             _shadowmapAtlas = CreateRenderTarget((LightAtlasSize, LightAtlasSize),
-                new RenderTargetFormatParameters(RenderTargetColorFormat.R16),
+                new RenderTargetFormatParameters(RenderTargetColorFormat.R8),
                 new TextureSampleParameters { Filter = true },
                 nameof(_shadowRenderTarget));
 

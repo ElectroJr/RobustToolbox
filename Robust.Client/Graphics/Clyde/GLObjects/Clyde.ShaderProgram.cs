@@ -7,6 +7,8 @@ using Robust.Shared.Maths;
 using Robust.Shared.Utility;
 using Vector3 = Robust.Shared.Maths.Vector3;
 using Vector4 = Robust.Shared.Maths.Vector4;
+using SysVec3 = System.Numerics.Vector3;
+using SysVec4 = System.Numerics.Vector4;
 
 namespace Robust.Client.Graphics.Clyde
 {
@@ -314,6 +316,31 @@ namespace Robust.Client.Graphics.Clyde
                 unsafe
                 {
                     fixed (Vector4* ptr = &vector)
+                    {
+                        GL.Uniform4(slot, 1, (float*)ptr);
+                        _clyde.CheckGlError();
+                    }
+                }
+            }
+
+            public void SetUniform(string uniformName, in SysVec4 vector)
+            {
+                var uniformId = GetUniform(uniformName);
+                SetUniformDirect(uniformId, vector);
+            }
+
+            public void SetUniform(int uniformName, in SysVec4 vector)
+            {
+                var uniformId = GetUniform(uniformName);
+                SetUniformDirect(uniformId, vector);
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void SetUniformDirect(int slot, in SysVec4 vector)
+            {
+                unsafe
+                {
+                    fixed (SysVec4* ptr = &vector)
                     {
                         GL.Uniform4(slot, 1, (float*)ptr);
                         _clyde.CheckGlError();

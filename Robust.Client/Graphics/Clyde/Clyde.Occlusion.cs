@@ -242,66 +242,6 @@ internal partial class Clyde
         FinalizeDepthDraw();
     }
 
-    private void DrawShadows()
-    {
-        if (!_lightManager.DrawShadows)
-            return;
-
-        using var _ = DebugGroup(nameof(DrawShadows));
-        using var __ = _prof.Group(nameof(DrawShadows));
-
-        _shadowProgram.Use();
-        SetupGlobalUniformsImmediate(_shadowProgram, null);
-
-        var target = RtToLoaded(_shadowmapAtlas);
-        BindRenderTargetImmediate(target);
-        CheckGlError();
-
-        // Occluders will (sometimes partially) block light.
-        // This means each occluder will only ever reduce the visibility of a light source is visible.
-        // However this isn't ideal, because we might end up over-subtracting.
-        // I.e., if two occluders sit at the some point, and the light is half-visible in each penumbra, this will
-        // result in the light not being visible at all.
-        GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
-        CheckGlError();
-        GL.BlendEquation(BlendEquationMode.FuncReverseSubtract);
-        CheckGlError();
-
-        GL.Viewport(0, 0, target.Size.X, target.Size.Y);
-        CheckGlError();
-
-        GL.ClearColor(1, 1, 1, 1);
-        CheckGlError();
-
-        CheckGlError();
-        GL.Clear(ClearBufferMask.ColorBufferBit);
-        CheckGlError();
-
-        BindVertexArray(_shadowVao.Handle);
-
-        for (var i = 0; i < _shadowCastingLightCount; i++)
-        {
-            ref var light = ref _lightInstancesBuffer[i];
-            _shadowProgram.SetUniform("uLightPosition", new Vector3(light.Origin.X, light.Origin.Y, light.Rotation));
-            _shadowProgram.SetUniform("uLightData", new Vector2(light.Range, light.Softness));
-
-            // Light quads are drawn to the light atlas left to right, top to bottom
-            var row = i/12;
-            var column = i % 12;
-            GL.Viewport(column * LightShadowSize, row * LightShadowSize, LightShadowSize, LightShadowSize);
-            CheckGlError();
-
-            GL.DrawElements(_hasGLPrimitiveRestart ? PrimitiveType.TriangleStrip : PrimitiveType.Triangles, _shadowIndexCount, DrawElementsType.UnsignedShort, 0);
-            CheckGlError();
-            _debugStats.LastGLDrawCalls += 1;
-        }
-
-        GL.BlendEquation(BlendEquationMode.FuncAdd);
-        CheckGlError();
-        ResetBlendFunc();
-        CheckGlError();
-    }
-
     /// <summary>
     /// Convert an image y-coordinate to the UV coordinates. Useful for shaders that should index a specific row in
     /// an image.
