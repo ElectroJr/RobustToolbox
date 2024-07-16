@@ -275,6 +275,9 @@ namespace Robust.Client.Graphics.Clyde
                     expandedAABB = expandedAABB.ExtendToContain(_shadowCastingLights[i].Properties.LightPos + eye.Position.Position);
                 }
             }
+
+            // TODO LIGHTING
+            // based on the f3 window, it seems like the occluder lookup is lopsided?
             UpdateOcclusionGeometry(expandedAABB, eye);
 
             _debugStats.TotalLights += _lightCount;
