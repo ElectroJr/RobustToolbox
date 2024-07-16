@@ -490,6 +490,19 @@ namespace Robust.Client.Graphics.Clyde
                 }
             }
 
+
+            public void SetUniformMaybe(string uniformName, in SysVec4 value)
+            {
+                if (TryGetUniform(uniformName, out var slot))
+                    SetUniformDirect(slot, value);
+            }
+
+            public void SetUniformMaybe(int uniformName, in SysVec4 value)
+            {
+                if (TryGetUniform(uniformName, out var slot))
+                    SetUniformDirect(slot, value);
+            }
+
             public void SetUniformMaybe(string uniformName, in Color value)
             {
                 if (TryGetUniform(uniformName, out var slot))

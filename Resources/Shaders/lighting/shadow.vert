@@ -35,7 +35,7 @@ varying highp vec4 vPenumbraCoords;
 uniform highp vec4 uLightData; // (x position, y position, range, radius)
 
 // expands wall edges a little to prevent holes
-const highp float DEPTH_LEFTRIGHT_EXPAND_BIAS = 0.001;
+const highp float EXPAND_BIAS = 0.01;
 
 highp mat2 Adjugate(highp mat2 m)
 {
@@ -53,49 +53,34 @@ void main()
     highp float lightRange = uLightData.z;
     highp float lightRadius = uLightData.w;
 
-    highp vec2 deltaA = aOccluderSegment.xy - lightPos;
-    highp vec2 deltaB = aOccluderSegment.zw - lightPos;
+    highp vec2 pointA = aOccluderSegment.xy;
+    highp vec2 pointB = aOccluderSegment.zw;
 
-    highp float angleA = atan(deltaA.y, deltaA.x);
-    highp float angleB = atan(deltaB.y, deltaB.x);
-    highp float angleDelta = angleB - angleA;
+    // Apply EXPAND_BIAS
+    highp vec2 bias = EXPAND_BIAS * normalize(pointA - pointB);
+    pointA += bias;
+    pointB -= bias;
 
-    // Check if the line clips over the [Pi, -Pi] range.
-    if (angleDelta >= PI)
-    {
-        angleB -= PI * 2.0;
-        angleDelta = angleB - angleA;
-    }
-    else if (angleDelta <= -PI)
-    {
-        angleB += PI * 2.0;
-        angleDelta = angleB - angleA;
-    }
+    highp vec2 deltaA = pointA - lightPos;
+    highp vec2 deltaB = pointB - lightPos;
 
     // Ensure the occluder line segment is always traveling clockwise around the lightsource
-    if (angleDelta < 0.0)
+    float cross = deltaA.x * deltaB.y - deltaA.y * deltaB.x;
+    if (cross < 0.0)
     {
         highp vec2 tmp = deltaA;
         deltaA = deltaB;
         deltaB = tmp;
-        tmp.x = angleA;
-        angleA = angleB;
-        angleB = tmp.x;
+        tmp = pointA;
+        pointA = pointB;
+        pointB = tmp;
     }
-
-    // expand angles
-    angleA -= DEPTH_LEFTRIGHT_EXPAND_BIAS;
-    angleB += DEPTH_LEFTRIGHT_EXPAND_BIAS;
-    deltaA = length(deltaA) * vec2(cos(angleA), sin(angleA));
-    deltaB = length(deltaB) * vec2(cos(angleB), sin(angleB));
-    highp vec2 pointA = deltaA + lightPos;
-    highp vec2 pointB = deltaB + lightPos;
 
     // Is this vertex associated with start or end of the line segment?
     highp float pointSelector = 0.0;
 
     // 1 or 0 depending on whether this vertex is for a point that makes up the occluder line segment, or that points
-    // shadow. We also use this for perspective division, i.e., we use 0 for pointsthat lie out at infinity.
+    // shadow. We also use this for perspective division, i.e., we use 0 for points that lie out at infinity.
     highp float shadowSelector = 0.0;
 
     int pointId = gl_VertexID - (gl_VertexID / 4) * 4;
@@ -146,6 +131,8 @@ void main()
     highp vec2 point = mix(pointA,  pointB,  pointSelector);
     highp vec2 position = mix(delta - offset, point, shadowSelector);
     highp vec3 transformedPosition = projectionMatrix * view * vec3(position, shadowSelector);
+    // Note that the z-component above is the 0 if this is a point that lies out at infinity.
+    // This prevents the point fron having offsets applied, as the point is effectively meant to represent a direction.
 
     // Compute penumbra coordinates
     highp vec2 penumbraA = Adjugate(mat2( offsetA, -deltaA))*(delta - mix(offset, deltaA, shadowSelector));
@@ -158,4 +145,8 @@ void main()
     // highp vec2 normal = deltaB - deltaA;
     // normal = normal.yx*vec2(-1.0, 1.0);
     // vClipEdge = dot(normal, delta - offset)*(1.0 - shadowSelector);
+
+    // TODO LIGHTING RE-EXAMINE THIS
+    // Currently wall clipping with clamped softness still leads to issues
+    // e.g., when putting a light source inside of a wall.
 }

@@ -229,6 +229,9 @@ internal partial class Clyde
 
     private void DrawShadowDepths()
     {
+        // TODO LIGHTING remove this function
+
+
         if (!_lightManager.DrawShadows)
             return;
 
@@ -238,8 +241,6 @@ internal partial class Clyde
         PrepareDepthTarget(RtToLoaded(_shadowRenderTarget));
         BindVertexArray(_lightOcclusionVao.Handle);
         DrawOcclusionDepth(_lightOcclusionVertexCount, _shadowCastingLightCount);
-
-        FinalizeDepthDraw();
     }
 
     /// <summary>
@@ -317,9 +318,7 @@ internal partial class Clyde
     private void FinalizeDepthDraw()
     {
         GL.DepthMask(false);
-        CheckGlError();
         GL.Disable(EnableCap.DepthTest);
-        CheckGlError();
         GL.Enable(EnableCap.Blend);
         CheckGlError();
     }

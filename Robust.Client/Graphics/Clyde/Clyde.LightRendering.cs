@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
-using System.Numerics;
 using OpenToolkit.Graphics.OpenGL4;
 using Robust.Client.GameObjects;
 using Robust.Client.ResourceManagement;
@@ -21,10 +20,14 @@ using Robust.Shared.Serialization.TypeSerializers.Implementations;
 using Robust.Shared.Utility;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using Box2 = Robust.Shared.Maths.Box2;
 using Color = Robust.Shared.Maths.Color;
+using Matrix3x2 = System.Numerics.Matrix3x2;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
 using Vector4 = System.Numerics.Vector4;
 using RVector4 = Robust.Shared.Maths.Vector4;
+using Vector2 = System.Numerics.Vector2;
+using Vector2i = Robust.Shared.Maths.Vector2i;
 
 namespace Robust.Client.Graphics.Clyde
 {
@@ -43,6 +46,7 @@ namespace Robust.Client.Graphics.Clyde
         private ClydeHandle _wallBleedBlurShaderHandle;
         private ClydeHandle _lightBlurShaderHandle;
         private ClydeHandle _mergeWallLayerShaderHandle;
+        private ClydeHandle _wallMaskLayerShaderHandle;
 
         // Sampler used to sample the FovTexture with linear filtering, used in the lighting FOV pass
         // (it uses VSM unlike final FOV).
@@ -250,6 +254,7 @@ namespace Robust.Client.Graphics.Clyde
             _wallBleedBlurShaderHandle = LoadShaderHandle("/Shaders/Internal/wall-bleed-blur.swsl");
             _lightBlurShaderHandle = LoadShaderHandle("/Shaders/Internal/light-blur.swsl");
             _mergeWallLayerShaderHandle = LoadShaderHandle("/Shaders/Internal/wall-merge.swsl");
+            _wallMaskLayerShaderHandle = LoadShaderHandle("/Shaders/Internal/wall-mask.swsl");
             ReloadInternalShaders();
         }
 
@@ -291,6 +296,8 @@ namespace Robust.Client.Graphics.Clyde
 
         private void DrawLightsAndFov(Viewport viewport, Box2Rotated worldBounds, Box2 worldAABB, IEye eye)
         {
+            // TODO LIGHTING
+            // need to regenerate light frame buffers if soft shadows are enabled to disabled.
             if (!_lightManager.Enabled || !eye.DrawLight)
                 return;
 
@@ -336,6 +343,7 @@ namespace Robust.Client.Graphics.Clyde
             }
 
             DrawShadowDepths();
+            FinalizeDepthDraw();
 
             GL.Enable(EnableCap.StencilTest);
             CheckGlError();
@@ -351,16 +359,14 @@ namespace Robust.Client.Graphics.Clyde
             var color = _entityManager.GetComponentOrNull<MapLightComponent>(mapUid)?.AmbientLightColor ?? MapLightComponent.DefaultColor;
 
             GL.ClearColor(color.R, color.G, color.B, 0);
-            CheckGlError();
             GL.ClearStencil(0x00);
-            CheckGlError();
             GL.StencilMask(0xFF);
-            CheckGlError();
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.StencilBufferBit);
             CheckGlError();
 
             ApplyLightingFovToBuffer(viewport, eye);
-            DrawLights();
+            ApplyOccluderMask();
+            DrawLights(viewport, eye);
             BlurLights(viewport, eye);
             BlurOntoWalls(viewport, eye);
             MergeWallLayer(viewport);
@@ -372,47 +378,91 @@ namespace Robust.Client.Graphics.Clyde
             _lightingReady = true;
         }
 
-        private void DrawLights()
+        private void ApplyOccluderMask()
+        {
+            // FOV mask is 0x01, Wall mask is 0x02
+            GL.StencilFunc(StencilFunction.Gequal, 0xFE, 0xFF);
+            GL.StencilOp(TKStencilOp.Keep, TKStencilOp.Keep, TKStencilOp.Replace);
+            GL.ColorMask(false, false, false, false);
+
+            var shader = _loadedShaders[_wallMaskLayerShaderHandle].Program;
+            shader.Use();
+            SetupGlobalUniformsImmediate(shader, null);
+            BindVertexArray(_occlusionMaskVao.Handle);
+            GL.DrawElements(GetQuadGLPrimitiveType(),
+                _occluderCount * GetQuadBatchIndexCount(),
+                DrawElementsType.UnsignedShort,
+                IntPtr.Zero);
+            CheckGlError();
+        }
+
+        private void DrawLights(Viewport viewport, IEye eye)
         {
             using var _ = DebugGroup("Draw Lights");
             using var __ = _prof.Group("Draw Lights");
 
             SetTexture(TextureUnit.Texture0, _lightMaskTexture);
+            _lightProgram.Use();
             _lightProgram.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
+            _lightProgram.SetUniformMaybe("uClamp", 0);
             SetupGlobalUniformsImmediate(_lightProgram, _lightMaskTexture);
+            _shadowProgram.Use();
             SetupGlobalUniformsImmediate(_shadowProgram, null);
 
+            GL.Enable(EnableCap.ScissorTest);
+            _isScissoring = true;
             GL.BlendEquation(BlendEquationMode.FuncAdd);
-            CheckGlError();
             GL.BlendFuncSeparate(BlendingFactorSrc.OneMinusDstAlpha, BlendingFactorDest.One, BlendingFactorSrc.One, BlendingFactorDest.One);
-            CheckGlError();
 
             GL.StencilFunc(StencilFunction.Equal, 0x00, 0xFF);
-            CheckGlError();
             GL.StencilOp(TKStencilOp.Keep, TKStencilOp.Keep, TKStencilOp.Keep);
-            CheckGlError();
             GL.ClearColor(0, 0, 0, 0);
-            CheckGlError();
             GL.ColorMask(false, false, false, true);
             CheckGlError();
 
+            var (lightW, lightH) = GetLightMapSize(viewport.Size);
+            var lightViewport = new Box2(0, 0, lightW, lightH);
+
+            var transform = _currentMatrixView;
+
+            // Occluder and light positions are already relative to the eye.
+            transform.M31 = 0;
+            transform.M32 = 0;
+            transform *= _currentMatrixProj;
+
+            // Transform from clip space to screen space.
+            transform *= Matrix3Helpers.CreateTranslation(Vector2.One);
+            transform *= Matrix3Helpers.CreateScale((float)lightW/2, (float)lightH/2);
+
+            // When transforming light bounding boxes for GL.Scissor, we want to avoid rotations that lead to enlarged
+            // bounds. Hence we just directly compute the scaling factor that goes into the view & projection matrices.
+            var scale = EyeManager.PixelsPerMeter * 2 * eye.Scale * viewport.RenderScale / viewport.RenderTarget.Size * new Vector2(lightW, lightH);
+
             for (var i = 0; i < _lightCount; i++)
             {
-                DrawLight(_lightsToRenderList[i]);
+                DrawLight(_lightsToRenderList[i], lightViewport, transform, scale);
             }
 
             GL.ColorMask(true, true, true, true);
-            CheckGlError();
-
             ResetBlendFunc();
             GL.Disable(EnableCap.StencilTest);
+            GL.Disable(EnableCap.ScissorTest);
             _isStencilling = false;
+            _isScissoring = false;
             CheckGlError();
         }
 
-        private void DrawLight(in PointLight light)
+        private void DrawLight(in PointLight light, Box2 viewBox, Matrix3x2 transform, Vector2 scale)
         {
-            // TODO LIGHTING non-shadowcasting
+            var props = light.Properties;
+
+            var screenPos = Vector2.Transform(props.LightPos, transform);
+            var lightBox = Box2.CenteredAround(screenPos, scale * props.Range).Intersect(viewBox);
+            GL.Scissor((int)lightBox.Left, (int)lightBox.Bottom, (int)Math.Ceiling(lightBox.Width), (int)Math.Ceiling(lightBox.Height));
+
+            // TODO LIGHTING batch together non-shadowcasting lights
+            // TODO LIGHTING consider using instanced rendering.
+            // I.e. populate a singe light data buffer once, then just draw one instance at a time with different offsets.
 
             // TODO LIGHTING Hard-light shader
             // stop using & clearing alpha
@@ -420,49 +470,60 @@ namespace Robust.Client.Graphics.Clyde
             //
             // should we use bits in the stencil buffer to draw 7 lights at once (minimize shader changes)
             // or use each bit to draw up to 256 lights without needing a Gl.Clear() call (minimize clears)
-
-            var props = light.Properties;
             // TODO LIGHTING scissor
-
-            _shadowProgram.Use();
 
             // single VBO for all light quads
             // shadows use light quads as instanced data
 
             // TODO LIGHTING consider using instanced rendering.
             // I.e. populate a singe light data buffer once, then just draw one instance at a time with different offsets.
-            _shadowProgram.SetUniform("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Softness));
-            BindVertexArray(_shadowVao.Handle);
-            GL.DrawElements(
-                _hasGLPrimitiveRestart
-                    ? PrimitiveType.TriangleStrip
-                    : PrimitiveType.Triangles,
-                _shadowIndexCount,
-                DrawElementsType.UnsignedShort,
-                0);
-            CheckGlError();
-            _debugStats.LastGLDrawCalls += 1;
+            if (light.CastShadows)
+            {
+                GL.ColorMask(false, false, false, true);
+                _shadowProgram.Use();
+                _shadowProgram.SetUniformMaybe("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Softness));
+                BindVertexArray(_shadowVao.Handle);
+                GL.DrawElements(
+                    _hasGLPrimitiveRestart
+                        ? PrimitiveType.TriangleStrip
+                        : PrimitiveType.Triangles,
+                    _shadowIndexCount,
+                    DrawElementsType.UnsignedShort,
+                    0);
+                _debugStats.LastGLDrawCalls += 1;
+                CheckGlError();
+            }
+
+            _lightProgram.Use();
+            _lightProgram.SetUniformMaybe("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Angle));
+            _lightProgram.SetUniformMaybe("uLightPower", props.Power);
+            _lightProgram.SetUniformMaybe("uLightMask", light.Mask.AsVector4);
+            _lightProgram.SetUniformMaybe("uLightColor", props.Color);
+            BindVertexArray(QuadVAO.Handle);
+
+            // TODO LIGHTING remove alpha clamping call somehow
+            // is there really no way to have float colors and fixed (or at least clamped) alpha
+            if (light.CastShadows && _hasGLFloatFramebuffers)
+            {
+                _lightProgram.SetUniformMaybe("uClamp", 1);
+                GL.BlendEquation(BlendEquationMode.Min);
+                GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+                _debugStats.LastGLDrawCalls += 1;
+                _lightProgram.SetUniformMaybe("uClamp", 0);
+                GL.BlendEquation(BlendEquationMode.FuncAdd);
+                CheckGlError();
+            }
 
             // Draw light
             GL.ColorMask(true, true, true, false);
-            CheckGlError();
-            _lightProgram.Use();
-
-            // TODO LIGHTING consider using instanced rendering.
-            // I.e. populate a singe light data buffer once, then just draw one instance at a time with different offsets.
-            _lightProgram.SetUniform("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Angle));
-            _lightProgram.SetUniform("uLightPower", props.Power);
-            _lightProgram.SetUniform("uLightMask", light.Mask.AsVector4);
-            _lightProgram.SetUniform("uLightColor", light.Properties.Color);
-            BindVertexArray(QuadVAO.Handle);
-            CheckGlError();
             GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
-            CheckGlError();
             _debugStats.LastGLDrawCalls += 1;
-
-            // Clear alpha
-            GL.ColorMask(false, false, false, true);
             CheckGlError();
+
+            if (!light.CastShadows)
+                return;
+
+            GL.ColorMask(false, false, false, true);
             GL.Clear(ClearBufferMask.ColorBufferBit);
             CheckGlError();
         }
@@ -603,7 +664,7 @@ namespace Robust.Client.Graphics.Clyde
 
         private void BlurLights(Viewport viewport, IEye eye)
         {
-            // TODO re-enable blur
+            // TODO LIGHTING re-enable blur
             return;
             if (!_cfg.GetCVar(CVars.LightBlur))
                 return;
@@ -672,6 +733,9 @@ namespace Robust.Client.Graphics.Clyde
 
         private void BlurOntoWalls(Viewport viewport, IEye eye)
         {
+            // TODO LIGHTING
+            // For whatever reason, this seems much darker than before?
+            // Is it just my imagination or is it different somehow?
             using var _ = DebugGroup(nameof(BlurOntoWalls));
             using var __ = _prof.Group(nameof(BlurOntoWalls));
 
@@ -740,32 +804,30 @@ namespace Robust.Client.Graphics.Clyde
             BindRenderTargetFull(viewport.LightRenderTarget);
 
             GL.Viewport(0, 0, viewport.LightRenderTarget.Size.X, viewport.LightRenderTarget.Size.Y);
-            CheckGlError();
             GL.Disable(EnableCap.Blend);
+            GL.Enable(EnableCap.StencilTest);
+            GL.StencilFunc(StencilFunction.Equal, 0xFE, 0xFF);
             CheckGlError();
 
             var shader = _loadedShaders[_mergeWallLayerShaderHandle].Program;
             shader.Use();
-
             var tex = viewport.WallBleedIntermediateRenderTarget2.Texture;
-
             SetupGlobalUniformsImmediate(shader, tex);
-
             SetTexture(TextureUnit.Texture0, tex);
-
             shader.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
 
-            BindVertexArray(_occlusionMaskVao.Handle);
-            CheckGlError();
+            BindVertexArray(QuadVAO.Handle);
+            GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+            _debugStats.LastGLDrawCalls += 1;
 
-            GL.DrawElements(GetQuadGLPrimitiveType(),
-                _occluderCount * GetQuadBatchIndexCount(),
-                DrawElementsType.UnsignedShort,
-                IntPtr.Zero);
-            CheckGlError();
-
+            GL.Disable(EnableCap.StencilTest);
             GL.Enable(EnableCap.Blend);
             CheckGlError();
+            // TODO LIGHTING
+            // Because of the shadow shaders DEPTH_LEFTRIGHT_EXPAND_BIAS
+            // The lines that make up the walls don't quite match the lines of the mask for this draw.
+            // So the edges of occluders can have a pixel of black around them
+            // Need to figure out some way to stop this
         }
 
         private void ApplyFovToBuffer(Viewport viewport, IEye eye)
@@ -883,7 +945,23 @@ namespace Robust.Client.Graphics.Clyde
 
             var lightMapSize = GetLightMapSize(viewport.Size);
             var lightMapSizeQuart = GetLightMapSize(viewport.Size, true);
-            var lightMapColorFormat = RenderTargetColorFormat.Rgba8;
+            var lightMapColorFormat = _hasGLFloatFramebuffers
+                ? RenderTargetColorFormat.R11FG11FB10F
+                : RenderTargetColorFormat.Rgba8;
+
+            var mainLightColorFormat = lightMapColorFormat;
+            if (_enableSoftShadows && _hasGLFloatFramebuffers)
+            {
+                // Soft shadows use alpha channel for occlusion information.
+                // RGBA8 has banding, but R11FG11FB10F has no alpha channel.
+                // TODO LIGHTING do we really need a 64bit texture?
+                // Maybe just use a separate texture for occlusion data?
+                // This would also prevent the need for alpha clamping
+
+                // TODO LIGHTING how much does this affect performance?
+                mainLightColorFormat = RenderTargetColorFormat.Rgba16F;
+            }
+
             var lightMapSampleParameters = new TextureSampleParameters { Filter = true };
 
             viewport.LightRenderTarget?.Dispose();
@@ -895,7 +973,7 @@ namespace Robust.Client.Graphics.Clyde
                 name: $"{viewport.Name}-{nameof(viewport.WallMaskRenderTarget)}");
 
             viewport.LightRenderTarget = CreateRenderTarget(lightMapSize,
-                new RenderTargetFormatParameters(lightMapColorFormat, hasDepthStencil: true),
+                new RenderTargetFormatParameters(mainLightColorFormat, hasDepthStencil: true),
                 lightMapSampleParameters,
                 $"{viewport.Name}-{nameof(viewport.LightRenderTarget)}");
 

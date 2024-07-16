@@ -186,9 +186,10 @@ namespace Robust.Client.Graphics.Clyde
         private void CheckGlErrorInternal(string? path, int line)
         {
             var err = GL.GetError();
-            if (err != ErrorCode.NoError)
+            while (err != ErrorCode.NoError)
             {
                 _sawmillOgl.Error($"OpenGL error: {err} at {path}:{line}\n{Environment.StackTrace}");
+                err = GL.GetError();
             }
         }
 
