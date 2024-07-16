@@ -48,11 +48,10 @@ void main()
     highp mat3 view = viewMatrix;
     view[2].xyz = vec3(0.0);
 
-    // Unpack uniforms
+    // Unpack uniforms & attributes
     highp vec2 lightPos = uLightData.xy;
     highp float lightRange = uLightData.z;
     highp float lightRadius = uLightData.w;
-
     highp vec2 pointA = aOccluderSegment.xy;
     highp vec2 pointB = aOccluderSegment.zw;
 

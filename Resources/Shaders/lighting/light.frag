@@ -20,7 +20,7 @@ void main()
 
     highp float range = uLightData.z;
     highp float dist2 = dot(vDeltaPos, vDeltaPos) + LIGHTING_HEIGHT * LIGHTING_HEIGHT;
-    highp float val = clamp((1.0 - clamp(sqrt(dist2) / range, 0.0, 1.0)) * (1.0 / (sqrt(dist2 + 1.0))), 0.0, 1.0);
+    highp float falloff = clamp((1.0 - clamp(sqrt(dist2) / range, 0.0, 1.0)) * (1.0 / (sqrt(dist2 + 1.0))), 0.0, 1.0);
     highp float mask = zTextureSpec(TEXTURE, vMaskUV).r;
-    gl_FragColor = zAdjustResult(uLightColor * val * uLightPower * mask);
+    gl_FragColor = zAdjustResult(uLightColor * falloff * uLightPower * mask * uLightColor.w);
 }

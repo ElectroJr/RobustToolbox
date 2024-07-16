@@ -215,13 +215,23 @@ namespace Robust.Client.Graphics.Clyde
             _depthProgram = program;
 
             program = _compileProgram(
-                _resManager.ContentFileReadAllText("/Shaders/lighting/shadow.vert"),
-                _resManager.ContentFileReadAllText("/Shaders/lighting/shadow.frag"),
+                _resManager.ContentFileReadAllText("/Shaders/lighting/soft_shadow.vert"),
+                _resManager.ContentFileReadAllText("/Shaders/lighting/soft_shadow.frag"),
                 [ ("aOccluderSegment", 0) ],
                 "Occlusion Shadow Program");
 
-            _shadowProgram?.Delete();
-            _shadowProgram = program;
+            _softShadowProgram?.Delete();
+            _softShadowProgram = program;
+
+            program = _compileProgram(
+                _resManager.ContentFileReadAllText("/Shaders/lighting/hard_shadow.vert"),
+                _resManager.ContentFileReadAllText("/Shaders/lighting/hard_shadow.frag"),
+                [ ("aOccluderSegment", 0) ],
+                "Occlusion Shadow Program");
+
+            _hardShadowProgram?.Delete();
+            _hardShadowProgram = program;
+
 
             program = _compileProgram(
                 _resManager.ContentFileReadAllText("/Shaders/lighting/light.vert"),
@@ -340,18 +350,19 @@ namespace Robust.Client.Graphics.Clyde
             _lightProgram.SetUniformTextureMaybe(UniIMainTexture, TextureUnit.Texture0);
             _lightProgram.SetUniformMaybe("uClamp", 0);
             SetupGlobalUniformsImmediate(_lightProgram, _lightMaskTexture);
-            _shadowProgram.Use();
-            SetupGlobalUniformsImmediate(_shadowProgram, null);
 
-            GL.Enable(EnableCap.ScissorTest);
+            var shadowProgram = _enableSoftShadows ? _softShadowProgram : _hardShadowProgram;
+            shadowProgram.Use();
+            SetupGlobalUniformsImmediate(shadowProgram, null);
+
             _isScissoring = true;
+            GL.Enable(EnableCap.ScissorTest);
             GL.BlendEquation(BlendEquationMode.FuncAdd);
-            GL.BlendFuncSeparate(BlendingFactorSrc.OneMinusDstAlpha, BlendingFactorDest.One, BlendingFactorSrc.One, BlendingFactorDest.One);
-
+            GL.ClearColor(0, 0, 0, 0);
+            GL.BlendFunc(BlendingFactor.One, BlendingFactor.One);
             GL.StencilFunc(StencilFunction.Equal, 0x00, 0xFF);
             GL.StencilOp(TKStencilOp.Keep, TKStencilOp.Keep, TKStencilOp.Keep);
-            GL.ClearColor(0, 0, 0, 0);
-            GL.ColorMask(false, false, false, true);
+            GL.ColorMask(true, true, true, false);
             CheckGlError();
 
             var (lightW, lightH) = GetLightMapSize(viewport.Size);
@@ -372,16 +383,25 @@ namespace Robust.Client.Graphics.Clyde
             // bounds. Hence we just directly compute the scaling factor that goes into the view & projection matrices.
             var scale = EyeManager.PixelsPerMeter * 2 * eye.Scale * viewport.RenderScale / viewport.RenderTarget.Size * new Vector2(lightW, lightH);
 
-            GL.ColorMask(true, true, true, false);
             for (var i = 0; i < _lightCount; i++)
             {
                 DrawLight(_nonShadowCastingLights[i], lightViewport, transform, scale);
             }
 
-            GL.ColorMask(false, false, false, true);
-            for (var i = 0; i < _shadowCastingLightCount; i++)
+            if (!_lightManager.DrawShadows)
             {
-                DrawShadowCastingLight(_shadowCastingLights[i], lightViewport, transform, scale);
+                for (var i = 0; i < _shadowCastingLightCount; i++)
+                {
+                    DrawLight(_shadowCastingLights[i], lightViewport, transform, scale);
+                }
+            }
+            else if (_enableSoftShadows)
+            {
+                DrawSoftLights(transform, scale, lightViewport);
+            }
+            else
+            {
+                DrawHardLights(transform, scale, lightViewport);
             }
 
             GL.ColorMask(true, true, true, true);
@@ -392,6 +412,32 @@ namespace Robust.Client.Graphics.Clyde
             _isScissoring = false;
             CheckGlError();
         }
+
+        private void DrawHardLights(in Matrix3x2 transform, in Vector2 scale, in Box2 lightViewport)
+        {
+            GL.StencilOp(TKStencilOp.Keep, TKStencilOp.Keep, TKStencilOp.Replace);
+            CheckGlError();
+
+            for (var i = 0; i < _shadowCastingLightCount; i++)
+            {
+                GL.StencilFunc(StencilFunction.Greater, i + 1, 0xFF);
+                CheckGlError();
+                DrawHardLight(_shadowCastingLights[i], lightViewport, transform, scale);
+            }
+        }
+
+        private void DrawSoftLights(in Matrix3x2 transform, in Vector2 scale, in Box2 lightViewport)
+        {
+            GL.BlendFuncSeparate(BlendingFactorSrc.OneMinusDstAlpha, BlendingFactorDest.One, BlendingFactorSrc.One, BlendingFactorDest.One);
+            GL.ColorMask(false, false, false, true);
+            CheckGlError();
+
+            for (var i = 0; i < _shadowCastingLightCount; i++)
+            {
+                DrawSoftLight(_shadowCastingLights[i], lightViewport, transform, scale);
+            }
+        }
+
         private void DrawLight(in PointLight light, Box2 viewBox, Matrix3x2 transform, Vector2 scale)
         {
             var props = light.Properties;
@@ -400,15 +446,13 @@ namespace Robust.Client.Graphics.Clyde
             var lightBox = Box2.CenteredAround(screenPos, scale * props.Range).Intersect(viewBox);
             GL.Scissor((int)lightBox.Left, (int)lightBox.Bottom, (int)Math.Ceiling(lightBox.Width), (int)Math.Ceiling(lightBox.Height));
 
-
-
             _lightProgram.Use();
+            // TODO LIGHTING combine into a single batch with vertex attributes
             _lightProgram.SetUniformMaybe("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Angle));
             _lightProgram.SetUniformMaybe("uLightPower", props.Power);
             _lightProgram.SetUniformMaybe("uLightMask", light.Mask.AsVector4);
             _lightProgram.SetUniformMaybe("uLightColor", props.Color);
             BindVertexArray(QuadVAO.Handle);
-
 
             // Draw light
             GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
@@ -416,19 +460,10 @@ namespace Robust.Client.Graphics.Clyde
             CheckGlError();
         }
 
-        private void DrawShadowCastingLight(in PointLight light, Box2 viewBox, Matrix3x2 transform, Vector2 scale)
+        private void DrawSoftLight(in PointLight light, in Box2 viewBox, in Matrix3x2 transform, in Vector2 scale)
         {
-            // TODO LIGHTING batch together non-shadowcasting lights
             // TODO LIGHTING consider using instanced rendering.
             // I.e. populate a singe light data buffer once, then just draw one instance at a time with different offsets.
-
-            // TODO LIGHTING Hard-light shader
-            // stop using & clearing alpha
-            // start using stencil buffer
-            //
-            // should we use bits in the stencil buffer to draw 7 lights at once (minimize shader changes)
-            // or use each bit to draw up to 256 lights without needing a Gl.Clear() call (minimize clears)
-            // TODO LIGHTING scissor
 
             // single VBO for all light quads
             // shadows use light quads as instanced data
@@ -441,8 +476,8 @@ namespace Robust.Client.Graphics.Clyde
             var lightBox = Box2.CenteredAround(screenPos, scale * props.Range).Intersect(viewBox);
             GL.Scissor((int)lightBox.Left, (int)lightBox.Bottom, (int)Math.Ceiling(lightBox.Width), (int)Math.Ceiling(lightBox.Height));
 
-            _shadowProgram.Use();
-            _shadowProgram.SetUniformMaybe("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Softness));
+            _softShadowProgram.Use();
+            _softShadowProgram.SetUniformMaybe("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Softness));
             BindVertexArray(_shadowVao.Handle);
             GL.DrawElements(
                 _hasGLPrimitiveRestart
@@ -479,9 +514,49 @@ namespace Robust.Client.Graphics.Clyde
             GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
             _debugStats.LastGLDrawCalls += 1;
 
+            // TODO LIGHTING performance
+            // try clearing alpha in the light draw call
+            // then use a quad instead of Gl.Clear with a stencil.
+            // does that help performance?
+
             // Clear alpha
             GL.ColorMask(false, false, false, true);
             GL.Clear(ClearBufferMask.ColorBufferBit);
+            CheckGlError();
+        }
+
+        private void DrawHardLight(in PointLight light, in Box2 viewBox, in Matrix3x2 transform, in Vector2 scale)
+        {
+            var props = light.Properties;
+            var screenPos = Vector2.Transform(props.LightPos, transform);
+            var lightBox = Box2.CenteredAround(screenPos, scale * props.Range).Intersect(viewBox);
+            GL.Scissor((int)lightBox.Left, (int)lightBox.Bottom, (int)Math.Ceiling(lightBox.Width), (int)Math.Ceiling(lightBox.Height));
+
+            // Draw shadows to the stencil buffer.
+            GL.ColorMask(false, false, false, false);
+            _hardShadowProgram.Use();
+            _hardShadowProgram.SetUniformMaybe("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Softness));
+            BindVertexArray(_shadowVao.Handle);
+            GL.DrawElements(
+                _hasGLPrimitiveRestart
+                    ? PrimitiveType.TriangleStrip
+                    : PrimitiveType.Triangles,
+                GetQuadBatchIndexCount() * _shadowVertexCount/VerticesPerOccluderSegment,
+                DrawElementsType.UnsignedShort,
+                0);
+            _debugStats.LastGLDrawCalls += 1;
+            CheckGlError();
+
+            // Draw light
+            GL.ColorMask(true, true, true, false);
+            _lightProgram.Use();
+            _lightProgram.SetUniformMaybe("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Angle));
+            _lightProgram.SetUniformMaybe("uLightPower", props.Power);
+            _lightProgram.SetUniformMaybe("uLightMask", light.Mask.AsVector4);
+            _lightProgram.SetUniformMaybe("uLightColor", props.Color);
+            BindVertexArray(QuadVAO.Handle);
+            GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+            _debugStats.LastGLDrawCalls += 1;
             CheckGlError();
         }
 
@@ -532,7 +607,7 @@ namespace Robust.Client.Graphics.Clyde
                 return true;
             }
 
-            if (shadowCount >= state.clyde._maxShadowcastingLights)
+            if (shadowCount >= state.clyde._maxShadowCastingLights)
                 return false;
 
             state.clyde._shadowCastingLights[shadowCount++] = new PointLight(props, light.MaskPrototype.TextureBox);
@@ -940,11 +1015,21 @@ namespace Robust.Client.Graphics.Clyde
             var maxLights = _cfg.GetCVar(CVars.MaxLightCount);
             var maxShadowLights = _cfg.GetCVar(CVars.MaxShadowcastingLights);
 
-            _maxShadowcastingLights = Math.Clamp(maxShadowLights, 0, maxLights);
-            _maxNonShadowCastingLights = Math.Max(0, maxLights - _maxShadowcastingLights);
+            _maxShadowCastingLights = Math.Clamp(maxShadowLights, 0, maxLights);
+            if (_maxShadowCastingLights > 253)
+            {
+                // Hard shadows use the stencil masks, with 0XFF and 0xFE reserved, which implicitly limits the max
+                // number of lights. This can pretty easily be fixed by just resetting all values below 0xFE back to
+                // 0x00 and but I CBF doing that atm.
+                // TODO LIGHTING fix this
+                _maxShadowCastingLights = 253;
+                _clydeSawmill.Warning($"Clamping MaxShadowCastingLights to 253");
+            }
+
+            _maxNonShadowCastingLights = Math.Max(0, maxLights - _maxShadowCastingLights);
 
             _nonShadowCastingLights = new PointLight[_maxNonShadowCastingLights];
-            _shadowCastingLights = new PointLight[_maxShadowcastingLights];
+            _shadowCastingLights = new PointLight[_maxShadowCastingLights];
         }
     }
 }

@@ -43,7 +43,8 @@ internal partial class Clyde
     // Sadly not .swsl since it has a different vertex format and such.
     private GLShaderProgram _depthProgram = default!;
 
-    private GLShaderProgram _shadowProgram = default!;
+    private GLShaderProgram _softShadowProgram = default!;
+    private GLShaderProgram _hardShadowProgram = default!;
 
     // Occlusion geometry used to render shadows and FOV.
     // Each Vector2 vertex is the position of the start or end of a line occluder. The position is in world
