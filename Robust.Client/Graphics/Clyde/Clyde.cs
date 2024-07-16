@@ -69,7 +69,7 @@ namespace Robust.Client.Graphics.Clyde
         private GLShaderProgram? _currentProgram;
 
         private float _lightResolutionScale = 0.5f;
-        private int _maxLights = 2048;
+        private int _maxNonShadowCastingLights = 2048;
         private int _maxOccluders = 2048;
         private int _maxShadowcastingLights = 128;
         private bool _enableSoftShadows = true;

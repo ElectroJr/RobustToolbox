@@ -31,7 +31,7 @@ internal partial class Clyde
     private const int NextSquareMaxShadowLights = 12; // 12^2 = 144 >= MaxShadowLights
     private const int LightAtlasSize = NextSquareMaxShadowLights * LightShadowSize;
     private const int LightShadowSize = 742; // Size such that LightAtlasSize < 8912.
-
+    private const int VerticesPerOccluderSegment = 4;
 
     // Horizontal width, in pixels, of the shadow maps used to render FOV.
     // I figured this was more accuracy sensitive than lights so resolution is significantly higher.
@@ -52,14 +52,6 @@ internal partial class Clyde
     private int _occluderCount;
     private ComponentTreeEntry<OccluderComponent>[] _occluders = default!;
 
-    // Rendering data for drawing the light depth map (i.e., distance to nearest occluder).
-    private int _lightOcclusionVertexCount;
-    private Vector4[] _lightOcclusionBuffer = default!;
-    private DepthDrawInstance[] _lightInstancesBuffer = default!;
-    private GLBuffer _lightOcclusionVbo = default!;
-    private GLBuffer _lightInstanceVbo = default!;
-    private GLHandle _lightOcclusionVao;
-
     // Rendering data for drawing the fov depth map. This is a variant of the light data that allows the FOV
     // to see into the first layer of walls.
     private int _fovOcclusionVertexCount;
@@ -78,45 +70,6 @@ internal partial class Clyde
     {
         var debugShader = _resourceCache.GetResource<ShaderSourceResource>("/Shaders/Internal/depth-debug.swsl");
         _fovDebugShaderInstance = (ClydeShaderInstance)InstanceShader(debugShader);
-
-        // Set up VAO for drawing occluder depths for lights.
-        {
-            _lightOcclusionVao = new GLHandle(GenVertexArray());
-            BindVertexArray(_lightOcclusionVao.Handle);
-            CheckGlError();
-            ObjectLabelMaybe(ObjectLabelIdentifier.VertexArray, _lightOcclusionVao, nameof(_lightOcclusionVao));
-
-            _lightOcclusionVbo = new GLBuffer(this,
-                BufferTarget.ArrayBuffer,
-                BufferUsageHint.DynamicDraw,
-                nameof(_lightOcclusionVbo));
-
-            // Line positions
-            GL.VertexAttribPointer(0, 4, VertexAttribPointerType.Float, false, sizeof(Vector4), IntPtr.Zero);
-            GL.EnableVertexAttribArray(0);
-
-            _lightInstanceVbo = new GLBuffer(this,
-                BufferTarget.ArrayBuffer,
-                BufferUsageHint.DynamicDraw,
-                nameof(_lightInstanceVbo));
-
-            // Light instance position
-            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 0);
-            GL.EnableVertexAttribArray(1);
-            GL.VertexAttribDivisor(1, 1);
-
-            // Light instance index
-            GL.VertexAttribPointer(2, 1, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 2 * sizeof(float));
-            GL.EnableVertexAttribArray(2);
-            GL.VertexAttribDivisor(2, 1);
-
-            // Instance Culling orientation
-            GL.VertexAttribPointer(3, 1, VertexAttribPointerType.Float, false, sizeof(DepthDrawInstance), 3 * sizeof(float));
-            GL.EnableVertexAttribArray(3);
-            GL.VertexAttribDivisor(3, 1);
-
-            CheckGlError();
-        }
 
         // Set up VAO for drawing occluder depths for FOV.
         {
@@ -220,27 +173,13 @@ internal partial class Clyde
         // Bind & clear the FOV depth even if we do not draw with it.
         PrepareDepthTarget(RtToLoaded(_fovRenderTarget));
 
-        if (!eye.DrawFov)
-            return;
+        if (eye.DrawFov)
+        {
+            BindVertexArray(_fovOcclusionVao.Handle);
+            DrawOcclusionDepth(_fovOcclusionVertexCount, 2);
+        }
 
-        BindVertexArray(_fovOcclusionVao.Handle);
-        DrawOcclusionDepth(_fovOcclusionVertexCount, 2);
-    }
-
-    private void DrawShadowDepths()
-    {
-        // TODO LIGHTING remove this function
-
-
-        if (!_lightManager.DrawShadows)
-            return;
-
-        using var _ = DebugGroup(nameof(DrawShadowDepths));
-        using var __ = _prof.Group(nameof(DrawShadowDepths));
-
-        PrepareDepthTarget(RtToLoaded(_shadowRenderTarget));
-        BindVertexArray(_lightOcclusionVao.Handle);
-        DrawOcclusionDepth(_lightOcclusionVertexCount, _shadowCastingLightCount);
+        FinalizeDepthDraw();
     }
 
     /// <summary>
@@ -333,11 +272,9 @@ internal partial class Clyde
         using var __ = DebugGroup(nameof(UpdateOcclusionGeometry));
 
         _occluderCount = 0;
-        _lightOcclusionVertexCount = 0;
         _fovOcclusionVertexCount = 0;
         _occlusionMaskIndex = 0;
         _shadowVertexCount = 0;
-        _shadowIndexCount = 0;
 
         var eyePos = eye.Position.Position;
 
@@ -522,15 +459,12 @@ internal partial class Clyde
 
         Array.Clear(_occluders);
         DebugTools.AssertEqual(_occlusionMaskIndex, _occluderCount * 4);
-        DebugTools.Assert(_lightOcclusionVertexCount <= _fovOcclusionVertexCount);
 
         // Upload geometry to OpenGL.
         GL.BindVertexArray(0);
         CheckGlError();
 
         _occlusionMaskVbo.Reallocate(_occlusionMaskBuffer.AsSpan(0, _occlusionMaskIndex));
-        _lightOcclusionVbo.Reallocate(_lightOcclusionBuffer.AsSpan(0, _lightOcclusionVertexCount));
-        _lightInstanceVbo.Reallocate(_lightInstancesBuffer.AsSpan(0, _shadowCastingLightCount));
         _fovOcclusionVbo.Reallocate(_fovOcclusionBuffer.AsSpan(0, _fovOcclusionVertexCount));
         _shadowVbo.Reallocate(_shadowVertexData.AsSpan(0, _shadowVertexCount));
     }
@@ -538,18 +472,13 @@ internal partial class Clyde
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WriteLightBuffer(Vector4 vec)
     {
-        _lightOcclusionBuffer[_lightOcclusionVertexCount + 0] = vec;
-        _lightOcclusionBuffer[_lightOcclusionVertexCount + 1] = vec;
-        _lightOcclusionVertexCount += 2;
-
         // I love redundant vertex data.
         // TODO LIGHTING is there a faster way to populate this?
         _shadowVertexData[_shadowVertexCount + 0] = vec;
         _shadowVertexData[_shadowVertexCount + 1] = vec;
         _shadowVertexData[_shadowVertexCount + 2] = vec;
         _shadowVertexData[_shadowVertexCount + 3] = vec;
-        _shadowVertexCount += 4;
-        _shadowIndexCount += _shadowIndexSize;
+        _shadowVertexCount += VerticesPerOccluderSegment;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -595,14 +524,10 @@ internal partial class Clyde
         // Each occluder has four corners
         Array.Resize(ref _occlusionMaskBuffer, _maxOccluders * 4);
         Array.Resize(ref _fovOcclusionBuffer, _maxOccluders * 8);
-        Array.Resize(ref _lightOcclusionBuffer, _maxOccluders * 8);
 
         // Each occluder line segment casts a shadow (a quad / 4 vertices)
         var maxLineSegments = _maxOccluders * 4;
         Array.Resize(ref _shadowVertexData, maxLineSegments * 4);
-
-        // How many indices do we need to get open gl to draw the 4 triangle for the umbra/penumbra?
-        _shadowIndexSize = GetQuadBatchIndexCount();
 
         // Instead of updating occluder indices every frame, we just update them once. The indices are always the
         // same anyways, and _maxOccluders ensures that the buffers don't need to be ridiculously long.

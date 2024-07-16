@@ -4,12 +4,10 @@ using Robust.Shared.Maths;
 
 namespace Robust.Client.Graphics.Clyde;
 
-struct PointLight(LightProperties properties, float distance, bool cast, Box2 mask)
+struct PointLight(LightProperties properties, Box2 mask)
 {
     public LightProperties Properties = properties;
     public readonly Box2 Mask = mask;
-    public readonly float DistFromCentreSq = distance;
-    public readonly bool CastShadows = cast;
 }
 
 /// <summary>
@@ -32,7 +30,6 @@ public struct LightProperties(
     float range,
     float power,
     float softness,
-    float index,
     float angle)
 {
     public readonly Color Color = color;
@@ -40,10 +37,5 @@ public struct LightProperties(
     public readonly float Range = range;
     public readonly float Power = power;
     public readonly float Softness = softness;
-
-    /// <summary>
-    /// V coordinates of the light in the shadow/depth texture.
-    /// </summary>
-    public float Index = index;
     public readonly float Angle = angle;
 }
