@@ -76,6 +76,7 @@ namespace Robust.Client.UserInterface
 
         // TODO RICH TEXT
         // Somehow ensure that this **has** to be called when removing rich text from some control.
+        // Otherwise
         /// <summary>
         /// Remove all owned controls from their parents.
         /// </summary>
@@ -141,6 +142,8 @@ namespace Robust.Client.UserInterface
                 if (Controls == null || !Controls.TryGetValue(nodeIndex, out var control))
                     continue;
 
+                if (ProcessRune(ref this, new Rune(' '), out breakLine))
+                    continue;
                 control.Measure(new Vector2(Width, Height));
 
                 var desiredSize = control.DesiredPixelSize;

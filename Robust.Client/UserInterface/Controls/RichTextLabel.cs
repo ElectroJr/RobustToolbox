@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using JetBrains.Annotations;
 using Robust.Client.Graphics;
@@ -56,6 +58,9 @@ namespace Robust.Client.UserInterface.Controls
             InvalidateMeasure();
         }
 
+        public IEnumerable<Control> Controls => _entry?.Controls?.Values ?? Enumerable.Empty<Control>();
+        public IReadOnlyList<MarkupNode> Nodes => _entry?.Message.Nodes ?? Array.Empty<MarkupNode>();
+
         public RichTextLabel()
         {
             IoCManager.InjectDependencies(this);
@@ -81,7 +86,6 @@ namespace Robust.Client.UserInterface.Controls
         /// <summary>
         /// Returns a copy of the currently used formatted message.
         /// </summary>
-        /// <returns></returns>
         public FormattedMessage? GetFormattedMessage() => _entry == null ? null : new FormattedMessage(_entry.Value.Message);
 
         protected override Vector2 MeasureOverride(Vector2 availableSize)
