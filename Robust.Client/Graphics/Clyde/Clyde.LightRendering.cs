@@ -423,6 +423,10 @@ namespace Robust.Client.Graphics.Clyde
 
             for (var i = 0; i < _shadowCastingLightCount; i++)
             {
+                // For each light, we draw the occluders to the stencil buffer, and then draw the light last.
+                // The stencil test prevents the lights from being drawn over occluded areas, and then we just increment
+                // the stencil reference value instead of clearing the stencil buffer.
+
                 GL.StencilFunc(StencilFunction.Greater, i + 1, 0xFF);
                 CheckGlError();
                 DrawHardLight(_shadowCastingLights[i], lightViewport, transform, scale);
@@ -471,14 +475,14 @@ namespace Robust.Client.Graphics.Clyde
             // single VBO for all light quads
             // shadows use light quads as instanced data
 
-            // TODO LIGHTING consider using instanced rendering.
-            // I.e. populate a singe light data buffer once, then just draw one instance at a time with different offsets.
-
             var props = light.Properties;
             var screenPos = Vector2.Transform(props.LightPos, transform);
             var lightBox = Box2.CenteredAround(screenPos, scale * props.Range).Intersect(viewBox);
             GL.Scissor((int)lightBox.Left, (int)lightBox.Bottom, (int)Math.Ceiling(lightBox.Width), (int)Math.Ceiling(lightBox.Height));
 
+            // Draw "shadows" to the alpha channel.
+            // The alpha value determines what fraction of a light source is visible from a point, which is ued for
+            // penumbras / soft-shadows
             _softShadowProgram.Use();
             _softShadowProgram.SetUniformMaybe("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Softness));
             BindVertexArray(_shadowVao.Handle);
@@ -499,10 +503,12 @@ namespace Robust.Client.Graphics.Clyde
             _lightProgram.SetUniformMaybe("uLightColor", props.Color);
             BindVertexArray(QuadVAO.Handle);
 
-            // TODO LIGHTING remove alpha clamping call somehow
-            // is there really no way to have float colors and fixed (or at least clamped) alpha
+            // Clamp alpha values to prevent negative values. This is only required if we are using float framebuffers,
+            // as otherwise openGL auto-clamps values to lie between 0 & 1.
             if (_hasGLFloatFramebuffers)
             {
+                // TODO LIGHTING remove alpha clamping call somehow
+                // is there really no way to have float colors and fixed (or at least clamped) alpha
                 _lightProgram.SetUniformMaybe("uClamp", 1);
                 GL.BlendEquation(BlendEquationMode.Min);
                 GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
@@ -517,6 +523,7 @@ namespace Robust.Client.Graphics.Clyde
             GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
             _debugStats.LastGLDrawCalls += 1;
 
+            // I don't remember what this comment was about.
             // TODO LIGHTING performance
             // try clearing alpha in the light draw call
             // then use a quad instead of Gl.Clear with a stencil.
@@ -535,7 +542,7 @@ namespace Robust.Client.Graphics.Clyde
             var lightBox = Box2.CenteredAround(screenPos, scale * props.Range).Intersect(viewBox);
             GL.Scissor((int)lightBox.Left, (int)lightBox.Bottom, (int)Math.Ceiling(lightBox.Width), (int)Math.Ceiling(lightBox.Height));
 
-            // Draw shadows to the stencil buffer.
+            // Draw occluded area to the stencil buffer.
             GL.ColorMask(false, false, false, false);
             _hardShadowProgram.Use();
             _hardShadowProgram.SetUniformMaybe("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Softness));
@@ -550,9 +557,11 @@ namespace Robust.Client.Graphics.Clyde
             _debugStats.LastGLDrawCalls += 1;
             CheckGlError();
 
-            // Draw light
+            // Draw light, masked by the stencil
             GL.ColorMask(true, true, true, false);
             _lightProgram.Use();
+            // TODO LIGHTING
+            // Maybe instead of setting uniforms for each light, use vertex attributes and use an index offset?
             _lightProgram.SetUniformMaybe("uLightData", new RVector4(props.LightPos.X, props.LightPos.Y, props.Range, props.Angle));
             _lightProgram.SetUniformMaybe("uLightPower", props.Power);
             _lightProgram.SetUniformMaybe("uLightMask", light.Mask.AsVector4);
@@ -640,6 +649,7 @@ namespace Robust.Client.Graphics.Clyde
         private void BlurLights(Viewport viewport, IEye eye)
         {
             // TODO LIGHTING re-enable blur
+            // TBH with soft shadows I don't know if we really need this?
             return;
             if (!_cfg.GetCVar(CVars.LightBlur))
                 return;
@@ -798,6 +808,8 @@ namespace Robust.Client.Graphics.Clyde
             GL.Disable(EnableCap.StencilTest);
             GL.Enable(EnableCap.Blend);
             CheckGlError();
+
+            // I don't remember if this comment is outdated or if its still relevant
             // TODO LIGHTING
             // Because of the shadow shaders DEPTH_LEFTRIGHT_EXPAND_BIAS
             // The lines that make up the walls don't quite match the lines of the mask for this draw.
