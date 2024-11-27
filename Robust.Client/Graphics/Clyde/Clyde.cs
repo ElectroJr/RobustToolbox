@@ -20,6 +20,7 @@ using Robust.Shared.Log;
 using Robust.Shared.Map;
 using Robust.Shared.Maths;
 using Robust.Shared.Profiling;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Timing;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
 
@@ -46,6 +47,7 @@ namespace Robust.Client.Graphics.Clyde
         [Dependency] private readonly IDependencyCollection _deps = default!;
         [Dependency] private readonly ILocalizationManager _loc = default!;
         [Dependency] private readonly IInputManager _inputManager = default!;
+        [Dependency] private readonly IPrototypeManager _protoMan = default!;
 
         private GLUniformBuffer<ProjViewMatrices> ProjViewUBO = default!;
         private GLUniformBuffer<UniformConstants> UniformConstantsUBO = default!;
@@ -316,6 +318,7 @@ namespace Robust.Client.Graphics.Clyde
         {
             // Quad drawing.
             {
+                // TODO shouldn't this have 2 more floats
                 Span<Vertex2D> quadVertices = stackalloc[]
                 {
                     new Vertex2D(1, 0, 1, 1, Color.White),

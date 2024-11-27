@@ -1,10 +1,7 @@
 preset raw;
 
-#include "/Shaders/Internal/shadow_cast_shared.swsl"
-
 #include "/Shaders/Internal/fov_shared.swsl"
 
-const highp float g_MinVariance = 0.0;
 uniform highp vec4 occludeColor;
 
 void fragment()

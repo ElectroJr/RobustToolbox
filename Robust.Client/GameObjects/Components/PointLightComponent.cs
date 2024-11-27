@@ -1,6 +1,6 @@
-using Robust.Client.Graphics;
 using Robust.Shared.ComponentTrees;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Light;
 using Robust.Shared.Physics;
 using Robust.Shared.ViewVariables;
 
@@ -27,12 +27,8 @@ public sealed partial class PointLightComponent : SharedPointLightComponent, ICo
     [ViewVariables]
     public bool TreeUpdateQueued { get; set; }
 
-    #endregion
+    [ViewVariables]
+    public LightMaskPrototype MaskPrototype = default!;
 
-    /// <summary>
-    ///     Set a mask texture that will be applied to the light while rendering.
-    ///     The mask's red channel will be linearly multiplied.
-    /// </summary>
-    [ViewVariables(VVAccess.ReadWrite)]
-    internal Texture? Mask;
+    #endregion
 }

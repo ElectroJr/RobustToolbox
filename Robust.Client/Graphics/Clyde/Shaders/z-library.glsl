@@ -4,6 +4,8 @@
 // It's literally just called the Z-Library for alphabetical ordering reasons.
 //  - 20kdc
 
+const highp float PI = 3.1415926535897932384626433; // That enough digits?
+
 // -- varying/attribute/texture2D --
 
 #ifndef HAS_VARYING_ATTRIBUTE
@@ -200,6 +202,38 @@ highp float zCircleGradient(highp vec2 ps, highp vec2 coord, highp float maxi, h
     totaldistance.x *= aspectratio;
     highp float length = (length(totaldistance) * ps.y) - dist;
     return pow(clamp(length, 0.0, maxi), power);
+}
+
+// -- light/fov --
+
+const highp float g_MinVariance = 0.0;
+
+// This returns a vec2 because of VSM moments.
+highp vec2 occludeDepth(highp vec2 rel, sampler2D shadowMap, highp float mapOffsetY)
+{
+    highp float deflect = (atan(rel.y, -rel.x) / PI);
+    highp float mapOffsetX = (deflect + 1.0) / 2.0;
+    return zClydeShadowDepthUnpack(texture2D(shadowMap, vec2(mapOffsetX, mapOffsetY)));
+}
+
+bool doesOcclude(highp vec2 diff, sampler2D shadowMap, highp float mapOffsetY, highp float bias)
+{
+    highp float ourDist = length(diff);
+    return occludeDepth(diff, shadowMap, mapOffsetY).x + bias < ourDist;
+}
+
+// Use this for VSM shadow casting stuff.
+highp float ChebyshevUpperBound(highp vec2 moments, highp float t)
+{
+    // One-tailed inequality valid if t > Moments.x
+    highp float p = float(t <= moments.x);
+    // Compute variance.
+    highp float variance = moments.y - (moments.x * moments.x);
+    variance = max(variance, g_MinVariance);
+    // Compute probabilistic upper bound.
+    highp float d = t - moments.x;
+    highp float p_max = variance / (variance + d*d);
+    return max(p, p_max);
 }
 
 // -- Utilities End --

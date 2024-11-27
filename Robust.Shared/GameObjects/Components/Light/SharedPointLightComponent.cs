@@ -6,6 +6,8 @@ using Robust.Shared.Serialization.Manager.Attributes;
 using Robust.Shared.ViewVariables;
 using System.Numerics;
 using Robust.Shared.IoC;
+using Robust.Shared.Light;
+using Robust.Shared.Prototypes;
 
 namespace Robust.Shared.GameObjects
 {
@@ -81,18 +83,18 @@ namespace Robust.Shared.GameObjects
         public bool MaskAutoRotate;
 
         /// <summary>
-        ///     Local rotation of the light mask around the center origin
+        ///     World rotation of the light mask around the center origin. If <see cref="MaskAutoRotate"/> is true, the
+        ///     entity's world rotation will get added to this.
         /// </summary>
         [ViewVariables(VVAccess.ReadWrite)]
         [Animatable]
         public Angle Rotation { get; set; }
 
         /// <summary>
-        /// The resource path to the mask texture the light will use.
+        /// The light mask that the light will use.
         /// </summary>
-        [ViewVariables(VVAccess.ReadWrite)]
-        [DataField("mask")]
-        public string? MaskPath;
+        [DataField]
+        public ProtoId<LightMaskPrototype>? Mask;
     }
 
     public sealed class PointLightToggleEvent : EntityEventArgs
