@@ -1,9 +1,7 @@
 using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using OpenToolkit.Graphics.OpenGL4;
-using Robust.Shared.Graphics;
 using Robust.Shared.Maths;
 using Robust.Shared.Utility;
 using ES20 = OpenToolkit.Graphics.ES20;
@@ -115,7 +113,11 @@ namespace Robust.Client.Graphics.Clyde
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void QuadBatchIndexWrite(Span<ushort> indexData, ref int nIdx, ushort tIdx)
         {
-            QuadBatchIndexWrite(indexData, ref nIdx, tIdx, (ushort) (tIdx + 1), (ushort) (tIdx + 2),
+            QuadBatchIndexWrite(indexData,
+                ref nIdx,
+                tIdx,
+                (ushort) (tIdx + 1),
+                (ushort) (tIdx + 2),
                 (ushort) (tIdx + 3));
         }
 
@@ -169,9 +171,10 @@ namespace Robust.Client.Graphics.Clyde
         private void CheckGlErrorInternal(string? path, int line)
         {
             var err = GL.GetError();
-            if (err != ErrorCode.NoError)
+            while (err != ErrorCode.NoError)
             {
                 _sawmillOgl.Error($"OpenGL error: {err} at {path}:{line}\n{Environment.StackTrace}");
+                err = GL.GetError();
             }
         }
 

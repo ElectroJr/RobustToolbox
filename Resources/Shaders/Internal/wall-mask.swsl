@@ -1,0 +1,20 @@
+preset raw;
+
+varying highp vec2 pos;
+
+void vertex()
+{
+    // Ignore eye position, occluder quads are all specified relative to the eye.
+    highp mat3 view = viewMatrix;
+    view[2].xyz = vec3(0.0);
+
+    VERTEX = (projectionMatrix * view * vec3(VERTEX, 1.0)).xy;
+    VERTEX.x = VERTEX.x-0.0;
+    pos = (VERTEX + vec2(1.0)) / 2.0;
+}
+
+
+void fragment()
+{
+    COLOR = vec4(1.0);
+}

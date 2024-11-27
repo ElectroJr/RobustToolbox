@@ -17,7 +17,7 @@ public sealed partial class OccluderComponent : Component, IComponentTreeEntry<O
     [DataField("enabled")]
     public bool Enabled = true;
 
-    [DataField("boundingBox")]
+    [DataField("boundingBox"), Access(typeof(OccluderSystem), Other = AccessPermissions.ReadExecute)]
     public Box2 BoundingBox = new(-0.5f, -0.5f, 0.5f, 0.5f);
 
     public EntityUid? TreeUid { get; set; }

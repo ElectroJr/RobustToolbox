@@ -20,6 +20,7 @@ namespace Robust.Client.GameObjects;
 [UsedImplicitly]
 internal sealed class ClientOccluderSystem : OccluderSystem
 {
+
     private readonly HashSet<EntityUid> _dirtyEntities = new();
     [Dependency] private readonly SharedMapSystem _mapSystem = default!;
 

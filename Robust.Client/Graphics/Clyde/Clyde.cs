@@ -21,6 +21,7 @@ using Robust.Shared.Log;
 using Robust.Shared.Map;
 using Robust.Shared.Maths;
 using Robust.Shared.Profiling;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Timing;
 using TextureWrapMode = Robust.Shared.Graphics.TextureWrapMode;
 
@@ -46,6 +47,7 @@ namespace Robust.Client.Graphics.Clyde
         [Dependency] private readonly IDependencyCollection _deps = default!;
         [Dependency] private readonly ILocalizationManager _loc = default!;
         [Dependency] private readonly IInputManager _inputManager = default!;
+        [Dependency] private readonly IPrototypeManager _protoMan = default!;
         [Dependency] private readonly ClientEntityManager _entityManager = default!;
 
         private GLUniformBuffer<ProjViewMatrices> ProjViewUBO = default!;
@@ -68,9 +70,9 @@ namespace Robust.Client.Graphics.Clyde
         private GLShaderProgram? _currentProgram;
 
         private float _lightResolutionScale = 0.5f;
-        private int _maxLights = 2048;
+        private int _maxNonShadowCastingLights = 2048;
         private int _maxOccluders = 2048;
-        private int _maxShadowcastingLights = 128;
+        private int _maxShadowCastingLights = 128;
         private bool _enableSoftShadows = true;
 
         private bool _checkGLErrors;
@@ -102,10 +104,8 @@ namespace Robust.Client.Graphics.Clyde
             _cfg.OnValueChanged(CVars.DisplayVSync, VSyncChanged, true);
             _cfg.OnValueChanged(CVars.DisplayWindowMode, WindowModeChanged, true);
             _cfg.OnValueChanged(CVars.LightResolutionScale, LightResolutionScaleChanged, true);
-            _cfg.OnValueChanged(CVars.MaxShadowcastingLights, MaxShadowcastingLightsChanged, true);
             _cfg.OnValueChanged(CVars.LightSoftShadows, SoftShadowsChanged, true);
             _cfg.OnValueChanged(CVars.MaxLightCount, MaxLightsChanged, true);
-            _cfg.OnValueChanged(CVars.MaxOccluderCount, MaxOccludersChanged, true);
             // I can't be bothered to tear down and set these threads up in a cvar change handler.
 
             // Windows and Linux can be trusted to not explode with threaded windowing,
@@ -164,6 +164,7 @@ namespace Robust.Client.Graphics.Clyde
         {
             _drawingSplash = false;
 
+            InitOcclusion();
             InitLighting();
         }
 

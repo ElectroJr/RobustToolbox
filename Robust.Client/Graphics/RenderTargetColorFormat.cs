@@ -15,7 +15,9 @@ namespace Robust.Client.Graphics
         /// </summary>
         Rgba8Srgb,
 
+        R16F,
         R32F,
+        RG16F,
         RG32F,
 
         /// <summary>
@@ -26,5 +28,6 @@ namespace Robust.Client.Graphics
         R11FG11FB10F,
 
         R8,
+        R16,
     }
 }

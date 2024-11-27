@@ -1,6 +1,7 @@
 using System;
 using Robust.Shared.Serialization;
 using Robust.Shared.Serialization.Manager.Attributes;
+using Robust.Shared.ViewVariables;
 using YamlDotNet.RepresentationModel;
 
 namespace Robust.Shared.Utility
@@ -61,6 +62,7 @@ namespace Robust.Shared.Utility
         [Serializable, NetSerializable]
         public sealed class Texture : SpriteSpecifier
         {
+            [ViewVariables]
             public ResPath TexturePath { get; internal set; }
 
             // For serialization
