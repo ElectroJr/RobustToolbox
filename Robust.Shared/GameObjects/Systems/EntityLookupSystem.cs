@@ -129,7 +129,7 @@ public sealed partial class EntityLookupSystem : EntitySystem
         SubscribeLocalEvent<BroadphaseComponent, ComponentAdd>(OnBroadphaseAdd);
         SubscribeLocalEvent<BroadphaseComponent, ComponentInit>(OnBroadphaseInit);
         SubscribeLocalEvent<GridAddEvent>(OnGridAdd);
-        SubscribeLocalEvent<MapChangedEvent>(OnMapChange);
+        SubscribeLocalEvent<MapCreatedEvent>(OnMapChange);
 
         _transform.OnBeforeMoveEvent += OnMove;
         EntityManager.EntityInitialized += OnEntityInit;
@@ -198,9 +198,9 @@ public sealed partial class EntityLookupSystem : EntitySystem
         }
     }
 
-    private void OnMapChange(MapChangedEvent ev)
+    private void OnMapChange(MapCreatedEvent ev)
     {
-        if (ev.Created && ev.Map != MapId.Nullspace)
+        if (ev.Id != MapId.Nullspace)
         {
             EnsureComp<BroadphaseComponent>(ev.Uid);
         }

@@ -1,14 +1,15 @@
 using System.Linq;
 using System.Numerics;
-using Robust.Server.GameObjects;
-using Robust.Server.Maps;
 using Robust.Shared.Console;
 using Robust.Shared.ContentPack;
+using Robust.Shared.EntitySerialization;
+using Robust.Shared.EntitySerialization.Systems;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Localization;
 using Robust.Shared.Map;
 using Robust.Shared.Maths;
+using Robust.Shared.Utility;
 
 namespace Robust.Server.Console.Commands
 {
@@ -42,7 +43,7 @@ namespace Robust.Server.Console.Commands
                 return;
             }
 
-            _ent.System<MapLoaderSystem>().Save(uid, args[1]);
+            _ent.System<EntitySerializationSystem>().Save(uid, args[1]);
             shell.WriteLine("Save successful. Look in the user data directory.");
         }
 
@@ -97,7 +98,7 @@ namespace Robust.Server.Console.Commands
                 return;
             }
 
-            var loadOptions = new MapLoadOptions();
+            Vector2 offset = default;
             if (args.Length >= 4)
             {
                 if (!float.TryParse(args[2], out var x))
@@ -112,9 +113,10 @@ namespace Robust.Server.Console.Commands
                     return;
                 }
 
-                loadOptions.Offset = new Vector2(x, y);
+                offset = new Vector2(x, y);
             }
 
+            Angle rot = default;
             if (args.Length >= 5)
             {
                 if (!float.TryParse(args[4], out var rotation))
@@ -123,9 +125,10 @@ namespace Robust.Server.Console.Commands
                     return;
                 }
 
-                loadOptions.Rotation = Angle.FromDegrees(rotation);
+                rot = Angle.FromDegrees(rotation);
             }
 
+            var opts = DeserializationOptions.Default;
             if (args.Length >= 6)
             {
                 if (!bool.TryParse(args[5], out var storeUids))
@@ -134,10 +137,10 @@ namespace Robust.Server.Console.Commands
                     return;
                 }
 
-                loadOptions.StoreMapUids = storeUids;
+                opts.StoreYamlUids = storeUids;
             }
 
-            _system.GetEntitySystem<MapLoaderSystem>().Load(mapId, args[1], loadOptions);
+            _system.GetEntitySystem<EntitySerializationSystem>().TryLoadGrid(mapId, args[1], out _, opts, offset, rot);
         }
 
         public override CompletionResult GetCompletion(IConsoleShell shell, string[] args)
@@ -273,53 +276,40 @@ namespace Robust.Server.Console.Commands
                 return;
             }
 
-            var loadOptions = new MapLoadOptions();
-
-            float x = 0, y = 0;
-            if (args.Length >= 3)
+            float x = 0;
+            if (args.Length >= 3 && !float.TryParse(args[2], out x))
             {
-                if (!float.TryParse(args[2], out x))
-                {
-                    shell.WriteError(Loc.GetString("cmd-parse-failure-float", ("arg", args[2])));
-                    return;
-                }
+                shell.WriteError(Loc.GetString("cmd-parse-failure-float", ("arg", args[2])));
+                return;
             }
 
-            if (args.Length >= 4)
+            float y = 0;
+            if (args.Length >= 4 && !float.TryParse(args[3], out y))
             {
+                shell.WriteError(Loc.GetString("cmd-parse-failure-float", ("arg", args[3])));
+                return;
+            }
+            var offset = new Vector2(x, y);
 
-                if (!float.TryParse(args[3], out y))
-                {
-                    shell.WriteError(Loc.GetString("cmd-parse-failure-float", ("arg", args[3])));
-                    return;
-                }
+            float rotation = 0;
+            if (args.Length >= 5 && !float.TryParse(args[4], out rotation))
+            {
+                shell.WriteError(Loc.GetString("cmd-parse-failure-float", ("arg", args[4])));
+                return;
+            }
+            var rot = new Angle(rotation);
+
+            bool storeUids = false;
+            if (args.Length >= 6 && !bool.TryParse(args[5], out storeUids))
+            {
+                shell.WriteError(Loc.GetString("cmd-parse-failure-bool", ("arg", args[5])));
+                return;
             }
 
-            loadOptions.Offset = new Vector2(x, y);
+            var opts = new DeserializationOptions {StoreYamlUids = storeUids};
 
-            if (args.Length >= 5)
-            {
-                if (!float.TryParse(args[4], out var rotation))
-                {
-                    shell.WriteError(Loc.GetString("cmd-parse-failure-float", ("arg", args[4])));
-                    return;
-                }
-
-                loadOptions.Rotation = new Angle(rotation);
-            }
-
-            if (args.Length >= 6)
-            {
-                if (!bool.TryParse(args[5], out var storeUids))
-                {
-                    shell.WriteError(Loc.GetString("cmd-parse-failure-bool", ("arg", args[5])));
-                    return;
-                }
-
-                loadOptions.StoreMapUids = storeUids;
-            }
-
-            _system.GetEntitySystem<MapLoaderSystem>().TryLoad(mapId, args[1], out _, loadOptions);
+            var path = new ResPath(args[1]);
+            _system.GetEntitySystem<EntitySerializationSystem>().TryLoadMap(mapId, path, out _, opts, offset, rot);
 
             if (_map.MapExists(mapId))
                 shell.WriteLine(Loc.GetString("cmd-loadmap-success", ("mapId", mapId), ("path", args[1])));

@@ -1,12 +1,11 @@
 using Robust.Shared.GameObjects;
 
-namespace Robust.Server.Maps;
+namespace Robust.Shared.EntitySerialization.Components;
 
 /// <summary>
 /// Added to Maps that were loaded by MapLoaderSystem. If not present then this map was created externally.
 /// </summary>
-[RegisterComponent]
+[RegisterComponent, NonSerializedComponent]
 public sealed partial class LoadedMapComponent : Component
 {
-
 }

@@ -1,7 +1,5 @@
-using System;
 using System.Globalization;
 using Robust.Shared.GameObjects;
-using Robust.Shared.Map.Components;
 
 namespace Robust.Shared.Map
 {
@@ -27,21 +25,11 @@ namespace Robust.Shared.Map
             return _mapSystem.IsInitialized(mapId);
         }
 
-        public void AddUninitializedMap(MapId mapId)
-        {
-            var ent = GetMapEntityId(mapId);
-            EntityManager.GetComponent<MapComponent>(ent).MapInitialized = false;
-            var meta = EntityManager.GetComponent<MetaDataComponent>(ent);
-            ((EntityManager)EntityManager).SetLifeStage(meta, EntityLifeStage.Initialized);
-        }
-
-        /// <inheritdoc />
         public bool IsMapPaused(MapId mapId)
         {
             return _mapSystem.IsPaused(mapId);
         }
 
-        /// <inheritdoc />
         public bool IsMapPaused(EntityUid uid)
         {
             return _mapSystem.IsPaused(uid);
@@ -87,7 +75,7 @@ namespace Robust.Shared.Map
                         return;
                     }
 
-                    shell.WriteLine(IsMapPaused(mapId).ToString());
+                    shell.WriteLine(_mapSystem.IsPaused(mapId).ToString());
                 });
 
             _conhost.RegisterCommand("unpausemap",

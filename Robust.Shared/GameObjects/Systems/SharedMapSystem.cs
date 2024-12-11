@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Robust.Shared.GameStates;
 using Robust.Shared.IoC;
@@ -53,6 +54,7 @@ namespace Robust.Shared.GameObjects
     /// <summary>
     ///     Arguments for when a map is created or deleted.
     /// </summary>
+    [Obsolete("Use map creation or deletion events")]
     public sealed class MapChangedEvent : EntityEventArgs
     {
         public EntityUid Uid;
@@ -82,6 +84,16 @@ namespace Robust.Shared.GameObjects
         /// </summary>
         public bool Destroyed => !Created;
     }
+
+    /// <summary>
+    ///     Event raised whenever a map is created.
+    /// </summary>
+    public readonly record struct MapCreatedEvent(EntityUid Uid, MapId Id);
+
+    /// <summary>
+    ///     Event raised whenever a map is removed.
+    /// </summary>
+    public readonly record struct MapRemovedEvent(EntityUid Uid, MapId Id);
 
 #pragma warning disable CS0618
     public sealed class GridStartupEvent : EntityEventArgs

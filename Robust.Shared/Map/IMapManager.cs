@@ -49,19 +49,16 @@ namespace Robust.Shared.Map
         /// <returns>True if the map exists, false otherwise.</returns>
         bool MapExists([NotNullWhen(true)] MapId? mapId);
 
-        /// <summary>
-        /// Returns the map entity ID for a given map, or an invalid entity Id if the map does not exist.
-        /// </summary>
-        [Obsolete("Use TryGetMap")]
+        [Obsolete("Use MapSystem")]
         EntityUid GetMapEntityId(MapId mapId);
 
-        /// <summary>
-        /// Replaces GetMapEntity()'s throw-on-failure semantics.
-        /// </summary>
+        [Obsolete("Use MapSystem")]
         EntityUid GetMapEntityIdOrThrow(MapId mapId);
 
+        [Obsolete("Use MapSystem")]
         IEnumerable<MapId> GetAllMapIds();
 
+        [Obsolete("Use MapSystem")]
         void DeleteMap(MapId mapId);
 
         // ReSharper disable once MethodOverloadWithOptionalParameter
@@ -201,30 +198,30 @@ namespace Robust.Shared.Map
 
         #endregion
 
-
         [Obsolete("Just delete the grid entity")]
         void DeleteGrid(EntityUid euid);
 
+        [Obsolete("Use HasComp")]
         bool IsGrid(EntityUid uid);
+
+        [Obsolete("Use HasComp")]
         bool IsMap(EntityUid uid);
 
         //
         // Pausing functions
         //
 
+        [Obsolete("Use MapSystem")]
         void SetMapPaused(MapId mapId, bool paused);
 
+        [Obsolete("Use MapSystem")]
         void DoMapInitialize(MapId mapId);
-
-        [Obsolete("Use CreateMap's runMapInit argument")]
-        void AddUninitializedMap(MapId mapId);
 
         [Obsolete("Use MapSystem")]
         bool IsMapPaused(MapId mapId);
 
         [Obsolete("Use MapSystem")]
         bool IsMapInitialized(MapId mapId);
-
     }
 
     public struct GridCreateOptions

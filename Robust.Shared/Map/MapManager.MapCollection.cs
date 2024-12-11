@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map.Components;
-using Robust.Shared.Utility;
 
 namespace Robust.Shared.Map;
 
@@ -28,32 +27,25 @@ public sealed class MapEventArgs : EventArgs
 
 internal partial class MapManager
 {
-    private Dictionary<MapId, EntityUid> _mapEntities => _mapSystem.Maps;
-
     /// <inheritdoc />
     public virtual void DeleteMap(MapId mapId)
     {
-        if (!_mapEntities.TryGetValue(mapId, out var ent) || !ent.IsValid())
-            throw new InvalidOperationException($"Attempted to delete nonexistent map '{mapId}'");
-
-        EntityManager.DeleteEntity(ent);
-        DebugTools.Assert(!_mapEntities.ContainsKey(mapId));
+        _mapSystem.DeleteMap(mapId);
     }
 
     /// <inheritdoc />
     public MapId CreateMap(MapId? mapId = null)
     {
-        if (mapId != null)
+        if (mapId == null)
         {
-            _mapSystem.CreateMap(mapId.Value);
-            return mapId.Value;
+            _mapSystem.CreateMap(out var id);
+            return id;
         }
 
-        _mapSystem.CreateMap(out var map);
-        return map;
+        _mapSystem.CreateMap(mapId.Value, true);
+        return mapId.Value;
     }
 
-    /// <inheritdoc />
     public bool MapExists([NotNullWhen(true)] MapId? mapId)
     {
         return _mapSystem.MapExists(mapId);
@@ -81,7 +73,7 @@ internal partial class MapManager
     /// <inheritdoc />
     public IEnumerable<MapId> GetAllMapIds()
     {
-        return _mapEntities.Keys;
+        return _mapSystem.GetAllMapIds();
     }
 
     /// <inheritdoc />

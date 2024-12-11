@@ -1,8 +1,8 @@
 using System;
 using System.Globalization;
+using Robust.Shared.EntitySerialization;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
-using Robust.Shared.Map;
 using Robust.Shared.Serialization.Manager;
 using Robust.Shared.Serialization.Markdown;
 using Robust.Shared.Serialization.Markdown.Validation;
@@ -29,14 +29,10 @@ public sealed class TimeOffsetSerializer : ITypeSerializer<TimeSpan, ValueDataNo
         ISerializationContext? context = null,
         ISerializationManager.InstantiationDelegate<TimeSpan>? instanceProvider = null)
     {
-        if (context is not MapSerializationContext mapContext
-            || mapContext.WritingReadingPrototypes
-            || !mapContext.MapInitialized)
-        {
+        if (context is not EntityDeserializer ctx || ctx.WritingReadingPrototypes)
             return TimeSpan.Zero;
-        }
 
-        var timing = mapContext.Timing;
+        var timing = ctx.Timing;
         var seconds = double.Parse(node.Value, CultureInfo.InvariantCulture);
         return TimeSpan.FromSeconds(seconds) + timing.CurTime;
     }
@@ -53,31 +49,22 @@ public sealed class TimeOffsetSerializer : ITypeSerializer<TimeSpan, ValueDataNo
     public DataNode Write(ISerializationManager serializationManager, TimeSpan value, IDependencyCollection dependencies, bool alwaysWrite = false,
         ISerializationContext? context = null)
     {
-        if (context is not MapSerializationContext mapContext
-            || mapContext.WritingReadingPrototypes
-            || !mapContext.MapInitialized)
+        if (context is not EntitySerializer serializer
+            || serializer.WritingReadingPrototypes
+            || !serializer.EntMan.TryGetComponent(serializer.CurrentEntity, out MetaDataComponent? meta)
+            || meta.EntityLifeStage < EntityLifeStage.MapInitialized)
         {
             DebugTools.Assert(value == TimeSpan.Zero || context?.WritingReadingPrototypes != true,
                 "non-zero time offsets in prototypes are not supported. If required, initialize offsets on map-init");
-
             return new ValueDataNode("0");
         }
 
-        if (!mapContext.MapInitialized)
-            return new ValueDataNode("0");
-
-        if (mapContext.EntityManager.TryGetComponent(mapContext.CurrentWritingEntity, out MetaDataComponent? meta))
-        {
-            // Here, PauseTime is a time -- not a duration.
-            if (meta.PauseTime != null)
-                value -= meta.PauseTime.Value;
-        }
+        // We subtract the current time, unless the entity is paused, in which case we subtract the time at which
+        // it was paused.
+        if (meta.PauseTime != null)
+            value -= meta.PauseTime.Value;
         else
-        {
-            // But here, PauseTime is a duration instead of a time
-            // What jolly fun.
-            value = value - mapContext.Timing.CurTime + mapContext.PauseTime;
-        }
+            value -= serializer.Timing.CurTime;
 
         return new ValueDataNode(value.TotalSeconds.ToString(CultureInfo.InvariantCulture));
     }

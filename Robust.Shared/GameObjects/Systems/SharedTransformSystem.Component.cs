@@ -5,7 +5,7 @@ using Robust.Shared.Maths;
 using Robust.Shared.Physics;
 using Robust.Shared.Utility;
 using System;
-using System.Diagnostics;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Robust.Shared.Map.Components;
@@ -669,6 +669,28 @@ public abstract partial class SharedTransformSystem
     public EntityUid GetParentUid(EntityUid uid)
     {
         return XformQuery.GetComponent(uid).ParentUid;
+    }
+
+    public void SetParent(IEnumerable<EntityUid> entities, EntityUid parent)
+    {
+        var query = GetEntityQuery<TransformComponent>();
+        foreach (var ent in entities)
+        {
+            DebugTools.Assert(ent != parent);
+            var xform = query.GetComponent(ent);
+            SetParent(ent, xform, parent, query);
+        }
+    }
+
+    /// <summary>
+    /// Re-parents all children of some entity to some other entity.
+    /// </summary>
+    public void SwapParent(EntityUid oldParent, EntityUid newParent)
+    {
+        if (oldParent == newParent)
+            return;
+
+        SetParent(Transform(oldParent)._children, newParent);
     }
 
     public void SetParent(EntityUid uid, EntityUid parent)

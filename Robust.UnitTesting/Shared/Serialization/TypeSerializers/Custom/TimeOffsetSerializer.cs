@@ -17,6 +17,7 @@ public sealed class TimeOffsetSerializerTest : RobustIntegrationTest
     [Test]
     public async Task SerializationTest()
     {
+        wtf was I thinking when I wrote this fucking test
         var sim = StartServer();
         await sim.WaitIdleAsync();
         var serialization = sim.ResolveDependency<ISerializationManager>();

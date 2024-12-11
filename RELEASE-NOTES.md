@@ -35,10 +35,15 @@ END TEMPLATE-->
 
 ### Breaking changes
 
-*None yet*
+* AddUninitializedMap
+* The server-side MapLoaderSystem has been replaced with a shared EntitySerializationSystem
+  * also affects misc other files like serialization context, which has been moved and split into two different contexts
+* minimum map version is now 3 (was 2, currently on v7) 
+* Removed most tile aliase functionality, they are now only used for map deserialization, the normal tile definition manager is no longer aware of them.
 
 ### New features
 
+* More map loading exccepotion tolerance. Erroring entities will now be deleted
 * Added stack-like functions to `ValueList<T>` and added an `AddRange(ReadOnlySpan<T>)` overload.
 
 ### Bugfixes
@@ -47,6 +52,7 @@ END TEMPLATE-->
 
 ### Other
 
+* `MapChangedEvent` has been obsoleted, and should be replaced with `MapCreatedEvent` and `MapRemovedEvent`,
 * Sandbox error reference locator now works with generic method calls.
 
 ### Internal

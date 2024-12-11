@@ -1,10 +1,11 @@
 ﻿using System.Collections.Generic;
+using Robust.Shared.EntitySerialization.Systems;
 using Robust.Shared.GameObjects;
 
-namespace Robust.Server.GameObjects;
+namespace Robust.Shared.EntitySerialization.Components;
 
 /// <summary>
-/// Used by <see cref="MapLoaderSystem"/> to track the original tile map from when a map was loaded.
+/// Used by <see cref="EntitySerializationSystem"/> to track the original tile map from when a map was loaded.
 /// </summary>
 /// <remarks>
 /// <para>
