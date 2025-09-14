@@ -1,16 +1,16 @@
+using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 using JetBrains.Annotations;
+using Robust.Shared.Containers;
 using Robust.Shared.GameStates;
 using Robust.Shared.Map;
+using Robust.Shared.Map.Components;
 using Robust.Shared.Maths;
 using Robust.Shared.Physics;
 using Robust.Shared.Utility;
-using System;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using Robust.Shared.Map.Components;
-using System.Diagnostics.CodeAnalysis;
-using System.Numerics;
-using Robust.Shared.Containers;
 
 namespace Robust.Shared.GameObjects;
 
@@ -217,9 +217,10 @@ public abstract partial class SharedTransformSystem
             {
 #if !EXCEPTION_TOLERANCE
                 throw new Exception("Transform is initialising before map ids have been assigned?");
-#endif
+#else
                 Log.Error($"Transform is initialising before map ids have been assigned?");
                 _map.AssignMapId((uid, mapComp));
+#endif
             }
 
             xform.MapUid = uid;
@@ -651,19 +652,30 @@ public abstract partial class SharedTransformSystem
         if (newMapId == ent.Comp1.MapID)
             return;
 
-        EntityUid? newMap = newMapId == MapId.Nullspace ? null : _map.GetMap(newMapId);
-        var mapPaused = _map.IsPaused(newMapId);
+        EntityUid? newUid = newMapId == MapId.Nullspace ? null : _map.GetMap(newMapId);
+        bool? mapPaused = null;
 
-        ChangeMapIdRecursive(ent, newMap, newMapId, mapPaused);
+        // Client may be moving entities across maps due to things leaving or entering PVS range.
+        // In that case, we don't want to pause or unpause entities.
+        if (!_gameTiming.ApplyingState)
+        {
+            mapPaused = _map.IsPaused(newMapId);
+            _metaData.SetEntityPaused(ent.Owner, mapPaused.Value, ent.Comp2);
+        }
+
+        ChangeMapIdRecursive(ent, newUid, newMapId, mapPaused);
     }
 
     private void ChangeMapIdRecursive(
         Entity<TransformComponent, MetaDataComponent> ent,
         EntityUid? newMap,
         MapId newMapId,
-        bool paused)
+        bool? paused)
     {
-        _metaData.SetEntityPaused(ent.Owner, paused, ent.Comp2);
+        if (paused is { } p)
+        {
+            _metaData.SetEntityPaused(ent.Owner, p, ent.Comp2);
+        }
 
         if ((ent.Comp2.Flags & MetaDataFlags.ExtraTransformEvents) != 0)
         {
@@ -1258,7 +1270,13 @@ public abstract partial class SharedTransformSystem
         if (!xform.Initialized)
             return;
 
-        RaiseMoveEvent((uid, xform, meta), oldParent, oldPosition, oldRotation, xform.MapUid);
+        RaiseMoveEvent(
+            (uid, xform, meta),
+            oldParent,
+            oldPosition,
+            oldRotation,
+            xform.MapUid,
+            checkTraversal: !oldPosition.Equals(pos));
     }
 
     #endregion
@@ -1395,27 +1413,21 @@ public abstract partial class SharedTransformSystem
     /// </summary>
     public void AttachToGridOrMap(EntityUid uid, TransformComponent? xform = null)
     {
+        // TODO make this log an error?
+        // SetCoordinates already does this when trying to move entities mid-deletion.
         if (TerminatingOrDeleted(uid))
             return;
 
-        if (!XformQuery.Resolve(uid, ref xform))
+        if (!XformQuery.Resolve(uid, ref xform, false))
             return;
 
-        if (!xform.ParentUid.IsValid() || xform.ParentUid == xform.GridUid)
+        if (!xform.ParentUid.IsValid())
             return;
 
-        EntityUid newParent;
-        var oldPos = GetWorldPosition(xform);
-        if (_mapManager.TryFindGridAt(xform.MapID, oldPos, out var gridUid, out _)
-            && !TerminatingOrDeleted(gridUid))
-        {
-            newParent = gridUid;
-        }
-        else if (_map.TryGetMap(xform.MapID, out var mapEnt) && !TerminatingOrDeleted(mapEnt))
-        {
-            newParent = mapEnt.Value;
-        }
-        else
+        if (xform.ParentUid == xform.GridUid)
+            return;
+
+        if (!TryGetMapOrGridCoordinates(uid, out var coordinates, xform))
         {
             if (!_mapQuery.HasComp(uid))
                 Log.Warning($"Failed to attach entity to map or grid. Entity: ({ToPrettyString(uid)}). Trace: {Environment.StackTrace}");
@@ -1424,32 +1436,50 @@ public abstract partial class SharedTransformSystem
             return;
         }
 
-        if (newParent == xform.ParentUid || newParent == uid)
+        if (coordinates.Value.EntityId == xform.ParentUid || coordinates.Value.EntityId == uid)
             return;
 
-        var newPos = Vector2.Transform(oldPos, GetInvWorldMatrix(newParent));
-        SetCoordinates(uid, xform, new(newParent, newPos));
+        SetCoordinates(uid, xform, coordinates.Value);
     }
 
-    public bool TryGetMapOrGridCoordinates(EntityUid uid, [NotNullWhen(true)] out EntityCoordinates? coordinates, TransformComponent? xform = null)
+    /// <summary>
+    /// Attempts to get the current coordinates of the provided entity, relative to either a grid currently at that location, or the map.
+    /// </summary>
+    /// <remarks>
+    /// This will not return coordinates if the map or grid are currently being deleted.
+    /// </remarks>
+    /// <param name="uid">The entity to get the coordinates of.</param>
+    /// <param name="coordinates">The returned coordinates on the grid or map.</param>
+    /// <param name="xform">The transform component of the <paramref name="uid"/>.</param>
+    /// <returns>Whether the grid or map coordinates were found and <paramref name="coordinates"/> was set.</returns>
+    public bool TryGetMapOrGridCoordinates(
+        EntityUid uid,
+        [NotNullWhen(true)] out EntityCoordinates? coordinates,
+        TransformComponent? xform = null)
     {
         coordinates = null;
 
-        if (!XformQuery.Resolve(uid, ref xform))
+        if (!XformQuery.Resolve(uid, ref xform, false))
             return false;
 
         if (!xform.ParentUid.IsValid())
             return false;
 
-        if (xform.MapUid is not { } map)
+        if (xform.MapUid is not { } map || TerminatingOrDeleted(map))
             return false;
 
-        var newParent = map;
         var oldPos = GetWorldPosition(xform);
-        if (_mapManager.TryFindGridAt(map, oldPos, out var gridUid, out _))
-            newParent = gridUid;
+        if (_mapManager.TryFindGridAt(map, oldPos, out var gridUid, out _) && !TerminatingOrDeleted(gridUid))
+        {
+            coordinates = gridUid == xform.ParentUid
+                ? new EntityCoordinates(gridUid, xform.LocalPosition)
+                : new EntityCoordinates(gridUid, Vector2.Transform(oldPos, GetInvWorldMatrix(gridUid)));
+        }
+        else
+        {
+            coordinates = new EntityCoordinates(map, oldPos);
+        }
 
-        coordinates = new(newParent, Vector2.Transform(oldPos, GetInvWorldMatrix(newParent)));
         return true;
     }
     #endregion
