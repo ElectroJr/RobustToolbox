@@ -12,9 +12,11 @@
   <ItemGroup>
     <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
     <PackageVersion Include="DiscordRichPresence" Version="1.2.1.24" />
+    <PackageVersion Include="EmmyLua.LanguageServer.Framework" Version="0.8.1" />
     <PackageVersion Include="JetBrains.Annotations" Version="2024.3.0" />
     <PackageVersion Include="JetBrains.Profiler.Api" Version="1.4.8" />
     <PackageVersion Include="Linguini.Bundle" Version="0.8.1" />
+    <PackageVersion Include="LoxSmoke.DocXml" Version="3.8.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzer.Testing" Version="1.1.2" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Analyzer.Testing" Version="1.1.2" />
@@ -71,7 +73,6 @@
     <PackageVersion Include="prometheus-net" Version="8.2.1" />
     <PackageVersion Include="prometheus-net.DotNetRuntime" Version="4.4.0" />
     <PackageVersion Include="PolySharp" Version="1.15.0" />
-
     <!-- Transitive deps that we need to pin versions for to avoid NuGet warnings. -->
     <PackageVersion Include="System.Formats.Asn1" Version="9.0.0" />
     <PackageVersion Include="System.Reflection.Metadata" Version="9.0.0" />

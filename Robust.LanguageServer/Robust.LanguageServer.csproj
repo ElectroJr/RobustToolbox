@@ -10,11 +10,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="EmmyLua.LanguageServer.Framework" Version="0.8.1" />
-      <PackageReference Include="LoxSmoke.DocXml" Version="3.8.0" />
-    </ItemGroup>
-
-    <ItemGroup>
       <ProjectReference Include="..\Robust.Client\Robust.Client.csproj" />
       <ProjectReference Include="..\Robust.Server\Robust.Server.csproj" />
       <ProjectReference Include="..\Robust.Shared\Robust.Shared.csproj" />
@@ -24,6 +19,11 @@
       <Reference Include="Robust.Server">
         <HintPath>..\..\bin\Content.LanguageServer\Robust.Server.dll</HintPath>
       </Reference>
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="EmmyLua.LanguageServer.Framework" />
+      <PackageReference Include="LoxSmoke.DocXml" />
     </ItemGroup>
 
     <Import Project="..\MSBuild\Robust.Properties.targets" />
