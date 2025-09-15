@@ -1,20 +1,15 @@
 using EmmyLua.LanguageServer.Framework.Protocol.Message.Client.PublishDiagnostics;
-using EmmyLua.LanguageServer.Framework.Protocol.Model;
 using EmmyLua.LanguageServer.Framework.Protocol.Model.Diagnostic;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
-using Robust.Shared.Prototypes;
-using Robust.Shared.Serialization.Manager.Definition;
-using Robust.Shared.Serialization.Markdown;
 
 namespace Robust.LanguageServer.Provider;
-
-using ELLanguageServer = EmmyLua.LanguageServer.Framework.Server.LanguageServer;
 
 public sealed class DiagnosticProvider : IPostInjectInit
 {
     [Dependency] private readonly DocumentCache _cache = null!;
-    [Dependency] private readonly ELLanguageServer _server = null!;
+    [Dependency] private readonly LanguageServerContext _server = null!;
+    [Dependency] private readonly ILogManager _log = null!;
 
     private ISawmill _logger = null!;
     public void PostInject()
@@ -50,7 +45,7 @@ public sealed class DiagnosticProvider : IPostInjectInit
             }
         }
 
-        _server.Client.PublishDiagnostics(new PublishDiagnosticsParams()
+        _server.LanguageServer.Client.PublishDiagnostics(new PublishDiagnosticsParams()
         {
             Uri = uri,
             Diagnostics = diagnosticList,
