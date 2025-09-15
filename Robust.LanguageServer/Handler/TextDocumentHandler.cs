@@ -16,17 +16,17 @@ using ELLanguageServer = EmmyLua.LanguageServer.Framework.Server.LanguageServer;
 
 namespace Robust.LanguageServer.Handler;
 
-public class TextDocumentHandler : TextDocumentHandlerBase
+public class TextDocumentHandler : TextDocumentHandlerBase, IRobustHandler
 {
     [Dependency] private readonly ELLanguageServer _server = null!;
     [Dependency] private readonly IPrototypeManager _protoMan = null!;
     [Dependency] private readonly DocumentCache _cache = null!;
 
-    private ISawmill _logger;
+    private ISawmill _logger = default!;
 
-    public TextDocumentHandler()
+    public void Init(ISawmill logger)
     {
-        _logger = Logger.GetSawmill("TextDocumentHandler");
+        _logger = logger;
     }
 
     protected override Task Handle(DidOpenTextDocumentParams request, CancellationToken token)

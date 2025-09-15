@@ -12,11 +12,16 @@ using YamlDotNet.RepresentationModel;
 
 namespace Robust.LanguageServer.Handler;
 
-public sealed class DocumentColorHandler : DocumentColorHandlerBase
+public sealed class DocumentColorHandler : DocumentColorHandlerBase, IRobustHandler
 {
     [Dependency] private readonly DocumentCache _cache = null!;
 
-    private readonly ISawmill _logger = Logger.GetSawmill("DocumentColorHandler");
+    private ISawmill _logger = default!;
+
+    public void Init(ISawmill logger)
+    {
+        _logger = logger;
+    }
 
     protected override Task<DocumentColorResponse> Handle(DocumentColorParams request, CancellationToken token)
     {

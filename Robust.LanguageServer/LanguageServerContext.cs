@@ -18,6 +18,9 @@ using ELLanguageServer = EmmyLua.LanguageServer.Framework.Server.LanguageServer;
 public sealed class LanguageServerContext
 {
     [Dependency] private readonly DocumentCache _cache = null!;
+    [Dependency] private readonly ILogManager _logMan = null!;
+    [Dependency] private readonly IReflectionManager _reflection = null!;
+    [Dependency] private readonly IDynamicTypeFactoryInternal _factory = null!;
 
     private ISawmill _logger = default!;
     private readonly ELLanguageServer _languageServer;
@@ -42,13 +45,13 @@ public sealed class LanguageServerContext
         _logger = Logger.GetSawmill("LanguageServerContext");
 
         InitializeLanguageServer();
+        foreach (var handler in _reflection.GetAllChildren<IRobustHandler>())
+        {
+            var instance = (IRobustHandler)_factory.CreateInstanceUnchecked(handler, oneOff: true);
+            instance.Init(_logMan.GetSawmill(handler.Name));
+            LanguageServer.AddHandler(instance);
+        }
 
-        AddHandler(new TextDocumentHandler());
-        AddHandler(new SemanticTokensHandler());
-        AddHandler(new DocumentColorHandler());
-        AddHandler(new HoverHandler());
-        AddHandler(new DocumentSymbolHandler());
-        AddHandler(new DefinitionHandler());
 
         _cache.DocumentChanged += (uri, version) => { _logger.Error($"Document changed! Uri: {uri} ({version})"); };
     }

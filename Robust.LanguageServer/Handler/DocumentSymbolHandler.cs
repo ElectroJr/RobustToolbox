@@ -8,11 +8,16 @@ using Robust.Shared.Log;
 
 namespace Robust.LanguageServer.Handler;
 
-public sealed class DocumentSymbolHandler : DocumentSymbolHandlerBase
+public sealed class DocumentSymbolHandler : DocumentSymbolHandlerBase, IRobustHandler
 {
     [Dependency] private readonly DocumentCache _cache = null!;
 
-    private readonly ISawmill _logger = Logger.GetSawmill("DocumentSymbolHandler");
+    private ISawmill _logger = default!;
+
+    public void Init(ISawmill logger)
+    {
+        _logger = logger;
+    }
 
     protected override Task<DocumentSymbolResponse> Handle(DocumentSymbolParams request, CancellationToken token)
     {

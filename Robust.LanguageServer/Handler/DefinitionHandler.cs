@@ -10,12 +10,17 @@ using Robust.Shared.Serialization.Markdown.Value;
 
 namespace Robust.LanguageServer.Handler;
 
-public sealed class DefinitionHandler : DefinitionHandlerBase
+public sealed class DefinitionHandler : DefinitionHandlerBase, IRobustHandler
 {
     [Dependency] private readonly DocumentCache _cache = null!;
     [Dependency] private readonly LanguageServerContext _context = null!;
 
-    private readonly ISawmill _logger = Logger.GetSawmill("DefinitionHandler");
+    private ISawmill _logger = default!;
+
+    public void Init(ISawmill logger)
+    {
+        _logger = logger;
+    }
 
     protected override Task<DefinitionResponse?> Handle(DefinitionParams request, CancellationToken cancellationToken)
     {

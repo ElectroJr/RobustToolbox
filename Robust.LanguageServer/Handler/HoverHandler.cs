@@ -13,12 +13,17 @@ using Robust.Shared.Serialization.Markdown.Value;
 
 namespace Robust.LanguageServer.Handler;
 
-public sealed class HoverHandler : HoverHandlerBase
+public sealed class HoverHandler : HoverHandlerBase, IRobustHandler
 {
     [Dependency] private readonly DocumentCache _cache = null!;
     [Dependency] private readonly DocsManager _docs = null!;
 
-    private readonly ISawmill _logger = Logger.GetSawmill("HoverHandler");
+    private ISawmill _logger = default!;
+
+    public void Init(ISawmill logger)
+    {
+        _logger = logger;
+    }
 
     protected override Task<HoverResponse?> Handle(HoverParams request, CancellationToken token)
     {

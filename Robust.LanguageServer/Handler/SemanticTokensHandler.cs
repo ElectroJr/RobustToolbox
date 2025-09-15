@@ -15,11 +15,16 @@ using YamlDotNet.RepresentationModel;
 
 namespace Robust.LanguageServer.Handler;
 
-public sealed class SemanticTokensHandler : SemanticTokensHandlerBase
+public sealed class SemanticTokensHandler : SemanticTokensHandlerBase, IRobustHandler
 {
     [Dependency] private readonly DocumentCache _cache = null!;
 
-    private readonly ISawmill _logger = Logger.GetSawmill("HoverHandler");
+    private ISawmill _logger = default!;
+
+    public void Init(ISawmill logger)
+    {
+        _logger = logger;
+    }
 
     private List<string> TokenTypes { get; init; } =
     [
