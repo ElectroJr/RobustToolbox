@@ -37,6 +37,22 @@ internal sealed class DocumentCache : IPostInjectInit
     {
         _documents[uri.Uri] = content;
 
+        // TODO block parsing of map & replay yml files
+        // They're not going to be the same as the usual prototype files, and they're gonna be much larger.
+
+        // Other misc yml files that need to either given special treatment or ignored:
+        // keybinds
+        // command permissions
+        // mapping actions
+        // migrations
+        // manifest.yml
+        // changelogs
+        // all the attributions.yml
+        //
+        // I'm not sure how to best handle them, seeing as there is usually not a clear indicator what a file is any
+        // given yml file is. Maybe its better to use directory based whitelist/blacklist. I.e., **only** use the
+        // prototype context for files in /Resources/Prototypes
+
         try
         {
             _logger.Info($"Updating document {uri.Uri}");
