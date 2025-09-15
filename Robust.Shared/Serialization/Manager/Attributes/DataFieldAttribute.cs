@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 #if !ROBUST_ANALYZERS_TEST
 using JetBrains.Annotations;
 #endif
@@ -26,7 +27,16 @@ namespace Robust.Shared.Serialization.Manager.Attributes
         /// </summary>
         public readonly bool Required;
 
-        public DataFieldAttribute(string? tag = null, bool readOnly = false, int priority = 1, bool required = false, bool serverOnly = false, Type? customTypeSerializer = null) : base(readOnly, priority, serverOnly, customTypeSerializer)
+        public DataFieldAttribute(
+            string? tag = null,
+            bool readOnly = false,
+            int priority = 1,
+            bool required = false,
+            bool serverOnly = false,
+            Type? customTypeSerializer = null,
+            [CallerFilePath] string? source = null,
+            [CallerLineNumber] int line = -1)
+            : base(readOnly, priority, serverOnly, customTypeSerializer, source, line)
         {
             Tag = tag;
             Required = required;
@@ -44,13 +54,28 @@ namespace Robust.Shared.Serialization.Manager.Attributes
         public readonly Type? CustomTypeSerializer;
         public readonly bool ReadOnly;
         public readonly bool ServerOnly;
+        public readonly (string File, int Line)? Source;
 
-        protected DataFieldBaseAttribute(bool readOnly = false, int priority = 1, bool serverOnly = false, Type? customTypeSerializer = null)
+        protected DataFieldBaseAttribute(
+            bool readOnly = false,
+            int priority = 1,
+            bool serverOnly = false,
+            Type? customTypeSerializer = null,
+            string? source = null,
+            int line = -1
+            )
         {
             ReadOnly = readOnly;
             Priority = priority;
             ServerOnly = serverOnly;
             CustomTypeSerializer = customTypeSerializer;
+#if DEBUG
+            // TODO LSP
+            // Trim path relative to root.
+            // also, should this only be in debug?
+            if (source != null)
+                Source = (source, line);
+#endif
         }
     }
 

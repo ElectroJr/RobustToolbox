@@ -39,6 +39,7 @@ public sealed class LanguageServerContext
         LanguageServer.OnInitialized(OnInitialized);
         LanguageServer.AddJsonSerializeContext(JsonGenerateContext.Default);
 
+        // TODO add handler for goto implementations (find child prototypes)
         foreach (var handler in _reflection.GetAllChildren<IRobustHandler>())
         {
             var instance = (IRobustHandler)_factory.CreateInstanceUnchecked(handler, oneOff: true);
@@ -66,21 +67,17 @@ public sealed class LanguageServerContext
     private async Task<ELLanguageServer> CreateNamedPipeLanguageServer(string pipe)
     {
         _logger.Info("Communicating using pipe: {0}", pipe);
-
         var stream = new NamedPipeClientStream(pipe);
         await stream.ConnectAsync();
         _logger.Info("Pipe connected");
-
         return ELLanguageServer.From(stream, stream);
     }
 
     private Task<ELLanguageServer> CreateStdOutLanguageServer()
     {
         _logger.Info("Communicating using standard in/out");
-
-        Stream inputStream = Console.OpenStandardInput();
-        Stream outputStream = Console.OpenStandardOutput();
-
+        var inputStream = Console.OpenStandardInput();
+        var outputStream = Console.OpenStandardOutput();
         return Task.FromResult(ELLanguageServer.From(inputStream, outputStream));
     }
 
@@ -112,38 +109,14 @@ public sealed class LanguageServerContext
 
         s.Name = "SS14 LSP";
         s.Version = "0.0.1";
-        _logger.Info("server initializing");
+        _logger.Info($"server initializing with root: {RootDirectory}");
         return Task.CompletedTask;
     }
 
-    private async Task OnInitialized(InitializedParams c)
+    private Task OnInitialized(InitializedParams c)
     {
-
         _logger.Info("server initialized");
-        /*try
-        {
-
-            // Here we should be trying to load data based on the client.rootUri
-            _logger.Error("Starting loader…");
-
-            await ShowProgress("Loading Prototypes…");
-
-            // IMO this should be moved into Program.cs
-            // I.e. initialize and then start the language server
-            // instead of waiting for the TCP connection to be made.
-            _deps.Resolve<Loader>().Init();
-
-            await HideProgress();
-
-            _logger.Error("Loaded");
-        }
-        catch (Exception e)
-        {
-            _logger.Error($"Error while starting: {e}");
-            await _languageServer.Client.ShowMessage(new()
-                {Message = $"Error during startup: {e.Message}", Type = MessageType.Error,});
-            Environment.Exit(1);
-        }*/
+        return Task.CompletedTask;
     }
 
     public Task Run()

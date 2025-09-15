@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 using Robust.Shared.Serialization.Manager.Attributes;
 #if !ROBUST_ANALYZERS_TEST
 using Robust.Shared.ViewVariables;
@@ -35,8 +36,12 @@ namespace Robust.Shared.Prototypes
     public sealed class IdDataFieldAttribute : DataFieldAttribute
     {
         public const string Name = "id";
-        public IdDataFieldAttribute(int priority = 1, Type? customTypeSerializer = null) :
-            base(Name, false, priority, true, false, customTypeSerializer)
+        public IdDataFieldAttribute(
+            int priority = 1,
+            Type? customTypeSerializer = null,
+            [CallerFilePath] string? source = null,
+            [CallerLineNumber] int line = -1)
+            : base(Name, false, priority, true, false, customTypeSerializer, source, line)
         {
         }
     }
@@ -44,8 +49,13 @@ namespace Robust.Shared.Prototypes
     public sealed class ParentDataFieldAttribute : DataFieldAttribute
     {
         public const string Name = "parent";
-        public ParentDataFieldAttribute(Type prototypeIdSerializer, int priority = 1) :
-            base(Name, false, priority, false, false, prototypeIdSerializer)
+
+        public ParentDataFieldAttribute(
+            Type prototypeIdSerializer,
+            int priority = 1,
+            [CallerFilePath] string? source = null,
+            [CallerLineNumber] int line = -1)
+            : base(Name, false, priority, false, false, prototypeIdSerializer, source, line)
         {
         }
     }
@@ -53,8 +63,12 @@ namespace Robust.Shared.Prototypes
     public sealed class AbstractDataFieldAttribute : DataFieldAttribute
     {
         public const string Name = "abstract";
-        public AbstractDataFieldAttribute(int priority = 1) :
-            base(Name, false, priority, false, false, null)
+
+        public AbstractDataFieldAttribute(
+            int priority = 1,
+            [CallerFilePath] string? source = null,
+            [CallerLineNumber] int line = -1)
+            : base(Name, false, priority, false, false, null, source, line)
         {
         }
     }
