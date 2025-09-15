@@ -6,6 +6,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
         <Nullable>enable</Nullable>
+        <WarningsAsErrors>RA0032;nullable</WarningsAsErrors>
         <OutputPath>../bin/LanguageServer</OutputPath>
     </PropertyGroup>
 

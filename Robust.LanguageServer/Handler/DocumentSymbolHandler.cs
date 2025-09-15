@@ -1,7 +1,6 @@
 using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Client.ClientCapabilities;
 using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Server;
 using EmmyLua.LanguageServer.Framework.Protocol.Message.DocumentSymbol;
-using EmmyLua.LanguageServer.Framework.Protocol.Model;
 using EmmyLua.LanguageServer.Framework.Server.Handler;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
@@ -21,39 +20,35 @@ public sealed class DocumentSymbolHandler : DocumentSymbolHandlerBase, IRobustHa
 
     protected override Task<DocumentSymbolResponse> Handle(DocumentSymbolParams request, CancellationToken token)
     {
+        _logger.Debug("DocumentSymbol");
         var symbols = _cache.GetSymbols(request.TextDocument.Uri);
 
-        DocumentSymbolResponse? result = null;
+        // TODO fix
+        if (symbols == null)
+            throw new Exception("Symbol not found");
 
-        if (symbols != null)
+        List<DocumentSymbol> documentSymbols = new();
+
+        foreach (var symbol in symbols)
         {
-            List<DocumentSymbol> documentSymbols = new();
-
-            foreach (var symbol in symbols)
+            documentSymbols.Add(new()
             {
-                documentSymbols.Add(new()
+                Name = symbol.Name,
+                Kind = SymbolKind.Class,
+                Range = new()
                 {
-                    Name = symbol.Name,
-                    Kind = SymbolKind.Class,
-                    Range = new()
-                    {
-                        Start = Helpers.ToLsp(symbol.NodeStart),
-                        End = Helpers.ToLsp(symbol.NodeEnd)
-                    },
-                    SelectionRange = new()
-                    {
-                        Start = Helpers.ToLsp(symbol.NodeStart),
-                        End = Helpers.ToLsp(symbol.NodeEnd)
-                    }
-                });
-            }
-
-            result = new DocumentSymbolResponse(documentSymbols);
+                    Start = Helpers.ToLsp(symbol.NodeStart),
+                    End = Helpers.ToLsp(symbol.NodeEnd)
+                },
+                SelectionRange = new()
+                {
+                    Start = Helpers.ToLsp(symbol.NodeStart),
+                    End = Helpers.ToLsp(symbol.NodeEnd)
+                }
+            });
         }
 
-        _logger.Error("DocumentSymbol");
-
-        return Task.FromResult(result);
+        return Task.FromResult(new DocumentSymbolResponse(documentSymbols));
     }
 
     public override void RegisterCapability(

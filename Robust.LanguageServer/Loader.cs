@@ -233,7 +233,9 @@ public sealed class Loader
             "InventorySlots",
             "LightFade",
             "HolidayRsiSwap",
-            "OptionsVisualizer"
+            "OptionsVisualizer",
+            "AnomalyScannerScreen",
+            "MultipartMachineGhost"
         };
         factory.RegisterIgnore(list);
     }
