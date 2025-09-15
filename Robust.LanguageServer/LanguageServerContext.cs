@@ -41,8 +41,8 @@ public sealed class LanguageServerContext
             return;
 
         _initialized = true;
+        _logger = _logMan.GetSawmill("LanguageServer");
 
-        _logger = Logger.GetSawmill("LanguageServerContext");
 
         InitializeLanguageServer();
         foreach (var handler in _reflection.GetAllChildren<IRobustHandler>())

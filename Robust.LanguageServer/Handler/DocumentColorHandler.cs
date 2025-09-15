@@ -1,8 +1,6 @@
 using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Client.ClientCapabilities;
 using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Server;
 using EmmyLua.LanguageServer.Framework.Protocol.Message.DocumentColor;
-using EmmyLua.LanguageServer.Framework.Protocol.Message.SemanticToken;
-using EmmyLua.LanguageServer.Framework.Protocol.Model;
 using EmmyLua.LanguageServer.Framework.Server.Handler;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
@@ -25,7 +23,7 @@ public sealed class DocumentColorHandler : DocumentColorHandlerBase, IRobustHand
 
     protected override Task<DocumentColorResponse> Handle(DocumentColorParams request, CancellationToken token)
     {
-        _logger.Error("DocumentColorHandler");
+        _logger.Debug("DocumentColorHandler");
 
         List<ColorInformation> colors = new();
 
@@ -70,7 +68,7 @@ public sealed class DocumentColorHandler : DocumentColorHandlerBase, IRobustHand
 
     protected override Task<ColorPresentationResponse> Resolve(ColorPresentationParams request, CancellationToken token)
     {
-        _logger.Error($"DocumentColorHandler Resolve {request.TextDocument.Uri} - {request.Color}");
+        _logger.Debug($"DocumentColorHandler Resolve {request.TextDocument.Uri} - {request.Color}");
         var uri = request.TextDocument.Uri.UnescapeUri;
 
         ColorPresentationResponse container = null!;

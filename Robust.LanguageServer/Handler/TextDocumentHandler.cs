@@ -3,23 +3,16 @@ using Robust.Shared.Log;
 using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Client.ClientCapabilities;
 using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Server;
 using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Server.Options;
-using EmmyLua.LanguageServer.Framework.Protocol.Message.Client.PublishDiagnostics;
 using EmmyLua.LanguageServer.Framework.Protocol.Message.TextDocument;
 using EmmyLua.LanguageServer.Framework.Protocol.Model;
-using EmmyLua.LanguageServer.Framework.Protocol.Model.Diagnostic;
 using EmmyLua.LanguageServer.Framework.Protocol.Model.TextEdit;
 using EmmyLua.LanguageServer.Framework.Server.Handler;
 using Robust.Shared.IoC;
-using Robust.Shared.Prototypes;
-using Robust.Shared.Timing;
-using ELLanguageServer = EmmyLua.LanguageServer.Framework.Server.LanguageServer;
 
 namespace Robust.LanguageServer.Handler;
 
 public class TextDocumentHandler : TextDocumentHandlerBase, IRobustHandler
 {
-    [Dependency] private readonly ELLanguageServer _server = null!;
-    [Dependency] private readonly IPrototypeManager _protoMan = null!;
     [Dependency] private readonly DocumentCache _cache = null!;
 
     private ISawmill _logger = default!;
@@ -53,12 +46,12 @@ public class TextDocumentHandler : TextDocumentHandlerBase, IRobustHandler
 
             if (change.Range is not {} range)
             {
-                _logger.Error("Missing range for incremental change");
+                _logger.Debug("Missing range for incremental change");
                 continue;
             }
 
             // Incremental update
-            _logger.Error($"Got incremental update: {range} => {change.Text}");
+            _logger.Info($"Got incremental update: {range} => {change.Text}");
 
             var start = PosToIndex(range.Start, content);
             var end = PosToIndex(range.End, content);
@@ -93,7 +86,8 @@ public class TextDocumentHandler : TextDocumentHandlerBase, IRobustHandler
         return Task.FromResult<List<TextEdit>?>(null);
     }
 
-    public override void RegisterCapability(ServerCapabilities serverCapabilities,
+    public override void RegisterCapability(
+        ServerCapabilities serverCapabilities,
         ClientCapabilities clientCapabilities)
     {
         serverCapabilities.TextDocumentSync = new TextDocumentSyncOptions

@@ -24,7 +24,7 @@ public sealed class DefinitionHandler : DefinitionHandlerBase, IRobustHandler
 
     protected override Task<DefinitionResponse?> Handle(DefinitionParams request, CancellationToken cancellationToken)
     {
-        _logger.Error($"DefinitionHandler.Handle - {_context.RootDirectory?.LocalPath}");
+        _logger.Debug($"DefinitionHandler.Handle - {_context.RootDirectory?.LocalPath}");
 
         DefinitionResponse? result = null;
 
@@ -47,7 +47,7 @@ public sealed class DefinitionHandler : DefinitionHandlerBase, IRobustHandler
             {
                 if (field.FieldInfo.DeclaringType is { } type && type.Namespace is {} ns)
                 {
-                    _logger.Error($"Field {field.FieldInfo.Name} declared in type {type.Name} in {type.Namespace}");
+                    _logger.Debug($"Field {field.FieldInfo.Name} declared in type {type.Name} in {type.Namespace}");
 
                     var parts = ns.Split(".");
 
@@ -55,28 +55,28 @@ public sealed class DefinitionHandler : DefinitionHandlerBase, IRobustHandler
                     if (parts.Length > 2)
                     {
                         var assembly = parts[0] + "." + parts[1];
-                        _logger.Error($"Assembly {assembly}");
+                        _logger.Debug($"Assembly {assembly}");
 
                         UriBuilder uriBuilder = new UriBuilder(_context.RootDirectory);
                         uriBuilder.Path += Path.DirectorySeparatorChar + assembly;
                         uriBuilder.Path += Path.DirectorySeparatorChar + string.Join(Path.DirectorySeparatorChar, parts.Skip(2));
                         uriBuilder.Path += Path.DirectorySeparatorChar + $"{type.Name}.cs";
-                        _logger.Info($"UriBuilder: {uriBuilder.Uri.LocalPath}");
+                        _logger.Debug($"UriBuilder: {uriBuilder.Uri.LocalPath}");
 
                         var path = assembly + Path.DirectorySeparatorChar + string.Join(Path.DirectorySeparatorChar, parts.Skip(2)) + Path.DirectorySeparatorChar + $"{type.Name}.cs";
 
                         // var fullPath = new Uri(_context.RootDirectory, path);
                         var fullPath = uriBuilder.Uri;
-                        _logger.Error($"Path {_context.RootDirectory} + {path}");
-                        _logger.Error($"Path {fullPath}");
+                        _logger.Debug($"Path {_context.RootDirectory} + {path}");
+                        _logger.Debug($"Path {fullPath}");
                         foreach (var part in parts.Skip(2))
                         {
-                            _logger.Error($"Part: [{part}]");
+                            _logger.Debug($"Part: [{part}]");
                         }
 
-                        _logger.Error($"Path {fullPath}");
-                        _logger.Error($"Path {fullPath.LocalPath}");
-                        _logger.Error($"Path {fullPath.AbsolutePath}");
+                        _logger.Debug($"Path {fullPath}");
+                        _logger.Debug($"Path {fullPath.LocalPath}");
+                        _logger.Debug($"Path {fullPath.AbsolutePath}");
                         if (File.Exists(fullPath.LocalPath))
                         {
                             result = new DefinitionResponse(new Location(uriBuilder.Uri,

@@ -20,12 +20,12 @@ public sealed class DiagnosticProvider : IPostInjectInit
     public void PostInject()
     {
         _cache.DocumentChanged += OnDocumentChanged;
-        _logger = Logger.GetSawmill("DiagnosticProvider");
+        _logger = _log.GetSawmill("DiagnosticProvider");
     }
 
     private void OnDocumentChanged(Uri uri, int documentVersion)
     {
-        _logger.Error($"Document changed! Uri: {uri}");
+        _logger.Info($"Document changed! Uri: {uri}");
 
         List<Diagnostic> diagnosticList = new();
 

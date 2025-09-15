@@ -36,6 +36,7 @@ public sealed class Loader
         // Then again, if this is meant to be lightweight and load as little of the actual game as possible, its probably better to keep as is.
 
         var protoMan = IoCManager.Resolve<IPrototypeManager>();
+        _logger = _logMan.GetSawmill("loader");
 
         _config.LoadCVarsFromAssembly(typeof(IConfigurationManager).Assembly); // Robust.Shared
 
@@ -74,13 +75,12 @@ public sealed class Loader
 
         var resourceManifest = ResourceManifestData.LoadResourceManifest(_resources);
 
-        Console.Error.WriteLine(
-            $"Options.AssemblyDirectory: {serverOptions.AssemblyDirectory} - {resourceManifest.AssemblyPrefix} - {serverOptions.ContentModulePrefix}");
+        _logger.Debug($"Options.AssemblyDirectory: {serverOptions.AssemblyDirectory} - {resourceManifest.AssemblyPrefix} - {serverOptions.ContentModulePrefix}");
 
         if (!_modLoader.TryLoadModulesFrom(serverOptions.AssemblyDirectory,
                 resourceManifest.AssemblyPrefix ?? serverOptions.ContentModulePrefix))
         {
-            Console.Error.WriteLine("Errors while loading content assemblies.");
+           _logger.Error("Errors while loading content assemblies.");
             return;
         }
 
@@ -97,7 +97,7 @@ public sealed class Loader
 
         foreach (var asm in deps.Resolve<IReflectionManager>().Assemblies)
         {
-            Console.Error.WriteLine("Loaded: " + asm.FullName);
+            _logger.Info("Loaded: " + asm.FullName);
         }
 
         var componentFactory = deps.Resolve<IComponentFactory>();
@@ -128,15 +128,12 @@ public sealed class Loader
 
         Dictionary<Type, HashSet<string>> changed = new();
         protoMan.LoadDirectory(new(@"/EnginePrototypes"), false, changed);
-        Console.Error.WriteLine($"protoMan: engine {protoMan} - changed = {changed.Count}");
         protoMan.LoadDirectory(new(@"/Prototypes"), false, changed);
         protoMan.ResolveResults();
 
-        Console.Error.WriteLine($"protoMan: {protoMan} - changed = {changed.Count}");
+        _logger.Debug($"protoMan: engine {_protoMan} - changed = {changed.Count}");
 
-        var reagentProto = protoMan.GetKindType("flavor");
-        Console.Error.WriteLine($"reagentProto: {reagentProto}");
-        Console.Error.WriteLine($"reagentProto: {protoMan.Index(reagentProto, "savory")}");
+        _logger.Debug($"protoMan: {_protoMan} - changed = {changed.Count}");
     }
 
     private static void InitReflectionManager(IDependencyCollection deps)
