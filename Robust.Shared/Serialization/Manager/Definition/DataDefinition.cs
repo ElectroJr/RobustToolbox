@@ -288,7 +288,15 @@ namespace Robust.Shared.Serialization.Manager.Definition
                 {
                     var keyNode = mapping.GetKeyNode(key);
 
+                    // TODO FIX
                     // Why is this happening? Every key is seemingly repeated at -1,-1
+                    //
+                    // To try speed up yaml/entity deserialization a bit, keys in yaml dictionaries were replaced with strings instead of a full ValueDataNode
+                    // The node start & end information is only currently required when running the yaml linter, so that it can report the location that the error is happening at
+                    // Its possible that either something is copying the contents of the MappingDataNode without copying the "key node" information, which actually has the start/end information.
+                    // OR this is happening due to prototype inheritance/composition: if the prototype is in some file A, with a base Prototype in some file B, the resulting mapping data node after
+                    // inheritance is resolved will result in a MappingDataNode with some nodes that come from either file A or B. if you just use the start/end indices, and assume it points to file A,
+                    // you'll be pointing to the wrong file and just confuse people. So IIRC prototype inheritance intentionally doesn't keep start/end information
                     if (keyNode.Start.Line < 0)
                         continue;
 

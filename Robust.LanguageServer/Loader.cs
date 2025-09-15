@@ -29,6 +29,11 @@ public sealed class Loader
         SetupLogging(deps);
 
         Console.Error.WriteLine($"c: {CVars.AuthMode}");
+        // TODO
+        // Consider maybe using something like the map renderer and abusing the integration test server-client pair code
+        // to create a server & client instance, instead of having to do all this setup?
+        //
+        // Then again, if this is meant to be lightweight and load as little of the actual game as possible, its probably better to keep as is.
 
         var protoMan = IoCManager.Resolve<IPrototypeManager>();
 
@@ -237,6 +242,7 @@ public sealed class Loader
     }
 
     // Below list copied from client EntryPoint.Init
+    // TODO FIX
     private static void AddClientPrototypeIgnores(IPrototypeManager protoMan)
     {
         protoMan.RegisterIgnore("utilityQuery");

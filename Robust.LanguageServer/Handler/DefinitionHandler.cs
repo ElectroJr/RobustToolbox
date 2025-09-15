@@ -24,6 +24,16 @@ public sealed class DefinitionHandler : DefinitionHandlerBase
         DefinitionResponse? result = null;
 
         // NOTE: Copy-paste from HoverHandler here
+        // TODO handle prototype-type fields
+
+        // TODO better definition handler
+        // You can't just assume that you can map namespace -> path
+        // Surely theres some sane way of doing that, or exporting the path information alongside debug builds
+        // I.e., like the xml docs.
+
+        // TODO handle loc strings?
+        // i.e., go-to the relevant fluent file?
+        // Might require giving loc strings a specific type, not just "string".
 
         var fields = _cache.GetFields(request.TextDocument.Uri);
         if (fields != null && _context.RootDirectory != null)

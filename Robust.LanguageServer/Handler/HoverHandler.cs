@@ -26,6 +26,12 @@ public sealed class HoverHandler : HoverHandlerBase
 
         HoverResponse? response = null;
 
+        // TODO handle prototype-type and other fields
+        // e.g., the "!type:" syntax
+
+        // TODO handle field values
+        // i.e., in some prototype id field "toSpawn: UristMcHands", this currently only handles hovering over "toSpawn", not "UristMcHands"
+
         var fields = _cache.GetFields(request.TextDocument.Uri);
         if (fields != null)
         {

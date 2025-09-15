@@ -73,6 +73,8 @@ internal sealed class DocumentCache : IPostInjectInit
         return _errors.GetValueOrDefault(uri.Uri);
     }
 
+    // TODO better lookups
+    // Use a Dictionary<LineNumber, List<Defs>> ?
     public List<(ValueDataNode, FieldDefinition)>? GetFields(DocumentUri uri)
     {
         return _fields.GetValueOrDefault(uri.Uri);
