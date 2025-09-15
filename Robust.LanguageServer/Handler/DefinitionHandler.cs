@@ -49,6 +49,7 @@ public sealed class DefinitionHandler : DefinitionHandlerBase, IRobustHandler
         // - go-to C# prototype (i.e., handle the LHS of the " type: " part.
         // - go-to yaml prototype (i.e., go to yaml file that defines parent prototype)
         // - go-to fluent / localization string. Might require giving loc strings a specific type, not just "string".
+        // - go-to RSI, audio, or other resources?
 
         var fields = _cache.GetFields(request.TextDocument.Uri);
         if (fields == null || _context.RootDirectory is not { } root)
