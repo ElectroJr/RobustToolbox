@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Numerics;
 using Robust.Shared.Collections;
 using Robust.Shared.ComponentTrees;
@@ -8,6 +9,7 @@ using Robust.Shared.Map;
 using Robust.Shared.Maths;
 using Robust.Shared.Physics;
 using Robust.Shared.Prototypes;
+using Robust.Shared.Utility;
 
 namespace Robust.Shared.Light;
 public sealed class LightLevelSystem : EntitySystem
@@ -47,53 +49,170 @@ public sealed class LightLevelSystem : EntitySystem
     public Color CalculateLightColor(EntityCoordinates point)
         => CalculateLightColor(_transform.ToMapCoordinates(point));
 
+    record struct Light(
+        Entity<SharedPointLightComponent, TransformComponent> Entity,
+        Vector2 Position = default,
+        Angle Rotation = default);
+
+    record struct OccluderTransform(Angle Rotation, Matrix3x2 Matrix);
+
     public Color CalculateLightColor(MapCoordinates point)
     {
         var pos = point.Position;
         var treeSearchAabb = new Box2(pos, pos).Enlarged(TreeSearchRange);
-        var lights = new ValueList<Entity<SharedPointLightComponent, TransformComponent>>();
+
+        // TODO LOOKUPS allow ref structs
+        // Then we could have variants that try to stackalloc
+        var lights = new ValueList<Light>();
 
         // We manually do a tree lookup instead of using LightTreeSystem.QueryAabb
-        // This is because the actual area we want to query is a point, but we want to include trees from further away.
+        // This is because the actual area we want to query for intersecting lights is a point, but we want to include trees from further away.
         foreach (var (tree, treeComp) in _tree.GetIntersectingTrees(point.MapId, treeSearchAabb))
         {
             var localPos = Vector2.Transform(pos, _transform.GetInvWorldMatrix(tree));
-            var localAabb = new Box2(localPos, localPos);
-
-            treeComp.Tree.QueryAabb(ref lights,
-                static (ref ValueList<Entity<SharedPointLightComponent, TransformComponent>> lights, in ComponentTreeEntry<SharedPointLightComponent> value) =>
-                {
-                    if (value.Component.CastShadows)
-                        lights.Add(value);
-                    return true;
-                },
-                localAabb,
-                true);
+            treeComp.Tree.QueryPoint(ref lights, QueryCallbackDelegate, localPos, true);
         }
 
-        Vector4 color = default;
-        foreach (var entry in lights)
+        // Compute light positions, and get the maximum radius
+        var lightSpan = lights.Span;
+        var maxRadius = 0f;
+        ComputeLightPositions(lightSpan, ref maxRadius);
+
+        // Use the max radius to look for any occluder trees. This could be handled better by only using a Box2 that
+        // contains the centre point of all lights, which would allow us to use the HandleSingleOccluder branch more,
+        // but this approximation is probably fine most of the time.
+        var occluderAabb = new Box2(pos, pos).Enlarged(maxRadius);
+        var occluderTrees = _occluder.GetIntersectingTreesInternal(point.MapId, occluderAabb);
+
+        // Most of the time, there will probably only be one occluder tree in range
+        return occluderTrees.Count == 1
+            ? HandleSingleOccluder(pos, lightSpan, occluderTrees[0])
+            : HandleMultipleOccluders(pos, lightSpan, occluderTrees.Span);
+
+        static bool QueryCallbackDelegate(ref ValueList<Light> lights, in ComponentTreeEntry<SharedPointLightComponent> value)
         {
-            color += CalculateLightColor(entry, point);
+            if (value.Component.CastShadows)
+                lights.Add(new(value));
+            return true;
+        }
+    }
+
+    private void ComputeLightPositions(Span<Light> lights, ref float maxRadius)
+    {
+        foreach (ref var light in lights)
+        {
+            (light.Position, light.Rotation) = _transform.GetWorldPositionRotation(light.Entity.Comp2);
+            light.Position += light.Rotation.RotateVec(light.Entity.Comp1.Offset);
+            maxRadius = Math.Max(light.Entity.Comp1.Radius, maxRadius);
+        }
+    }
+
+    private Color HandleSingleOccluder(Vector2 pos, Span<Light> lights, Entity<OccluderTreeComponent> tree)
+    {
+        var (_, rot, mat) = _transform.GetWorldPositionRotationInvMatrix(tree.Owner);
+        rot = -rot;
+
+        var color = Vector4.Zero;
+        foreach (ref var entry in lights)
+        {
+            var delta = pos - entry.Position;
+            if (InRangeUnoccluded(entry.Entity.Comp1.Radius, entry.Position, delta, tree.Comp, in mat, rot))
+                color += CalculateLightColor(entry.Entity.Comp1, delta);
         }
 
         return new Color(color);
     }
 
-    private Vector4 CalculateLightColor(Entity<SharedPointLightComponent, TransformComponent> ent, MapCoordinates point)
+    private Color HandleMultipleOccluders(
+        Vector2 pos,
+        Span<Light> lightSpan,
+        Span<(EntityUid Uid, OccluderTreeComponent Comp)> trees)
     {
-        var (_, light, xform) = ent;
+        var occluderXforms = trees.Length < 16
+            ? stackalloc OccluderTransform[trees.Length]
+            : new OccluderTransform[trees.Length];
 
-        var (lightPos, lightRot) = _transform.GetWorldPositionRotation(xform);
-        lightPos += lightRot.RotateVec(light.Offset);
+        for (var i = 0; i < trees.Length; i++)
+        {
+            var (_, rot, mat) = _transform.GetWorldPositionRotationInvMatrix(trees[i].Uid);
+            occluderXforms[i] = new(-rot, mat);
+        }
 
-        var lightPosition = new MapCoordinates(lightPos, xform.MapID);
+        var color = Vector4.Zero;
+        foreach (ref var entry in lightSpan)
+        {
+            var delta = pos - entry.Position;
+            if (InRangeUnoccluded(entry.Entity.Comp1.Radius, entry.Position, delta, trees, occluderXforms))
+                color += CalculateLightColor(entry.Entity.Comp1, delta);
+        }
 
-        if (!_occluder.InRangeUnoccluded(lightPosition, point, light.Radius, ignoreTouching: false))
-            return default;
+        return new Color(color);
+    }
 
-        var dist = point.Position - lightPosition.Position;
+    private bool InRangeUnoccluded(
+        float radius,
+        Vector2 lightPos,
+        Vector2 delta,
+        ReadOnlySpan<(EntityUid, OccluderTreeComponent)> trees,
+        Span<OccluderTransform> treeXforms)
+    {
+        var length = delta.Length();
+        if (MathHelper.CloseTo(length, 0))
+            return true;
 
+        var normalized = delta / length;
+        if (length > radius)
+            return false;
+
+        (bool Hit, float Length) state = (false, length);
+        for (var i = 0; i < trees.Length; i++)
+        {
+            var relativeAngle = treeXforms[i].Rotation.RotateVec(normalized);
+            var treeRay = new Ray(Vector2.Transform(lightPos, treeXforms[i].Matrix), relativeAngle);
+            trees[i].Item2.Tree.QueryRay(ref state, Callback, treeRay);
+            if (state.Hit)
+                return false;
+        }
+
+        return true;
+    }
+
+    private bool InRangeUnoccluded(
+        float radius,
+        Vector2 lightPos,
+        Vector2 delta,
+        OccluderTreeComponent tree,
+        in Matrix3x2 treeXform,
+        Angle treeRot)
+    {
+        var length = delta.Length();
+        if (MathHelper.CloseTo(length, 0))
+            return true;
+
+        var normalized = delta / length;
+        if (length > radius)
+            return false;
+
+        // TODO LIGHTLEVEL we could pre-compute sin/cos of treeRot, instead of recomputing per light
+        // or alternatively, maybe using taking the sin/cos of rot+Angle(normalized) might be faster than RotateVec()
+        var relativeAngle = treeRot.RotateVec(normalized);
+
+        var treeRay = new Ray(Vector2.Transform(lightPos, treeXform), relativeAngle);
+        (bool Hit, float Length) state = (false, length);
+        tree.Tree.QueryRay(ref state, Callback, treeRay);
+        return !state.Hit;
+    }
+
+    private static bool Callback(ref (bool Hit, float Range) state, in ComponentTreeEntry<OccluderComponent> _, in Vector2 __, float dist)
+    {
+        if (dist > state.Range)
+            return true;
+        state.Hit = true;
+        return false;
+    }
+
+    private Vector4 CalculateLightColor(SharedPointLightComponent light, Vector2 dist)
+    {
         // Calculate the light level the same way as in light_shared.swsl. The problem with this implementation is that
         // values used for rendering are very different from the sort of percentage based values we aim to use in game.
         // // this implementation of light attenuation primarily adapted from
