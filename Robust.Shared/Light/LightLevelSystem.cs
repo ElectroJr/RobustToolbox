@@ -1,24 +1,24 @@
 using System;
-using System.Linq;
 using System.Numerics;
 using Robust.Shared.Collections;
 using Robust.Shared.ComponentTrees;
+using Robust.Shared.Configuration;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
 using Robust.Shared.Map;
 using Robust.Shared.Maths;
 using Robust.Shared.Physics;
 using Robust.Shared.Prototypes;
-using Robust.Shared.Utility;
 
 namespace Robust.Shared.Light;
 public sealed class LightLevelSystem : EntitySystem
 {
-    // TODO LIGHT LEVEL make into a CVAR
     /// <summary>
     /// This is the range that is used to look for any nearby light trees when computing the light level at a point.
     /// </summary>
-    public const float TreeSearchRange = 15f;
+    private float _treeLookupRange = 15f;
+
+    private bool _shadowcastingOnly;
 
     private const float LightHeight = 1.0f;
 
@@ -26,6 +26,13 @@ public sealed class LightLevelSystem : EntitySystem
     [Dependency] private readonly OccluderSystem _occluder = default!;
     [Dependency] private readonly SharedLightTreeSystem _tree = default!;
     [Dependency] private readonly IPrototypeManager _proto = default!;
+    [Dependency] private readonly IConfigurationManager _cfg = default!;
+
+    public override void Initialize()
+    {
+        Subs.CVar(_cfg, CVars.LookupLightTreeRange, v => _treeLookupRange = v, true);
+        Subs.CVar(_cfg, CVars.LookupShadowcastingOnly, v => _shadowcastingOnly = v, true);
+    }
 
     public float CalculateLightLevel(EntityUid uid)
         => CalculateLightLevel(_transform.GetMapCoordinates(uid));
@@ -59,7 +66,7 @@ public sealed class LightLevelSystem : EntitySystem
     public Color CalculateLightColor(MapCoordinates point)
     {
         var pos = point.Position;
-        var treeSearchAabb = new Box2(pos, pos).Enlarged(TreeSearchRange);
+        var treeSearchAabb = new Box2(pos, pos).Enlarged(_treeLookupRange);
 
         // TODO LOOKUPS allow ref structs
         // Then we could have variants that try to stackalloc
@@ -70,7 +77,7 @@ public sealed class LightLevelSystem : EntitySystem
         foreach (var (tree, treeComp) in _tree.GetIntersectingTrees(point.MapId, treeSearchAabb))
         {
             var localPos = Vector2.Transform(pos, _transform.GetInvWorldMatrix(tree));
-            treeComp.Tree.QueryPoint(ref lights, QueryCallbackDelegate, localPos, true);
+            treeComp.Tree.QueryPoint(ref lights, _shadowcastingOnly ? ShadowcastingCallback : AllLightCallback, localPos, true);
         }
 
         // Compute light positions, and get the maximum radius
@@ -89,10 +96,16 @@ public sealed class LightLevelSystem : EntitySystem
             ? HandleSingleOccluder(pos, lightSpan, occluderTrees[0])
             : HandleMultipleOccluders(pos, lightSpan, occluderTrees.Span);
 
-        static bool QueryCallbackDelegate(ref ValueList<Light> lights, in ComponentTreeEntry<SharedPointLightComponent> value)
+        static bool ShadowcastingCallback(ref ValueList<Light> lights, in ComponentTreeEntry<SharedPointLightComponent> value)
         {
             if (value.Component.CastShadows)
                 lights.Add(new(value));
+            return true;
+        }
+
+        static bool AllLightCallback(ref ValueList<Light> lights, in ComponentTreeEntry<SharedPointLightComponent> value)
+        {
+            lights.Add(new(value));
             return true;
         }
     }
