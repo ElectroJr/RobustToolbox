@@ -48,7 +48,8 @@ public sealed class LightLevelSystem : EntitySystem
             treeComp.Tree.QueryAabb(ref lights,
                 static (ref ValueList<Entity<SharedPointLightComponent, TransformComponent>> lights, in ComponentTreeEntry<SharedPointLightComponent> value) =>
                 {
-                    lights.Add(value);
+                    if (value.Component.CastShadows)
+                        lights.Add(value);
                     return true;
                 },
                 localAabb,
