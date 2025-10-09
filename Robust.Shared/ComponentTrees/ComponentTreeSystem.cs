@@ -315,12 +315,8 @@ public abstract class ComponentTreeSystem<TTreeComp, TComp> : EntitySystem
         // TODO LOOKUPS pass in entity query, not entity manager.
         var state = (EntityManager, trees);
 
-        _mapManager.FindGridsIntersecting(mapId,
-            worldAABB,
-            ref state,
-            (
-                EntityUid uid,
-                MapGridComponent grid,
+        _mapManager.FindGridsIntersecting(mapId, worldAABB, ref state,
+            (EntityUid uid, MapGridComponent grid,
                 ref (EntityManager EntityManager, ValueList<(EntityUid, TTreeComp)> trees) tuple) =>
             {
                 if (tuple.EntityManager.TryGetComponent<TTreeComp>(uid, out var treeComp))

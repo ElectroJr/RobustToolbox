@@ -38,5 +38,37 @@ namespace Robust.Shared.GameObjects
                 Dirty(uid, comp);
             }
         }
+
+        /// <summary>
+        /// For use with masks and directional lights. We need the angle from the direction the PointLightComponent is facing to the target
+        /// </summary>
+        /// <returns>The <see cref="Angle"/> between the light and the target. In the event the light is parented to the target,
+        /// (i.e. the angle of a flashlight to the person holding it) the default angle is 0</returns>
+        public Angle GetAngle(EntityUid lightUid, TransformComponent lightXform, SharedPointLightComponent lightComp, EntityUid targetUid, TransformComponent targetXform)
+        {
+            var (lightPos, lightRot) = _transform.GetWorldPositionRotation(lightXform);
+            lightPos += lightRot.RotateVec(lightComp.Offset);
+
+            var (targetPos, targetRot) = _transform.GetWorldPositionRotation(targetXform);
+
+            var mapDiff = targetPos - lightPos;
+
+            var oppositeMapDiff = (-lightRot).RotateVec(mapDiff);
+            var angle = oppositeMapDiff.ToWorldAngle();
+
+            if (angle == double.NaN && _transform.ContainsEntity(targetUid, lightUid) || _transform.ContainsEntity(lightUid, targetUid))
+            {
+                angle = 0f;
+            }
+
+            return angle;
+        }
+
+        // TODO calculate mask coefficient from the image itself to multiply against the light value of the PointLight
+        // public float ApplyMask()
+        // {
+
+        // }
+
     }
 }
