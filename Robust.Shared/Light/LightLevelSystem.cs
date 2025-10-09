@@ -32,14 +32,29 @@ public sealed class LightLevelSystem : EntitySystem
         => CalculateLightLevel(_transform.ToMapCoordinates(point));
 
     public float CalculateLightLevel(MapCoordinates point)
+        => ColorToLevel(CalculateLightColor(point));
+
+    private float ColorToLevel(Color color)
+    {
+        // TODO LIGHT LEVEL
+        // better power / greyscale conversion?
+        return MathF.Max(color.R, MathF.Max(color.G, color.B));
+    }
+
+    public Color CalculateLightColor(EntityUid uid)
+        => CalculateLightColor(_transform.GetMapCoordinates(uid));
+
+    public Color CalculateLightColor(EntityCoordinates point)
+        => CalculateLightColor(_transform.ToMapCoordinates(point));
+
+    public Color CalculateLightColor(MapCoordinates point)
     {
         var pos = point.Position;
         var treeSearchAabb = new Box2(pos, pos).Enlarged(TreeSearchRange);
         var lights = new ValueList<Entity<SharedPointLightComponent, TransformComponent>>();
 
-        // We manually query individual trees instead of using LightTreeSystem.QueryAabb
+        // We manually do a tree lookup instead of using LightTreeSystem.QueryAabb
         // This is because the actual area we want to query is a point, but we want to include trees from further away.
-
         foreach (var (tree, treeComp) in _tree.GetIntersectingTrees(point.MapId, treeSearchAabb))
         {
             var localPos = Vector2.Transform(pos, _transform.GetInvWorldMatrix(tree));
@@ -56,16 +71,16 @@ public sealed class LightLevelSystem : EntitySystem
                 true);
         }
 
-        var illumination = 0f;
+        Vector4 color = default;
         foreach (var entry in lights)
         {
-            illumination += CalculateLightLevel(entry, point);
+            color += CalculateLightColor(entry, point);
         }
 
-        return illumination;
+        return new Color(color);
     }
 
-    private float CalculateLightLevel(Entity<SharedPointLightComponent, TransformComponent> ent, MapCoordinates point)
+    private Vector4 CalculateLightColor(Entity<SharedPointLightComponent, TransformComponent> ent, MapCoordinates point)
     {
         var (_, light, xform) = ent;
 
@@ -75,7 +90,7 @@ public sealed class LightLevelSystem : EntitySystem
         var lightPosition = new MapCoordinates(lightPos, xform.MapID);
 
         if (!_occluder.InRangeUnoccluded(lightPosition, point, light.Radius, ignoreTouching: false))
-            return 0;
+            return default;
 
         var dist = point.Position - lightPosition.Position;
 
@@ -88,9 +103,7 @@ public sealed class LightLevelSystem : EntitySystem
         var s2 = s * s;
         var curveFactor = MathHelper.Lerp(s, s2, Math.Clamp(light.CurveFactor, 0.0f, 1.0f));
         var lightVal = Math.Clamp(((1.0f - s2) * (1.0f - s2)) / (1.0f + light.Falloff * curveFactor), 0.0f, 1.0f);
-        var colorBrightness = MathF.Max(light.Color.R, MathF.Max(light.Color.G, light.Color.B));
-        var energyLightVal = light.Energy * lightVal;
-        var finalLightVal = Math.Clamp(energyLightVal * colorBrightness, 0.0f, 1.0f);
+        var finalLightVal = light.Color.RGBA * (light.Energy * lightVal);
 
         if (!_proto.TryIndex(light.LightMask, out var mask))
             return finalLightVal;
@@ -115,11 +128,11 @@ public sealed class LightLevelSystem : EntitySystem
                 continue;
 
             if (absAngle - cone.Direction > cone.InnerWidth && absAngle - cone.Direction < cone.OuterWidth)
-                calculatedLight += finalLightVal * angleAttenuation;
+                calculatedLight += angleAttenuation;
             else
-                calculatedLight += finalLightVal;
+                calculatedLight += 1;
         }
 
-        return calculatedLight;
+        return finalLightVal * calculatedLight;
     }
 }
