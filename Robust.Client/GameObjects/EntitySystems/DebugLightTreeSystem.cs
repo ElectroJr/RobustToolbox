@@ -30,7 +30,7 @@ namespace Robust.Client.GameObjects
                         EntityManager.System<EntityLookupSystem>(),
                         IoCManager.Resolve<IEyeManager>(),
                         IoCManager.Resolve<IMapManager>(),
-                        EntityManager.System<SharedLightTreeSystem>());
+                        EntityManager.System<LightTreeSystem>());
 
                     overlayManager.AddOverlay(_lightOverlay);
                 }
