@@ -305,8 +305,6 @@ public abstract class ComponentTreeSystem<TTreeComp, TComp> : EntitySystem
         // trees directly:
         UpdateTreePositions();
 
-        // TODO LOOKUPS allow ref structs
-        // Then we could have variants that try to stackalloc
         var trees = new ValueList<(EntityUid Uid, TTreeComp Comp)>();
 
         if (mapId == MapId.Nullspace)

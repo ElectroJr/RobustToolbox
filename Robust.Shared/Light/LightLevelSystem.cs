@@ -67,9 +67,6 @@ public sealed class LightLevelSystem : EntitySystem
     {
         var pos = point.Position;
         var treeSearchAabb = new Box2(pos, pos).Enlarged(_treeLookupRange);
-
-        // TODO LOOKUPS allow ref structs
-        // Then we could have variants that try to stackalloc
         var lights = new ValueList<Light>();
 
         // We manually do a tree lookup instead of using LightTreeSystem.QueryAabb
