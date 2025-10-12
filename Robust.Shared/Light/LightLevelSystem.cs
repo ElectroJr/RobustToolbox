@@ -127,7 +127,7 @@ public sealed class LightLevelSystem : EntitySystem
         {
             var delta = pos - entry.Position;
             if (InRangeUnoccluded(entry.Entity.Comp1.Radius, entry.Position, delta, tree.Comp, in mat, rot))
-                color += CalculateLightColor(entry.Entity.Comp1, delta);
+                color += CalculateLightColor(entry.Entity.Comp1, delta, entry.Rotation);
         }
 
         return new Color(color);
@@ -153,7 +153,7 @@ public sealed class LightLevelSystem : EntitySystem
         {
             var delta = pos - entry.Position;
             if (InRangeUnoccluded(entry.Entity.Comp1.Radius, entry.Position, delta, trees, occluderXforms))
-                color += CalculateLightColor(entry.Entity.Comp1, delta);
+                color += CalculateLightColor(entry.Entity.Comp1, delta, entry.Rotation);
         }
 
         return new Color(color);
@@ -221,7 +221,7 @@ public sealed class LightLevelSystem : EntitySystem
         return false;
     }
 
-    private Vector4 CalculateLightColor(SharedPointLightComponent light, Vector2 dist)
+    private Vector4 CalculateLightColor(SharedPointLightComponent light, Vector2 dist, Angle lightRot)
     {
         // Calculate the light level the same way as in light_shared.swsl. The problem with this implementation is that
         // values used for rendering are very different from the sort of percentage based values we aim to use in game.
@@ -238,7 +238,8 @@ public sealed class LightLevelSystem : EntitySystem
             return finalLightVal;
 
         // TODO LIGHTLEVEL re add GetAngle
-        var angleToTarget = Angle.Zero;
+        var WorldAngleToTarget = Angle.FromWorldVec(dist);
+        var adjustedWorldAngle = WorldAngleToTarget - lightRot;
 
         // TODO: read the mask image into a buffer of pixels and sample the returned color to multiply against the light level before final calculation
         // var stream = _resource.ContentFileRead(mask.MaskPath);
@@ -249,8 +250,8 @@ public sealed class LightLevelSystem : EntitySystem
         var calculatedLight = 0f;
         foreach (var cone in mask.LightCones)
         {
-            var angleAttenuation = Math.Min((float) Math.Max(cone.OuterWidth - angleToTarget, 0f), cone.InnerWidth) / cone.OuterWidth;
-            var absAngle = Math.Abs(angleToTarget.Degrees);
+            var absAngle = Math.Abs(adjustedWorldAngle.Reduced().Degrees);
+            var angleAttenuation = Math.Min((float) Math.Max(cone.OuterWidth - absAngle, 0f), cone.InnerWidth) / cone.OuterWidth;
 
             // Target is outside the cone's outer width angle, so ignore
             if (absAngle - Math.Abs(cone.Direction) > cone.OuterWidth)
