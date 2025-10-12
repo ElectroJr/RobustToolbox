@@ -203,10 +203,7 @@ public sealed class LightLevelSystem : EntitySystem
         if (length > radius)
             return false;
 
-        // TODO LIGHTLEVEL we could pre-compute sin/cos of treeRot, instead of recomputing per light
-        // or alternatively, maybe using taking the sin/cos of rot+Angle(normalized) might be faster than RotateVec()
         var relativeAngle = treeRot.RotateVec(normalized);
-
         var treeRay = new Ray(Vector2.Transform(lightPos, treeXform), relativeAngle);
         (bool Hit, float Length) state = (false, length);
         tree.Tree.QueryRay(ref state, Callback, treeRay);
@@ -237,32 +234,32 @@ public sealed class LightLevelSystem : EntitySystem
         if (!_proto.TryIndex(light.LightMask, out var mask))
             return finalLightVal;
 
-        // TODO LIGHTLEVEL re add GetAngle
-        var WorldAngleToTarget = Angle.FromWorldVec(dist);
-        var adjustedWorldAngle = WorldAngleToTarget - lightRot;
+        var relativeAngle = Angle.FromWorldVec(dist) - lightRot;
 
-        // TODO: read the mask image into a buffer of pixels and sample the returned color to multiply against the light level before final calculation
+        // TODO LIGHTLEVEL read light mask
+        // read the mask image into a buffer of pixels and sample the returned color to multiply against the light level before final calculation
         // var stream = _resource.ContentFileRead(mask.MaskPath);
         // var image = Image.Load<Rgba32>(stream);
         // Rgba32[] pixelArray = new Rgba32[image.Width * image.Height];
         // image.CopyPixelDataTo(pixelArray);
 
-        var calculatedLight = 0f;
+        var calculatedLight = 0d;
         foreach (var cone in mask.LightCones)
         {
-            var absAngle = Math.Abs(adjustedWorldAngle.Reduced().Degrees);
-            var angleAttenuation = Math.Min((float) Math.Max(cone.OuterWidth - absAngle, 0f), cone.InnerWidth) / cone.OuterWidth;
+            var delta = Math.Abs(Angle.ShortestDistance(relativeAngle, cone.Direction));
 
             // Target is outside the cone's outer width angle, so ignore
-            if (absAngle - Math.Abs(cone.Direction) > cone.OuterWidth)
+            if (delta > cone.OuterWidth)
                 continue;
 
-            if (absAngle - cone.Direction > cone.InnerWidth && absAngle - cone.Direction < cone.OuterWidth)
-                calculatedLight += angleAttenuation;
-            else
-                calculatedLight += 1;
+            // Target is within the inner cone, return the full color
+            if (delta < cone.InnerWidth)
+                return finalLightVal;
+
+            // Lerp light from 0 to 1 as angle goes from outer to inner.
+            calculatedLight += (cone.OuterWidth - delta) / (cone.OuterWidth - cone.InnerWidth);
         }
 
-        return finalLightVal * calculatedLight;
+        return finalLightVal * MathF.Min(1, (float)calculatedLight);
     }
 }
