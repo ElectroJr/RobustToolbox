@@ -150,7 +150,7 @@ public sealed class LightLevelSystem : EntitySystem
         {
             var delta = pos - entry.Position;
             if (InRangeUnoccluded(entry.Entity.Comp1.Radius, entry.Position, delta, tree.Comp, in mat, rot))
-                color += CalculateLightColor(entry.Entity.Comp1, delta, entry.Rotation);
+                color += GetColourFromLight(entry.Entity.Comp1, delta, entry.Rotation);
         }
 
         return new Color(color);
@@ -176,7 +176,7 @@ public sealed class LightLevelSystem : EntitySystem
         {
             var delta = pos - entry.Position;
             if (InRangeUnoccluded(entry.Entity.Comp1.Radius, entry.Position, delta, trees, occluderXforms))
-                color += CalculateLightColor(entry.Entity.Comp1, delta, entry.Rotation);
+                color += GetColourFromLight(entry.Entity.Comp1, delta, entry.Rotation);
         }
 
         return new Color(color);
@@ -241,12 +241,9 @@ public sealed class LightLevelSystem : EntitySystem
         return false;
     }
 
-    private Vector4 CalculateLightColor(SharedPointLightComponent light, Vector2 dist, Angle lightRot)
+    private Vector4 GetColourFromLight(SharedPointLightComponent light, Vector2 dist, Angle lightRot)
     {
-        // Calculate the light level the same way as in light_shared.swsl. The problem with this implementation is that
-        // values used for rendering are very different from the sort of percentage based values we aim to use in game.
-        // // this implementation of light attenuation primarily adapted from
-        // // https://lisyarus.github.io/blog/posts/point-light-attenuation.html
+        // Calculate the light level the same way as in light_shared.swsl.
         var sqr_dist = Vector2.Dot(dist, dist) + LightHeight;
         var s = Math.Clamp(MathF.Sqrt(sqr_dist) / light.Radius, 0.0f, 1.0f);
         var s2 = s * s;
