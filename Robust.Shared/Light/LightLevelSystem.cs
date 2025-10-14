@@ -11,6 +11,15 @@ using Robust.Shared.Physics;
 using Robust.Shared.Prototypes;
 
 namespace Robust.Shared.Light;
+
+/// <summary>
+/// This system provides methods for computing the light level at some point in space. This is intended to
+/// generally match the light values that would be computed by the default light shader.
+/// </summary>
+/// <remarks>
+/// Note that the server and client might disagree about the computed light levels if there are any non-networked lights
+/// or lights with client-side animations.
+/// </remarks>
 public sealed class LightLevelSystem : EntitySystem
 {
     /// <summary>
@@ -34,35 +43,49 @@ public sealed class LightLevelSystem : EntitySystem
         Subs.CVar(_cfg, CVars.LookupShadowcastingOnly, v => _shadowcastingOnly = v, true);
     }
 
+    /// <summary>
+    /// Compute the light level at an entity's position.
+    /// </summary>
+    /// <remarks>
+    /// Note that the server and client might disagree about the computed light levels if there are any non-networked
+    /// lights or lights with client-side animations.
+    /// </remarks>
     public float CalculateLightLevel(EntityUid uid)
         => CalculateLightLevel(_transform.GetMapCoordinates(uid));
 
+    /// <summary>
+    /// Compute the light level at the given coordinates.
+    /// </summary>
+    /// <remarks>
+    /// Note that the server and client might disagree about the computed light levels if there are any non-networked
+    /// lights or lights with client-side animations.
+    /// </remarks>
     public float CalculateLightLevel(EntityCoordinates point)
         => CalculateLightLevel(_transform.ToMapCoordinates(point));
 
+    /// <inheritdoc cref="CalculateLightLevel(EntityCoordinates)"/>
     public float CalculateLightLevel(MapCoordinates point)
         => ColorToLevel(CalculateLightColor(point));
 
-    private float ColorToLevel(Color color)
+    /// <summary>
+    /// Convert from a total light color to a single "brightness/intensity" float.
+    /// </summary>
+    public float ColorToLevel(Color color)
     {
-        // TODO LIGHT LEVEL
+        // TODO LIGHTLEVEL
         // better power / greyscale conversion?
         return MathF.Max(color.R, MathF.Max(color.G, color.B));
     }
 
+    /// <inheritdoc cref="CalculateLightLevel(EntityUid)"/>
     public Color CalculateLightColor(EntityUid uid)
         => CalculateLightColor(_transform.GetMapCoordinates(uid));
 
+    /// <inheritdoc cref="CalculateLightLevel(EntityCoordinates)"/>
     public Color CalculateLightColor(EntityCoordinates point)
         => CalculateLightColor(_transform.ToMapCoordinates(point));
 
-    record struct Light(
-        Entity<SharedPointLightComponent, TransformComponent> Entity,
-        Vector2 Position = default,
-        Angle Rotation = default);
-
-    record struct OccluderTransform(Angle Rotation, Matrix3x2 Matrix);
-
+    /// <inheritdoc cref="CalculateLightLevel(EntityCoordinates)"/>
     public Color CalculateLightColor(MapCoordinates point)
     {
         var pos = point.Position;
@@ -268,4 +291,11 @@ public sealed class LightLevelSystem : EntitySystem
 
         return finalLightVal * MathF.Min(1, (float)calculatedLight);
     }
+
+    private record struct OccluderTransform(Angle Rotation, Matrix3x2 Matrix);
+
+    private record struct Light(
+        Entity<SharedPointLightComponent, TransformComponent> Entity,
+        Vector2 Position = default,
+        Angle Rotation = default);
 }
