@@ -8,8 +8,7 @@ using Robust.Shared.Serialization.Manager.Attributes;
 using Robust.Shared.Utility;
 
 namespace Robust.Shared.GameObjects;
-
-[Prototype("lightMask")]
+[Prototype]
 public sealed partial class LightMaskPrototype : IPrototype
 {
     [IdDataField]

@@ -1,7 +1,6 @@
 #if DEBUG
 using Robust.Client.ComponentTrees;
 using Robust.Client.Graphics;
-using Robust.Shared.ComponentTrees;
 using Robust.Shared.Enums;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
@@ -50,7 +49,7 @@ namespace Robust.Client.GameObjects
             private IEyeManager _eyeManager;
             private IMapManager _mapManager;
 
-            private SharedLightTreeSystem _trees;
+            private LightTreeSystem _trees;
 
             public override OverlaySpace Space => OverlaySpace.WorldSpace;
 
