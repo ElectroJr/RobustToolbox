@@ -234,13 +234,13 @@ public sealed class LightLevelSystem : EntitySystem
         if (!_proto.TryIndex(light.LightMask, out var mask))
             return finalLightVal;
 
-        // This intentionally does not check light.MaskAutoRotate, and always takes into account the light rotation.
-        // I think for clients MaskAutoRotate=false makes the mask get drawn relative to screen coordinates. So the mask
-        // is subjective, and varies per player. So we just can't support that. TBH I'm not at all sure why MaskAutoRotate even exists.
-        var relativeAngle = light.Rotation - lightRot;
-
-        if (MathHelper.CloseTo(dist.LengthSquared(), 0))
-            relativeAngle += Angle.FromWorldVec(dist);
+        // This intentionally does not check light.MaskAutoRotate, and always takes into account the entity's world
+        // rotation. I think for clients MaskAutoRotate=false makes the mask get drawn relative to screen coordinates.
+        // So the mask is subjective, and varies per player. So we just can't support that.
+        // TBH I don't even remember why MaskAutoRotate exists.
+        var relativeAngle = MathHelper.CloseTo(dist.LengthSquared(), 0)
+            ? Angle.Zero
+            : Angle.FromWorldVec(dist) + light.Rotation - lightRot;
 
         // TODO LIGHTLEVEL read light mask
         // read the mask image into a buffer of pixels and sample the returned color to multiply against the light level before final calculation
