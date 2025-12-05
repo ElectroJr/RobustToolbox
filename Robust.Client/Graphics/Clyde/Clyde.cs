@@ -432,6 +432,7 @@ namespace Robust.Client.Graphics.Clyde
             GL.BindTexture(TextureTarget.Texture2D, screenBufferHandle.Handle);
             ApplySampleParameters(new TextureSampleParameters() { Filter = false, WrapMode = TextureWrapMode.MirroredRepeat});
             // TODO: This is atrocious and broken and awful why did I merge this
+            // Yeah why the fuck is this hard coded to 1920x1080.
             ScreenBufferTexture = GenTexture(screenBufferHandle, (1920, 1080), true, null, TexturePixelType.Rgba32);
         }
 

@@ -81,7 +81,7 @@ public sealed class SpriteBoundsTest : RobustIntegrationTest
         // ents 1 & 3 should have the same bounds, as the rotated layer is invisible in ent3
         Assert.That(box1.EqualsApprox(box3));
         Assert.That(!box1.EqualsApprox(box2));
-        Assert.That(box2.EqualsApprox(ent2.Comp.Layers[1].Bounds));
+        Assert.That(box2.EqualsApprox(ent2.Comp.Layers[1].GetLocalBounds()));
         Assert.That(box2.Size.X, Is.GreaterThan(box1.Size.X));
         Assert.That(box2.Size.Y, Is.GreaterThan(box1.Size.Y));
 
@@ -96,7 +96,7 @@ public sealed class SpriteBoundsTest : RobustIntegrationTest
 
         Assert.That(box1.EqualsApprox(newBox2));
         Assert.That(!box1.EqualsApprox(newBox3));
-        Assert.That(newBox3.EqualsApprox(ent3.Comp.Layers[1].Bounds));
+        Assert.That(newBox3.EqualsApprox(ent3.Comp.Layers[1].GetLocalBounds()));
         Assert.That(newBox3.Size.X, Is.GreaterThan(box1.Size.X));
         Assert.That(newBox3.Size.Y, Is.GreaterThan(box1.Size.Y));
 

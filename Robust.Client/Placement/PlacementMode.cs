@@ -124,9 +124,9 @@ namespace Robust.Client.Placement
                 var worldPos = transformSys.ToMapCoordinates(coordinate).Position;
                 var worldRot = transformSys.GetWorldRotation(coordinate.EntityId) + dirAng;
 
-                sprite.Color = IsValidPosition(coordinate) ? ValidPlaceColor : InvalidPlaceColor;
+                spriteSys.SetColor((uid.Value, sprite), IsValidPosition(coordinate) ? ValidPlaceColor : InvalidPlaceColor);
                 var rot = args.Viewport.Eye?.Rotation ?? default;
-                spriteSys.RenderSprite((uid.Value, sprite), args.WorldHandle, rot, worldRot, worldPos);
+                args.WorldHandle.DrawEntity((uid.Value, sprite), rot, worldRot, worldPos);
             }
         }
 

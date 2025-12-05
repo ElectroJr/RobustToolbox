@@ -32,9 +32,10 @@ public partial class SerializationManager
     private static void CreateClassInstantiator(ILGenerator generator, Type type)
     {
         if (type.IsArray)
-        {
             throw new ArgumentException($"Tried instantiating unsupported type {type}.");
-        }
+
+        if (type.IsAbstract)
+            throw new ArgumentException($"Tried instantiating abstract type {type}.");
 
         var constructor = type.GetConstructor(
             BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,

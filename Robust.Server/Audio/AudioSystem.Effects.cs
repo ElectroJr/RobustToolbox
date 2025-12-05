@@ -11,8 +11,8 @@ public sealed partial class AudioSystem
     protected override void InitializeEffect()
     {
         base.InitializeEffect();
-        SubscribeLocalEvent<AudioEffectComponent, ComponentAdd>(OnEffectAdd);
-        SubscribeLocalEvent<AudioAuxiliaryComponent, ComponentAdd>(OnAuxiliaryAdd);
+        SubscribeLocalEvent<AudioEffectComponent, ComponentPreInitEvent>(OnEffectPreInit);
+        SubscribeLocalEvent<AudioAuxiliaryComponent, ComponentPreInitEvent>(OnAuxiliaryPreInit);
     }
 
     private void ShutdownEffect()
@@ -53,12 +53,12 @@ public sealed partial class AudioSystem
         }
     }
 
-    private void OnEffectAdd(EntityUid uid, AudioEffectComponent component, ComponentAdd args)
+    private void OnEffectPreInit(EntityUid uid, AudioEffectComponent component, ref ComponentPreInitEvent args)
     {
         component.Effect = new DummyAudioEffect();
     }
 
-    private void OnAuxiliaryAdd(EntityUid uid, AudioAuxiliaryComponent component, ComponentAdd args)
+    private void OnAuxiliaryPreInit(EntityUid uid, AudioAuxiliaryComponent component, ref ComponentPreInitEvent args)
     {
         component.Auxiliary = new DummyAuxiliaryAudio();
     }

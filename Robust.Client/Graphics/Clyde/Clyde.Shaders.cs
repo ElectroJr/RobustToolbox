@@ -409,7 +409,12 @@ namespace Robust.Client.Graphics.Clyde
                 var newData = new LoadedShaderInstance(instanceData);
                 var newHandle = Parent.AllocRid();
                 Parent._shaderInstances.Add(newHandle, newData);
-                return new ClydeShaderInstance(newHandle, Parent);
+                return new ClydeShaderInstance(newHandle, Parent)
+                {
+                    Prototype = Prototype,
+                    RaiseEvent = RaiseEvent,
+                    GetScreenTexture = GetScreenTexture,
+                };
             }
 
             public override void Dispose()

@@ -73,6 +73,8 @@ namespace Robust.Client.Graphics
         void RunOnWindowThread(Action action);
 
         IFileDialogManagerImplementation? FileDialogImpl { get; }
+        Texture? CopyScreenTexture(IRenderTarget texture);
+        void FlushRenderQueue();
 
         bool VsyncEnabled { get; set; }
 

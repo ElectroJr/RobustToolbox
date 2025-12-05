@@ -120,19 +120,28 @@ namespace Robust.Shared.GameObjects
             SetLifeStage(metadata, EntityLifeStage.Initializing);
 
             // Initialize() can modify the collection of components. Copy them.
-            FixedArray32<IComponent?> compsFixed = default;
+            FixedArray32<(IComponent, CompIdx)> compsFixed = default;
 
             var comps = compsFixed.AsSpan;
             CopyComponentsInto(ref comps, uid);
 
-            foreach (var comp in comps)
+            var preInit = new ComponentPreInitEvent();
+            foreach (var (comp, idx) in comps)
             {
-                if (comp is {LifeStage: ComponentLifeStage.Added})
-                    LifeInitialize(uid, comp, _componentFactory.GetIndex(comp.GetType()));
+                DebugTools.Assert(comp.LifeStage is ComponentLifeStage.Added or ComponentLifeStage.PreInit);
+                if (comp.LifeStage != ComponentLifeStage.PreInit)
+                {
+                    comp.LifeStage = ComponentLifeStage.PreInit;
+                    EventBus.RaiseComponentEvent(uid, comp, idx, ref preInit);
+                }
+            }
+
+            foreach (var (comp, idx) in comps)
+            {
+                LifeInitialize(uid, comp, idx);
             }
 
 #if DEBUG
-            // Second integrity check in case of.
             foreach (var t in _entCompIndex[uid])
             {
                 if (!t.Deleted && !t.Initialized)
@@ -152,7 +161,7 @@ namespace Robust.Shared.GameObjects
         {
             // Startup() can modify _components
             // This code can only handle additions to the list. Is there a better way? Probably not.
-            FixedArray32<IComponent?> compsFixed = default;
+            FixedArray32<(IComponent, CompIdx)> compsFixed = default;
 
             var comps = compsFixed.AsSpan;
             CopyComponentsInto(ref comps, uid);
@@ -171,10 +180,10 @@ namespace Robust.Shared.GameObjects
             }
 
             // Do rest of components.
-            foreach (var comp in comps)
+            foreach (var (comp, idx) in comps)
             {
-                if (comp is { LifeStage: ComponentLifeStage.Initialized })
-                    LifeStartup(uid, comp, _componentFactory.GetIndex(comp.GetType()));
+                if (comp is {LifeStage: ComponentLifeStage.Initialized})
+                    LifeStartup(uid, comp, idx);
             }
         }
 
@@ -201,7 +210,7 @@ namespace Robust.Shared.GameObjects
                 {
                     var comp = _componentFactory.GetComponent(reg);
                     _serManager.CopyTo(entry.Component, ref comp, notNullableOverride: true);
-                    AddComponentInternal(target, comp, reg, overwrite: true, metadata: metadata);
+                    AddComponentInternal(target, comp, reg, overwrite: true, skipInit: false, metadata: metadata);
                 }
                 else
                 {
@@ -212,7 +221,7 @@ namespace Robust.Shared.GameObjects
 
                     var comp = _componentFactory.GetComponent(reg);
                     _serManager.CopyTo(entry.Component, ref comp, notNullableOverride: true);
-                    AddComponentInternal(target, comp, reg, overwrite: false, metadata: metadata);
+                    AddComponentInternal(target, comp, reg, overwrite: false, skipInit: false, metadata: metadata);
                 }
             }
         }
@@ -275,6 +284,12 @@ namespace Robust.Shared.GameObjects
                 if (!metadata.EntityInitialized && !metadata.EntityInitializing)
                     return;
 
+                if (Comp.LifeStage < ComponentLifeStage.PreInit)
+                {
+                    var preInit = new ComponentPreInitEvent();
+                    ((EntityManager) _entMan).EventBus.RaiseComponentEvent(_owner, Comp, CompType, ref preInit);
+                }
+
                 if (!Comp.Initialized)
                     ((EntityManager) _entMan).LifeInitialize(_owner, Comp, CompType);
 
@@ -318,42 +333,20 @@ namespace Robust.Shared.GameObjects
             }
 #pragma warning restore CS0618 // Type or member is obsolete
 
-            AddComponentInternal(uid, component, overwrite, false, metadata);
-        }
-
-        private void AddComponentInternal<T>(
-            EntityUid uid,
-            T component,
-            ComponentRegistration compReg,
-            bool overwrite = false,
-            MetaDataComponent? metadata = null) where T : IComponent
-        {
-            if (!MetaQuery.Resolve(uid, ref metadata, false))
-                throw new ArgumentException($"Entity {uid} is not valid.", nameof(uid));
-
-            DebugTools.Assert(component.Owner == default);
-            component.Owner = uid;
-
-            AddComponentInternal(uid, component, compReg, overwrite, skipInit: false, metadata);
-        }
-
-        private void AddComponentInternal<T>(EntityUid uid, T component, bool overwrite, bool skipInit, MetaDataComponent? metadata) where T : IComponent
-        {
-            if (!MetaQuery.ResolveInternal(uid, ref metadata, false))
-                throw new ArgumentException($"Entity {uid} is not valid.", nameof(uid));
-
-            // get interface aliases for mapping
             var reg = _componentFactory.GetRegistration(component);
-            AddComponentInternal(uid, component, reg, overwrite, skipInit, metadata);
+            AddComponentInternal(uid, component, reg, overwrite, false, metadata);
         }
 
         private void AddComponentInternal<T>(EntityUid uid, T component, ComponentRegistration reg, bool overwrite, bool skipInit, MetaDataComponent metadata) where T : IComponent
         {
             ThreadCheck();
+#pragma warning disable CS0618 // Type or member is obsolete
+            DebugTools.Assert(component.Owner == default || component.Owner == uid);
+            component.Owner = uid;
+#pragma warning restore CS0618 // Type or member is obsolete
 
             // We can't use typeof(T) here in case T is just Component
-            DebugTools.Assert(component is MetaDataComponent ||
-                              (metadata ?? MetaQuery.GetComponent(uid)).EntityLifeStage < EntityLifeStage.Terminating,
+            DebugTools.Assert(component is MetaDataComponent || metadata.EntityLifeStage < EntityLifeStage.Terminating,
                 $"Attempted to add a {component.GetType().Name} component to an entity ({ToPrettyString(uid)}) while it is terminating");
 
             // Check that there is no existing component.
@@ -391,7 +384,6 @@ namespace Robust.Shared.GameObjects
             {
                 // the main comp grid keeps this in sync
                 var netId = reg.NetID.Value;
-                metadata ??= MetaQuery.GetComponentInternal(uid);
                 metadata.NetComponents.Add(netId, component);
             }
 
@@ -413,13 +405,15 @@ namespace Robust.Shared.GameObjects
             if (skipInit)
                 return;
 
-            metadata ??= MetaQuery.GetComponentInternal(uid);
-
             if (!metadata.EntityInitialized && !metadata.EntityInitializing)
                 return;
 
             if (component.Networked)
                 DirtyEntity(uid, metadata);
+
+            var preInit = new ComponentPreInitEvent();
+            component.LifeStage = ComponentLifeStage.PreInit;
+            EventBus.RaiseComponentEvent(uid, component, reg.Idx, ref preInit);
 
             LifeInitialize(uid, component, reg.Idx);
 
@@ -1171,8 +1165,6 @@ namespace Robust.Shared.GameObjects
             var component = (T)ComponentFactory.GetComponent(compReg);
 
             _serManager.CopyTo(sourceComponent, ref component, notNullableOverride: true);
-            component.Owner = target;
-
             AddComponentInternal(target, component, compReg, true, false, meta);
             return component;
         }
@@ -1206,7 +1198,7 @@ namespace Robust.Shared.GameObjects
         /// <summary>
         /// Internal variant of <see cref="GetComponents"/> that directly returns the actual component set.
         /// </summary>
-        internal IReadOnlyCollection<IComponent> GetComponentsInternal(EntityUid uid) => _entCompIndex[uid];
+        internal HashSet<IComponent> GetComponentsInternal(EntityUid uid) => _entCompIndex[uid];
 
         /// <inheritdoc />
         public int ComponentCount(EntityUid uid)
@@ -1217,21 +1209,23 @@ namespace Robust.Shared.GameObjects
 
         /// <summary>
         /// Copy the components for an entity into the given span,
-        /// or re-allocate the span as an array if there's not enough space.º
+        /// or re-allocate the span as an array if there's not enough space.
         /// </summary>
-        private void CopyComponentsInto(ref Span<IComponent?> comps, EntityUid uid)
+        internal void CopyComponentsInto(ref Span<(IComponent, CompIdx)> comps, EntityUid uid)
         {
             var set = _entCompIndex[uid];
             if (set.Count > comps.Length)
             {
-                comps = new IComponent[set.Count];
+                comps = new (IComponent, CompIdx)[set.Count];
             }
 
             var i = 0;
             foreach (var c in set)
             {
-                comps[i++] = c;
+                comps[i++] = (c, _componentFactory.GetIndex(c.GetType()));
             }
+
+            comps = comps[..set.Count];
         }
 
         /// <inheritdoc />

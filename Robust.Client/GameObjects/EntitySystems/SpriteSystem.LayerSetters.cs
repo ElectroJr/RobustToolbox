@@ -2,80 +2,44 @@ using System;
 using System.Numerics;
 using Robust.Client.Graphics;
 using Robust.Client.ResourceManagement;
+using Robust.Client.Sprite.Layers;
 using Robust.Shared.GameObjects;
+using Robust.Shared.Graphics.RSI;
 using Robust.Shared.Maths;
+using Robust.Shared.Prototypes;
+using Robust.Shared.Sprite;
 using Robust.Shared.Utility;
-using static Robust.Client.GameObjects.SpriteComponent;
 using static Robust.Client.Graphics.RSI;
-
-#pragma warning disable CS0618 // Type or member is obsolete
 
 namespace Robust.Client.GameObjects;
 
 // This partial class contains various public methods for modifying a layer's properties.
 public sealed partial class SpriteSystem
 {
-    #region SetData
-
-    public void LayerSetData(Entity<SpriteComponent?> sprite, int index, PrototypeLayerData data)
-    {
-        if (TryGetLayer(sprite, index, out var layer, true))
-            LayerSetData(layer, data);
-    }
-
-    public void LayerSetData(Entity<SpriteComponent?> sprite, string key, PrototypeLayerData data)
-    {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetData(layer, data);
-    }
-
-    public void LayerSetData(Entity<SpriteComponent?> sprite, Enum key, PrototypeLayerData data)
-    {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetData(layer, data);
-    }
-
-    public void LayerSetData(Layer layer, PrototypeLayerData data)
-    {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-        // TODO SPRITE ECS
-        layer._parent.LayerSetData(layer, data);
-    }
-
-    #endregion
-
     #region SpriteSpecifier
 
     public void LayerSetSprite(Entity<SpriteComponent?> sprite, int index, SpriteSpecifier specifier)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out RsiLayer? layer))
             LayerSetSprite(layer, specifier);
     }
 
-    public void LayerSetSprite(Entity<SpriteComponent?> sprite, string key, SpriteSpecifier specifier)
+    public void LayerSetSprite(Entity<SpriteComponent?> sprite, LayerKey key, SpriteSpecifier specifier)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out RsiLayer? layer))
             LayerSetSprite(layer, specifier);
     }
 
-    public void LayerSetSprite(Entity<SpriteComponent?> sprite, Enum key, SpriteSpecifier specifier)
-    {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetSprite(layer, specifier);
-    }
-
-    public void LayerSetSprite(Layer layer, SpriteSpecifier specifier)
+    public void LayerSetSprite(RsiLayer rsiLayer, SpriteSpecifier specifier)
     {
         switch (specifier)
         {
             case SpriteSpecifier.Texture tex:
-                LayerSetTexture(layer, tex.TexturePath);
+                LayerSetTexture(rsiLayer, tex.TexturePath);
                 break;
 
             case SpriteSpecifier.Rsi rsi:
-                LayerSetRsi(layer, rsi.RsiPath, rsi.RsiState);
+                LayerSetRsi(rsiLayer, rsi.RsiPath, rsi.RsiState);
                 break;
 
             default:
@@ -89,95 +53,97 @@ public sealed partial class SpriteSystem
 
     public void LayerSetTexture(Entity<SpriteComponent?> sprite, int index, Texture? texture)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out RsiLayer? layer))
             LayerSetTexture(layer, texture);
     }
 
-    public void LayerSetTexture(Entity<SpriteComponent?> sprite, string key, Texture? texture)
+    public void LayerSetTexture(Entity<SpriteComponent?> sprite, LayerKey key, Texture? texture)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out RsiLayer? layer))
             LayerSetTexture(layer, texture);
     }
 
-    public void LayerSetTexture(Entity<SpriteComponent?> sprite, Enum key, Texture? texture)
+    public void LayerSetTexture(RsiLayer rsiLayer, Texture? texture)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetTexture(layer, texture);
-    }
-
-    public void LayerSetTexture(Layer layer, Texture? texture)
-    {
-        LayerSetRsiState(layer, StateId.Invalid, refresh: true);
-        layer.Texture = texture;
+        rsiLayer.Texture = texture;
+        rsiLayer.InvalidateCache();
     }
 
     public void LayerSetTexture(Entity<SpriteComponent?> sprite, int index, ResPath path)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out RsiLayer? layer))
             LayerSetTexture(layer, path);
     }
 
-    public void LayerSetTexture(Entity<SpriteComponent?> sprite, string key, ResPath path)
+    public void LayerSetTexture(Entity<SpriteComponent?> sprite, LayerKey key, ResPath path)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out RsiLayer? layer))
             LayerSetTexture(layer, path);
     }
 
-    public void LayerSetTexture(Entity<SpriteComponent?> sprite, Enum key, ResPath path)
+    public void LayerSetTexture(RsiLayer rsiLayer, ResPath path)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetTexture(layer, path);
-    }
-
-    private void LayerSetTexture(Layer layer, ResPath path)
-    {
-        if (!_resourceCache.TryGetResource<TextureResource>(TextureRoot / path, out var texture))
+        if (_resourceCache.TryGetResource<TextureResource>(TextureRoot / path, out var texture))
         {
-            if (path.Extension == "rsi")
-                Log.Error($"Expected texture but got rsi '{path}', did you mean 'sprite:' instead of 'texture:'?");
-            Log.Error($"Unable to load texture '{path}'. Trace:\n{Environment.StackTrace}");
+            LayerSetTexture(rsiLayer, texture);
+            return;
         }
 
-        LayerSetTexture(layer, texture?.Texture);
+        if (path.Extension == "rsi")
+            Log.Error($"Expected texture but got rsi '{path}', did you mean 'sprite:' instead of 'texture:'?");
+        Log.Error($"Unable to load texture '{path}'. Trace:\n{Environment.StackTrace}");
+        LayerSetTexture(rsiLayer, _resourceCache.GetFallback<TextureResource>());
     }
 
     #endregion
 
     #region RsiState
 
-    public void LayerSetRsiState(Entity<SpriteComponent?> sprite, int index, StateId state)
+    public void LayerSetRsiState(Entity<SpriteComponent?> sprite, int index, StateId state, bool refresh = false)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
-            LayerSetRsiState(layer, state);
+        if (ResolveLayer(sprite, index, out RsiLayer? layer))
+            LayerSetRsiState(layer, state, refresh);
     }
 
-    public void LayerSetRsiState(Entity<SpriteComponent?> sprite, string key, StateId state)
+    public void LayerSetRsiState(Entity<SpriteComponent?> sprite, LayerKey key, StateId state, bool refresh = false)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetRsiState(layer, state);
+        if (ResolveLayer(sprite, key, out RsiLayer? layer))
+            LayerSetRsiState(layer, state, refresh);
     }
 
-    public void LayerSetRsiState(Entity<SpriteComponent?> sprite, Enum key, StateId state)
+    [Obsolete("Use specific layer subtype")]
+    public void LayerSetRsiState(BaseLayer layer, StateId id, bool refresh = false, bool log = true)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetRsiState(layer, state);
+        LayerSetRsiState((RsiLayer) layer, id, refresh, log);
     }
 
-    public void LayerSetRsiState(Layer layer, StateId state, bool refresh = false)
+    public void LayerSetRsiState(RsiLayer rsiLayer, StateId id, bool refresh = false, bool log = true)
     {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-
-        if (layer.StateId == state && !refresh)
+        if (rsiLayer.StateId == id && !refresh)
             return;
 
-        layer.StateId = state;
-        RefreshCachedState(layer, true, null);
-        _tree.QueueTreeUpdate(layer.Owner);
-        QueueUpdateIsInert(layer.Owner);
-        layer.BoundsDirty = true;
-        layer.Owner.Comp.BoundsDirty = true;
+        rsiLayer.StateId = id;
+        rsiLayer.State = null;
+        rsiLayer.AnimationFrame = 0;
+        rsiLayer.AnimationTime = 0;
+        rsiLayer.AnimationTimeLeft = 0;
+
+        if (!id.IsValid || rsiLayer.GetRsi() is not { } rsi)
+        {
+            rsiLayer.InvalidateCache();
+            return;
+        }
+
+        if (!rsi.TryGetState(id, out var state))
+        {
+            state = GetFallbackState();
+            if (log)
+                Log.Error($"{ToPrettyString(rsiLayer.GetEntity())} attempted to set unknown RSI state {id}. Trace:\n{Environment.StackTrace}");
+        }
+
+        rsiLayer.State = state;
+        rsiLayer.AnimationTimeLeft = state.GetDelay(0);
+        rsiLayer.InvalidateCache();
     }
 
     #endregion
@@ -186,52 +152,57 @@ public sealed partial class SpriteSystem
 
     public void LayerSetRsi(Entity<SpriteComponent?> sprite, int index, RSI? rsi, StateId? state = null)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out BaseLayer? layer))
             LayerSetRsi(layer, rsi, state);
     }
 
-    public void LayerSetRsi(Entity<SpriteComponent?> sprite, string key, RSI? rsi, StateId? state = null)
+    public void LayerSetRsi(Entity<SpriteComponent?> sprite, LayerKey key, RSI? rsi, StateId? state = null)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out BaseLayer? layer))
             LayerSetRsi(layer, rsi, state);
     }
 
-    public void LayerSetRsi(Entity<SpriteComponent?> sprite, Enum key, RSI? rsi, StateId? state = null)
+    public void LayerSetRsi(BaseLayer layer, RSI? rsi, StateId? state = null)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetRsi(layer, rsi, state);
-    }
-
-    public void LayerSetRsi(Layer layer, RSI? rsi, StateId? state = null)
-    {
-        layer._rsi = rsi;
-        LayerSetRsiState(layer, state ?? layer.StateId, refresh: true);
+        layer.RsiOverride = rsi;
+        RecursivelyRefreshState(layer);
     }
 
     public void LayerSetRsi(Entity<SpriteComponent?> sprite, int index, ResPath rsi, StateId? state = null)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out BaseLayer? layer))
             LayerSetRsi(layer, rsi, state);
     }
 
-    public void LayerSetRsi(Entity<SpriteComponent?> sprite, string key, ResPath rsi, StateId? state = null)
+    public void LayerSetRsi(Entity<SpriteComponent?> sprite, LayerKey key, ResPath rsi, StateId? state = null)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out BaseLayer? layer))
             LayerSetRsi(layer, rsi, state);
     }
 
-    public void LayerSetRsi(Entity<SpriteComponent?> sprite, Enum key, ResPath rsi, StateId? state = null)
+    public void LayerSetRsi(BaseLayer layer, ResPath rsi, StateId? state = null)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetRsi(layer, rsi, state);
-    }
+        if (_resourceCache.TryGetResource<RSIResource>(TextureRoot / rsi, out var res))
+        {
+            LayerSetRsi(layer, res.RSI, state);
+            return;
+        }
 
-    public void LayerSetRsi(Layer layer, ResPath rsi, StateId? state = null)
-    {
-        if (!_resourceCache.TryGetResource<RSIResource>(TextureRoot / rsi, out var res))
-            Log.Error($"Unable to load RSI '{rsi}' for entity {ToPrettyString(layer.Owner)}. Trace:\n{Environment.StackTrace}");
-
-        LayerSetRsi(layer, res?.RSI, state);
+        if (layer is RsiLayer rsiLayer)
+        {
+            Log.Error($"Unable to load RSI '{rsi}' for entity {ToPrettyString(layer.GetEntity())}. Trace:\n{Environment.StackTrace}");
+            rsiLayer.State = GetFallbackState();
+            rsiLayer.AnimationFrame = 0;
+            rsiLayer.AnimationTime = 0;
+            rsiLayer.AnimationTimeLeft = rsiLayer.State.GetDelay(0);
+            rsiLayer.InvalidateCache();
+        }
+        else
+        {
+            // Layer collection needs to refresh all children
+            // TODO SPRITE
+            throw new NotImplementedException();
+        }
     }
 
     #endregion
@@ -240,39 +211,36 @@ public sealed partial class SpriteSystem
 
     public void LayerSetScale(Entity<SpriteComponent?> sprite, int index, Vector2 value)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out BaseLayer? layer))
             LayerSetScale(layer, value);
     }
 
-    public void LayerSetScale(Entity<SpriteComponent?> sprite, string key, Vector2 value)
+    public void LayerSetScale(Entity<SpriteComponent?> sprite, LayerKey key, Vector2 value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out BaseLayer? layer))
             LayerSetScale(layer, value);
     }
 
-    public void LayerSetScale(Entity<SpriteComponent?> sprite, Enum key, Vector2 value)
+    public void LayerSetScale(BaseLayer? layer, Vector2 value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetScale(layer, value);
-    }
-
-    public void LayerSetScale(Layer layer, Vector2 value)
-    {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-
-        if (layer._scale.EqualsApprox(value))
+        if (layer == null)
             return;
 
-        if (!ValidateScale(layer.Owner, value))
+        if (layer.Scale.EqualsApprox(value))
             return;
 
-        layer._scale = value;
-        layer.UpdateLocalMatrix();
-        _tree.QueueTreeUpdate(layer.Owner);
-        layer.BoundsDirty = true;
-        layer.Owner.Comp.BoundsDirty = true;
+        if (MathF.Abs(value.X) < MinScale
+            || MathF.Abs(value.Y) < MinScale
+            || float.IsNaN(value.X)
+            || float.IsNaN(value.Y))
+        {
+            Log.Error($"Attempted to set scale to invalid value. Entity: {ToPrettyString(layer.GetEntity())}. Value: {value}");
+            return;
+        }
+
+        layer.Scale = value;
+        layer.UpdateTransform();
+        layer.InvalidateCache();
     }
 
     #endregion
@@ -281,36 +249,30 @@ public sealed partial class SpriteSystem
 
     public void LayerSetRotation(Entity<SpriteComponent?> sprite, int index, Angle value)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out BaseLayer? layer))
             LayerSetRotation(layer, value);
     }
 
-    public void LayerSetRotation(Entity<SpriteComponent?> sprite, string key, Angle value)
+    public void LayerSetRotation(Entity<SpriteComponent?> sprite, LayerKey key, Angle value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out BaseLayer? layer))
             LayerSetRotation(layer, value);
     }
 
-    public void LayerSetRotation(Entity<SpriteComponent?> sprite, Enum key, Angle value)
+    public void LayerSetRotation(BaseLayer layer, Angle value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetRotation(layer, value);
-    }
-
-    public void LayerSetRotation(Layer layer, Angle value)
-    {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-
-        if (layer._rotation.EqualsApprox(value))
+        if (layer.Rotation.EqualsApprox(value))
             return;
 
-        layer._rotation = value;
-        layer.UpdateLocalMatrix();
-        _tree.QueueTreeUpdate(layer.Owner);
-        layer.BoundsDirty = true;
-        layer.Owner.Comp.BoundsDirty = true;
+        if (double.IsNaN(value.Theta))
+        {
+            Log.Error($"Attempted to set scale to invalid angle. Entity: {ToPrettyString(layer.GetEntity())}. Value: {value}");
+            return;
+        }
+
+        layer.Rotation = value;
+        layer.UpdateTransform();
+        layer.InvalidateCache();
     }
 
     #endregion
@@ -319,36 +281,30 @@ public sealed partial class SpriteSystem
 
     public void LayerSetOffset(Entity<SpriteComponent?> sprite, int index, Vector2 value)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out BaseLayer? layer))
             LayerSetOffset(layer, value);
     }
 
-    public void LayerSetOffset(Entity<SpriteComponent?> sprite, string key, Vector2 value)
+    public void LayerSetOffset(Entity<SpriteComponent?> sprite, LayerKey key, Vector2 value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out BaseLayer? layer))
             LayerSetOffset(layer, value);
     }
 
-    public void LayerSetOffset(Entity<SpriteComponent?> sprite, Enum key, Vector2 value)
+    public void LayerSetOffset(BaseLayer layer, Vector2 value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetOffset(layer, value);
-    }
-
-    public void LayerSetOffset(Layer layer, Vector2 value)
-    {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-
-        if (layer._offset.EqualsApprox(value))
+        if (layer.Offset.EqualsApprox(value))
             return;
 
-        layer._offset = value;
-        layer.UpdateLocalMatrix();
-        _tree.QueueTreeUpdate(layer.Owner);
-        layer.BoundsDirty = true;
-        layer.Owner.Comp.BoundsDirty = true;
+        if (float.IsNaN(value.X) || float.IsNaN(value.Y))
+        {
+            Log.Error($"Attempted to set offset to invalid value. Entity: {ToPrettyString(layer.GetEntity())}. Value: {value}");
+            return;
+        }
+
+        layer.Offset = value;
+        layer.UpdateTransform();
+        layer.InvalidateCache();
     }
 
     #endregion
@@ -357,35 +313,23 @@ public sealed partial class SpriteSystem
 
     public void LayerSetVisible(Entity<SpriteComponent?> sprite, int index, bool value)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out BaseLayer? layer))
             LayerSetVisible(layer, value);
     }
 
-    public void LayerSetVisible(Entity<SpriteComponent?> sprite, string key, bool value)
+    public void LayerSetVisible(Entity<SpriteComponent?> sprite, LayerKey key, bool value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out BaseLayer? layer))
             LayerSetVisible(layer, value);
     }
 
-    public void LayerSetVisible(Entity<SpriteComponent?> sprite, Enum key, bool value)
+    public void LayerSetVisible(BaseLayer layer, bool value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetVisible(layer, value);
-    }
-
-    public void LayerSetVisible(Layer layer, bool value)
-    {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-
-        if (layer._visible == value)
+        if (layer.Visible == value)
             return;
 
-        layer._visible = value;
-        QueueUpdateIsInert(layer.Owner);
-        _tree.QueueTreeUpdate(layer.Owner);
-        layer.Owner.Comp.BoundsDirty = true;
+        layer.Visible = value;
+        layer.InvalidateCache();
     }
 
     #endregion
@@ -394,148 +338,140 @@ public sealed partial class SpriteSystem
 
     public void LayerSetColor(Entity<SpriteComponent?> sprite, int index, Color value)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out BaseLayer? layer))
             LayerSetColor(layer, value);
     }
 
-    public void LayerSetColor(Entity<SpriteComponent?> sprite, string key, Color value)
+    public void LayerSetColor(Entity<SpriteComponent?> sprite, LayerKey key, Color value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out BaseLayer? layer))
             LayerSetColor(layer, value);
     }
 
-    public void LayerSetColor(Entity<SpriteComponent?> sprite, Enum key, Color value)
+    public void LayerSetColor(BaseLayer layer, Color value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetColor(layer, value);
-    }
-
-    public void LayerSetColor(Layer layer, Color value)
-    {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-
         layer.Color = value;
     }
 
     #endregion
 
-    #region DirOffset
+    #region Direction
 
     public void LayerSetDirOffset(Entity<SpriteComponent?> sprite, int index, DirectionOffset value)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out RsiLayer? layer))
             LayerSetDirOffset(layer, value);
     }
 
-    public void LayerSetDirOffset(Entity<SpriteComponent?> sprite, string key, DirectionOffset value)
+    public void LayerSetDirOffset(Entity<SpriteComponent?> sprite, LayerKey key, DirectionOffset value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out RsiLayer? layer))
             LayerSetDirOffset(layer, value);
     }
 
-    public void LayerSetDirOffset(Entity<SpriteComponent?> sprite, Enum key, DirectionOffset value)
+    public void LayerSetDirOffset(RsiLayer rsiLayer, DirectionOffset value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        rsiLayer.DirOffset = value;
+    }
+
+    public void LayerSetDirOffset(Entity<SpriteComponent?> sprite, int index, DirectionBehaviour value)
+    {
+        if (ResolveLayer(sprite, index, out RsiLayer? layer))
             LayerSetDirOffset(layer, value);
     }
 
-    public void LayerSetDirOffset(Layer layer, DirectionOffset value)
+    public void LayerSetDirOffset(Entity<SpriteComponent?> sprite, LayerKey key, DirectionBehaviour value)
     {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-
-        layer.DirOffset = value;
+        if (ResolveLayer(sprite, key, out RsiLayer? layer))
+            LayerSetDirOffset(layer, value);
     }
 
+    public void LayerSetDirOffset(RsiLayer rsiLayer, DirectionBehaviour value)
+    {
+        rsiLayer.DirBehaviour = value;
+    }
     #endregion
 
     #region AnimationTime
 
     public void LayerSetAnimationTime(Entity<SpriteComponent?> sprite, int index, float value)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out RsiLayer? layer))
             LayerSetAnimationTime(layer, value);
     }
 
-    public void LayerSetAnimationTime(Entity<SpriteComponent?> sprite, string key, float value)
+    public void LayerSetAnimationTime(Entity<SpriteComponent?> sprite, LayerKey key, float value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out RsiLayer? layer))
             LayerSetAnimationTime(layer, value);
     }
 
-    public void LayerSetAnimationTime(Entity<SpriteComponent?> sprite, Enum key, float value)
+    public void LayerSetAnimationTime(RsiLayer rsiLayer, float value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetAnimationTime(layer, value);
-    }
-
-    public void LayerSetAnimationTime(Layer layer, float value)
-    {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-
-        if (!layer.StateId.IsValid)
+        if (rsiLayer.State == null)
             return;
 
-        if (layer.ActualRsi is not { } rsi)
-            return;
-
-        var state = rsi[layer.StateId];
-        if (value > layer.AnimationTime)
+        if (value > rsiLayer.AnimationTime)
         {
             // Handle advancing differently from going backwards.
-            layer.AnimationTimeLeft -= (value - layer.AnimationTime);
+            rsiLayer.AnimationTimeLeft -= (value - rsiLayer.AnimationTime);
         }
         else
         {
             // Going backwards we re-calculate from zero.
             // Definitely possible to optimize this for going backwards but I'm too lazy to figure that out.
-            layer.AnimationTimeLeft = -value + state.GetDelay(0);
-            layer.AnimationFrame = 0;
+            rsiLayer.AnimationTimeLeft = -value + rsiLayer.State.GetDelay(0);
+            rsiLayer.AnimationFrame = 0;
         }
 
-        layer.AnimationTime = value;
-        layer.AdvanceFrameAnimation(state);
-        layer.SetAnimationTime(value);
+        rsiLayer.AnimationTime = value;
+        rsiLayer.AdvanceFrameAnimation();
     }
 
     #endregion
 
-    #region AutoAnimated
+    #region Animation
+
+    public void LayerSetAnimationBehaviour(Entity<SpriteComponent?> sprite, int index, AnimationBehaviour value)
+    {
+        if (ResolveLayer(sprite, index, out RsiLayer? layer))
+            LayerSetAnimationBehaviour(layer, value);
+    }
+
+    public void LayerSetAnimationBehaviour(Entity<SpriteComponent?> sprite, LayerKey key, AnimationBehaviour value)
+    {
+        if (ResolveLayer(sprite, key, out RsiLayer? layer))
+            LayerSetAnimationBehaviour(layer, value);
+    }
+
+    public void LayerSetAnimationBehaviour(RsiLayer rsiLayer, AnimationBehaviour value)
+    {
+        if (rsiLayer.AnimationBehaviour == value)
+            return;
+
+        rsiLayer.AnimationBehaviour = value;
+        rsiLayer.InvalidateCache();
+    }
 
     public void LayerSetAutoAnimated(Entity<SpriteComponent?> sprite, int index, bool value)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out RsiLayer? layer))
             LayerSetAutoAnimated(layer, value);
     }
 
-    public void LayerSetAutoAnimated(Entity<SpriteComponent?> sprite, string key, bool value)
+    public void LayerSetAutoAnimated(Entity<SpriteComponent?> sprite, LayerKey key, bool value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out RsiLayer? layer))
             LayerSetAutoAnimated(layer, value);
     }
 
-    public void LayerSetAutoAnimated(Entity<SpriteComponent?> sprite, Enum key, bool value)
+    public void LayerSetAutoAnimated(RsiLayer rsiLayer, bool value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetAutoAnimated(layer, value);
-    }
-
-    public void LayerSetAutoAnimated(Layer layer, bool value)
-    {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-
-        if (layer._autoAnimated == value)
+        if (rsiLayer.AutoAnimated == value)
             return;
 
-        layer._autoAnimated = value;
-        QueueUpdateIsInert(layer.Owner);
+        rsiLayer.AutoAnimated = value;
+        rsiLayer.InvalidateCache();
     }
 
     #endregion
@@ -544,62 +480,122 @@ public sealed partial class SpriteSystem
 
     public void LayerSetRenderingStrategy(Entity<SpriteComponent?> sprite, int index, LayerRenderingStrategy value)
     {
-        if (TryGetLayer(sprite, index, out var layer, true))
+        if (ResolveLayer(sprite, index, out BaseLayer? layer))
             LayerSetRenderingStrategy(layer, value);
     }
 
-    public void LayerSetRenderingStrategy(Entity<SpriteComponent?> sprite, string key, LayerRenderingStrategy value)
+    public void LayerSetRenderingStrategy(Entity<SpriteComponent?> sprite, LayerKey key, LayerRenderingStrategy value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
+        if (ResolveLayer(sprite, key, out BaseLayer? layer))
             LayerSetRenderingStrategy(layer, value);
     }
 
-    public void LayerSetRenderingStrategy(Entity<SpriteComponent?> sprite, Enum key, LayerRenderingStrategy value)
+    public void LayerSetRenderingStrategy(BaseLayer layer, LayerRenderingStrategy value)
     {
-        if (TryGetLayer(sprite, key, out var layer, true))
-            LayerSetRenderingStrategy(layer, value);
-    }
-
-    public void LayerSetRenderingStrategy(Layer layer, LayerRenderingStrategy value)
-    {
-        DebugTools.Assert(layer.Owner != default);
-        DebugTools.AssertNotNull(layer.Owner.Comp);
-        DebugTools.AssertEqual(layer.Owner.Comp.Layers[layer.Index], layer);
-
-        layer.RenderingStrategy = value;
-        layer.BoundsDirty = true;
-        layer.Owner.Comp.BoundsDirty = true;
-        _tree.QueueTreeUpdate(layer.Owner);
+        layer.Strategy = value;
+        layer.InvalidateCache();
     }
 
     #endregion
 
-    /// <summary>
-    /// Refreshes an RSI layer's cached RSI state.
-    /// </summary>
-    private void RefreshCachedState(Layer layer, bool logErrors, RSI.State? fallback)
+    #region Shader
+
+    public void LayerSetShader(Entity<SpriteComponent?> sprite, int index, ShaderInstance? shader)
     {
-        if (!layer.StateId.IsValid)
+        if (ResolveLayer(sprite, index, out Layer? layer))
+            LayerSetShader(layer, shader);
+    }
+
+    public void LayerSetShader(Entity<SpriteComponent?> sprite, LayerKey key, ShaderInstance? shader)
+    {
+        if (ResolveLayer(sprite, key, out Layer? layer))
+            LayerSetShader(layer, shader);
+    }
+
+    public void LayerSetShader(Layer layer, ShaderInstance? shader)
+    {
+        layer.Shader = shader;
+    }
+
+    public void LayerSetShader(Entity<SpriteComponent?> sprite, int index, ProtoId<ShaderPrototype>? shader)
+    {
+        if (ResolveLayer(sprite, index, out Layer? layer))
+            LayerSetShader(layer, shader);
+    }
+
+    public void LayerSetShader(Entity<SpriteComponent?> sprite, LayerKey key, ProtoId<ShaderPrototype>? shader)
+    {
+        if (ResolveLayer(sprite, key, out Layer? layer))
+            LayerSetShader(layer, shader);
+    }
+
+    public void LayerSetShader(Layer layer, ProtoId<ShaderPrototype>? shader)
+    {
+        // This is here for backwards compatibility, layers can just directly set the data field now
+        if (shader == UnshadedId.Id)
         {
-            layer._actualState = null;
-        }
-        else if (layer.ActualRsi is not { } rsi)
-        {
-            layer._actualState = fallback ?? GetFallbackState();
-            if (logErrors)
-                Log.Error(
-                    $"{ToPrettyString(layer.Owner)} has no RSI to pull new state from! Trace:\n{Environment.StackTrace}");
-        }
-        else if (!rsi.TryGetState(layer.StateId, out layer._actualState))
-        {
-            layer._actualState = fallback ?? GetFallbackState();
-            if (logErrors)
-                Log.Error(
-                    $"{ToPrettyString(layer.Owner)}'s state '{layer.StateId}' does not exist in RSI {rsi.Path}. Trace:\n{Environment.StackTrace}");
+            layer.NoLighting = true;
+            layer.PostShaders = null;
+            return;
         }
 
-        layer.AnimationFrame = 0;
-        layer.AnimationTime = 0;
-        layer.AnimationTimeLeft = layer._actualState?.GetDelay(0) ?? 0f;
+        _proto.Resolve(shader, out var prototype);
+        LayerSetShader(layer, prototype?.Instance());
     }
+
+    #endregion
+
+    #region PostShaders
+
+    public void LayerSetPostShaders(Entity<SpriteComponent?> sprite, int index, params ShaderInstance[]? shaders)
+    {
+        if (ResolveLayer(sprite, index, out BaseLayer? layer))
+            LayerSetPostShaders(layer, shaders);
+    }
+
+    public void LayerSetPostShaders(Entity<SpriteComponent?> sprite, LayerKey key, params ShaderInstance[]? shaders)
+    {
+        if (ResolveLayer(sprite, key, out var layer))
+            LayerSetPostShaders(layer, shaders);
+    }
+
+    public void LayerSetPostShaders(BaseLayer layer, params ShaderInstance[]? shaders)
+    {
+        layer.PostShaders = shaders;
+    }
+
+    public void LayerSetPostShaders(Entity<SpriteComponent?> sprite, int index, params ReadOnlySpan<ProtoId<ShaderPrototype>> shaders)
+    {
+        if (ResolveLayer(sprite, index, out BaseLayer? layer))
+            LayerSetPostShaders(layer, shaders);
+    }
+
+    public void LayerSetPostShaders(Entity<SpriteComponent?> sprite, LayerKey key, params ReadOnlySpan<ProtoId<ShaderPrototype>> shaders)
+    {
+        if (ResolveLayer(sprite, key, out BaseLayer? layer))
+            LayerSetPostShaders(layer, shaders);
+    }
+
+    public void LayerSetPostShaders(BaseLayer layer, params ReadOnlySpan<ProtoId<ShaderPrototype>> shaders)
+    {
+        if (shaders.Length == 0)
+        {
+            layer.PostShaders = null;
+            return;
+        }
+
+        Array.Resize(ref layer.PostShaders, shaders.Length);
+        for (var i = 0; i < shaders.Length; i++)
+        {
+            var id = shaders[i];
+            // ReSharper disable once ConditionalAccessQualifierIsNonNullableAccordingToAPIContract
+            if (layer.PostShaders[i]?.Prototype == id)
+                continue;
+
+            if (_proto.Resolve(id, out ShaderPrototype? prototype))
+                layer.PostShaders[i] = prototype.Instance();
+        }
+    }
+
+    #endregion
 }

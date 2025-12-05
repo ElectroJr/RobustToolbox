@@ -921,7 +921,7 @@ namespace Robust.Shared.GameObjects
 #pragma warning disable CS0618 // Type or member is obsolete
             xformComp.Owner = uid;
 #pragma warning restore CS0618 // Type or member is obsolete
-            AddComponentInternal(uid, xformComp, false, true, metadata);
+            AddComponentInternal(uid, xformComp, _xformReg, false, true, metadata);
 
             return uid;
         }

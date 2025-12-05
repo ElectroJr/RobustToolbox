@@ -6,8 +6,6 @@ varying highp vec2 UV;
 // currently being drawn.
 varying highp vec2 UV2;
 
-// TBH I'm not sure what this is for. I think it is scree  UV coordiantes, i.e., FRAGCOORD.xy * SCREEN_PIXEL_SIZE ?
-// TODO CLYDE Is this still needed?
 varying highp vec2 Pos;
 
 // Vertex colour modulation. Note that negative values imply that the LIGHTMAP should be ignored. This is used to avoid

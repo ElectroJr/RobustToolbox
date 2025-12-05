@@ -2,9 +2,9 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using Robust.Client.Graphics;
 using Robust.Client.ResourceManagement;
+using Robust.Client.Sprite.Layers;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Utility;
-using static Robust.Client.GameObjects.SpriteComponent;
 
 namespace Robust.Client.GameObjects;
 
@@ -20,29 +20,45 @@ public sealed partial class SpriteSystem
         return index > 0 && index < sprite.Comp.Layers.Count;
     }
 
+    [Obsolete("Use ResolveLayer or the override without a bool argument")]
     public bool TryGetLayer(
         Entity<SpriteComponent?> sprite,
         int index,
-        [NotNullWhen(true)] out Layer? layer,
+        [NotNullWhen(true)] out BaseLayer? layer,
         bool logMissing)
     {
+        return logMissing
+            ? ResolveLayer(sprite, index, out layer)
+            : TryGetLayer(sprite, index, out layer);
+    }
+
+    /// <summary>
+    /// Attempt to get the layer corresponding to the given index.
+    /// </summary>
+    public bool TryGetLayer<T>(
+        Entity<SpriteComponent?> sprite,
+        int index,
+        [NotNullWhen(true)] out T? layer) where T : BaseLayer
+    {
         layer = null;
+        return _query.Resolve(sprite.Owner, ref sprite.Comp) && sprite.Comp.Sprite.TryGetLayer(index, out layer);
+    }
 
-        if (!_query.Resolve(sprite.Owner, ref sprite.Comp, logMissing))
-            return false;
+    /// <inheritdoc cref="ResolveLayer(Entity{SpriteComponent?},int,out BaseLayer?)"/>
+    public bool ResolveLayer<T>(Entity<SpriteComponent?> sprite, int index, [NotNullWhen(true)] out T? layer) where T : BaseLayer
+    {
+        layer = null;
+        return _query.Resolve(sprite.Owner, ref sprite.Comp) && sprite.Comp.Sprite.ResolveLayer(index, out layer);
+    }
 
-        if (index >= 0 && index < sprite.Comp.Layers.Count)
-        {
-            layer = sprite.Comp.Layers[index];
-            DebugTools.AssertEqual(layer.Owner, sprite!);
-            DebugTools.AssertEqual(layer.Index, index);
-            return true;
-        }
-
-        if (logMissing)
-            Log.Error($"Layer index '{index}' on entity {ToPrettyString(sprite)} does not exist! Trace:\n{Environment.StackTrace}");
-
-        return false;
+    /// <summary>
+    /// Attempt to resolve the layer corresponding to the given index. This will log an error if there is no layer
+    /// with the given index.
+    /// </summary>
+    public bool ResolveLayer(Entity<SpriteComponent?> sprite, int index, [NotNullWhen(true)] out BaseLayer? layer)
+    {
+        layer = null;
+        return _query.Resolve(sprite.Owner, ref sprite.Comp) && sprite.Comp.Sprite.ResolveLayer(index, out layer);
     }
 
     public bool RemoveLayer(Entity<SpriteComponent?> sprite, int index, bool logMissing = true)
@@ -53,48 +69,21 @@ public sealed partial class SpriteSystem
     public bool RemoveLayer(
         Entity<SpriteComponent?> sprite,
         int index,
-        [NotNullWhen(true)] out Layer? layer,
+        out BaseLayer? layer,
         bool logMissing = true)
     {
         layer = null;
         if (!_query.Resolve(sprite.Owner, ref sprite.Comp, logMissing))
             return false;
 
-        if (!TryGetLayer(sprite, index, out layer, logMissing))
-            return false;
+        if (sprite.Comp.Sprite.RemoveLayer(index, out layer))
+            return true;
 
-        sprite.Comp.Layers.RemoveAt(index);
+        if (!logMissing)
+            return true;
 
-        foreach (var otherLayer in sprite.Comp.Layers[index..])
-        {
-            otherLayer.Index--;
-        }
-
-        // TODO SPRITE track inverse-mapping?
-        foreach (var (key, value) in sprite.Comp.LayerMap)
-        {
-            if (value == index)
-                sprite.Comp.LayerMap.Remove(key);
-            else if (value > index)
-            {
-                sprite.Comp.LayerMap[key]--;
-            }
-        }
-
-        layer.Owner = default;
-        layer.Index = -1;
-
-#if DEBUG
-        foreach (var otherLayer in sprite.Comp.Layers)
-        {
-            DebugTools.AssertEqual(otherLayer, sprite.Comp.Layers[otherLayer.Index]);
-        }
-#endif
-
-        sprite.Comp.BoundsDirty = true;
-        _tree.QueueTreeUpdate(sprite!);
-        QueueUpdateIsInert(sprite!);
-        return true;
+        Log.Error($"Layer index '{index}' on entity {ToPrettyString(sprite)} does not exist. Trace:\n{Environment.StackTrace}");
+        return false;
     }
 
     #region AddLayer
@@ -103,55 +92,12 @@ public sealed partial class SpriteSystem
     /// Add the given sprite layer. If an index is specified, this will insert the layer with the given index, resulting
     /// in all other layers being reshuffled.
     /// </summary>
-    public int AddLayer(Entity<SpriteComponent?> sprite, Layer layer, int? index = null)
+    public int AddLayer(Entity<SpriteComponent?> sprite, BaseLayer layer, int? index = null)
     {
         if (!_query.Resolve(sprite.Owner, ref sprite.Comp))
-        {
-            layer.Index = -1;
-            layer.Owner = default;
             return -1;
-        }
 
-        layer.Owner = sprite!;
-
-        if (index is { } i && i != sprite.Comp.Layers.Count)
-        {
-            foreach (var otherLayer in sprite.Comp.Layers[i..])
-            {
-                otherLayer.Index++;
-            }
-
-            // TODO SPRITE track inverse-mapping?
-            sprite.Comp.Layers.Insert(i, layer);
-            layer.Index = i;
-
-            foreach (var (key, value) in sprite.Comp.LayerMap)
-            {
-                if (value >= i)
-                    sprite.Comp.LayerMap[key]++;
-            }
-        }
-        else
-        {
-            layer.Index = sprite.Comp.Layers.Count;
-            sprite.Comp.Layers.Add(layer);
-        }
-
-#if DEBUG
-        foreach (var otherLayer in sprite.Comp.Layers)
-        {
-            DebugTools.AssertEqual(otherLayer, sprite.Comp.Layers[otherLayer.Index]);
-        }
-#endif
-
-        layer.BoundsDirty = true;
-        if (!layer.Blank)
-        {
-            sprite.Comp.BoundsDirty = true;
-            _tree.QueueTreeUpdate(sprite!);
-            QueueUpdateIsInert(sprite!);
-        }
-        return layer.Index;
+        return sprite.Comp.Sprite.AddLayer(layer, index);
     }
 
     /// <summary>
@@ -167,14 +113,15 @@ public sealed partial class SpriteSystem
         if (!_query.Resolve(sprite.Owner, ref sprite.Comp))
             return -1;
 
-        var layer = AddBlankLayer(sprite!, index);
+        var layer = new Layer(this, _tree, EntityManager, Log);
+        index = AddLayer(sprite, layer, index);
 
         if (rsi != null)
             LayerSetRsi(layer, rsi, stateId);
         else
             LayerSetRsiState(layer, stateId);
 
-        return layer.Index;
+        return index.Value;
     }
 
     /// <summary>
@@ -202,21 +149,22 @@ public sealed partial class SpriteSystem
     public int AddTextureLayer(Entity<SpriteComponent?> sprite, ResPath path, int? index = null)
     {
         if (_resourceCache.TryGetResource<TextureResource>(TextureRoot / path, out var texture))
-            return AddTextureLayer(sprite, texture?.Texture, index);
+            return AddTextureLayer(sprite, texture.Texture, index);
 
         if (path.Extension == "rsi")
             Log.Error($"Expected texture but got rsi '{path}', did you mean 'sprite:' instead of 'texture:'?");
+        else
+            Log.Error($"Unable to load texture '{path}'. Trace:\n{Environment.StackTrace}");
 
-        Log.Error($"Unable to load texture '{path}'. Trace:\n{Environment.StackTrace}");
-        return AddTextureLayer(sprite, texture?.Texture, index);
+        return AddTextureLayer(sprite, _resourceCache.GetFallback<TextureResource>(), index);
     }
 
-    public int AddTextureLayer(Entity<SpriteComponent?> sprite, Texture? texture, int? index = null)
+    public int AddTextureLayer(Entity<SpriteComponent?> sprite, Texture texture, int? index = null)
     {
         if (!_query.Resolve(sprite.Owner, ref sprite.Comp))
             return -1;
 
-        var layer = new Layer {Texture = texture};
+        var layer = new Layer(this, _tree, EntityManager, Log);
         return AddLayer(sprite, layer, index);
     }
 
@@ -233,25 +181,68 @@ public sealed partial class SpriteSystem
     /// <summary>
     /// Add a new sprite layer and populate it using the provided layer data.
     /// </summary>
-    public int AddLayer(Entity<SpriteComponent?> sprite, PrototypeLayerData layerDatum, int? index)
+    public int AddLayer(Entity<SpriteComponent?> sprite, BaseLayerData data, int? index = null)
     {
         if (!_query.Resolve(sprite.Owner, ref sprite.Comp))
             return -1;
 
-        var layer = AddBlankLayer(sprite!, index);
-        LayerSetData(layer, layerDatum);
-        return layer.Index;
+        return AddLayer(sprite.Comp.Sprite, data, index);
+    }
+
+    public int AddLayer(LayerCollection parent, BaseLayerData data, int? index = null)
+    {
+        switch (data)
+        {
+            case ShaderLayerData shaderData:
+                return AddLayer(parent, shaderData, index);
+            case RsiLayerData rsiData:
+                return AddLayer(parent, rsiData, index);
+            case LayerCollectionData collectionData:
+                return AddLayer(parent, collectionData, index);
+            default:
+                throw new NotImplementedException();
+        }
+    }
+
+    public int AddLayer(LayerCollection parent, ShaderLayerData data, int? index = null)
+    {
+        var layer = new ShaderLayer(this, _tree, EntityManager, Log);
+        index = parent.AddLayer(layer, index);
+        SetData(layer, data);
+        return index.Value;
+    }
+
+    public int AddLayer(LayerCollection parent, RsiLayerData data, int? index = null)
+    {
+        var layer = new Layer(this, _tree, EntityManager, Log);
+        index = parent.AddLayer(layer, index);
+        LayerSetData(layer, data);
+        return index.Value;
+    }
+
+    public int AddLayer(LayerCollection parent, LayerCollectionData data, int? index = null)
+    {
+        var layer = new LayerCollection(this, _tree, EntityManager, Log);
+        index = parent.AddLayer(layer, index);
+        SetData(layer, data);
+        return index.Value;
     }
 
     /// <summary>
-    /// Add a blank sprite layer.
+    /// Add a blank sprite layer. This effectively just exists to reserve a layer index. and to allow layer keys to
+    /// be assigned before the layer is actually instantiated.
     /// </summary>
-    public Layer AddBlankLayer(Entity<SpriteComponent> sprite, int? index = null)
+    public int AddBlankLayer(Entity<SpriteComponent?> sprite, out Layer? layer, int? index = null)
     {
-        var layer = new Layer();
-        AddLayer(sprite!, layer, index);
-        return layer;
+        layer = new Layer(this, _tree, EntityManager, Log);
+        return AddLayer(sprite, layer, index);
     }
 
+    /// <inheritdoc cref="AddBlankLayer(Entity{SpriteComponent?},out Layer?,int?)"/>
+    public int AddBlankLayer(Entity<SpriteComponent?> sprite, int? index = null)
+        => AddBlankLayer(sprite, out _, index);
+
     #endregion
+
+    public int LayerGetDirectionCount(BaseLayer layer) => layer.DirectionCount;
 }

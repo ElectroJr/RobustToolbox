@@ -121,7 +121,7 @@ public sealed partial class EntityLookupSystem : EntitySystem
         _xformQuery = GetEntityQuery<TransformComponent>();
 
         SubscribeLocalEvent<BroadphaseComponent, EntityTerminatingEvent>(OnBroadphaseTerminating);
-        SubscribeLocalEvent<BroadphaseComponent, ComponentAdd>(OnBroadphaseAdd);
+        SubscribeLocalEvent<BroadphaseComponent, ComponentPreInitEvent>(OnBroadphasePreInit);
         SubscribeLocalEvent<BroadphaseComponent, ComponentInit>(OnBroadphaseInit);
         SubscribeLocalEvent<GridAddEvent>(OnGridAdd);
         SubscribeLocalEvent<MapCreatedEvent>(OnMapChange);
@@ -200,7 +200,7 @@ public sealed partial class EntityLookupSystem : EntitySystem
         EnsureComp<BroadphaseComponent>(ev.EntityUid);
     }
 
-    private void OnBroadphaseAdd(Entity<BroadphaseComponent> broadphase, ref ComponentAdd args)
+    private void OnBroadphasePreInit(Entity<BroadphaseComponent> broadphase, ref ComponentPreInitEvent args)
     {
         broadphase.Comp.StaticSundriesTree = new DynamicTree<EntityUid>(
             (in EntityUid value) => GetTreeAABB(value, broadphase.Owner));

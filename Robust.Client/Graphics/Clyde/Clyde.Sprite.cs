@@ -6,7 +6,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using System.Threading.Tasks;
-using Robust.Client.ComponentTrees;
 using Robust.Client.GameObjects;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Graphics;
@@ -59,8 +58,10 @@ internal partial class Clyde
         // We need to batch the actual tree query, or alternatively we need just get the list of sprites and then
         // parallelize the rotation & bounding box calculations.
         var index = 0;
-        var added = 0;
         var opts = new ParallelOptions { MaxDegreeOfParallelism = _parMan.ParallelProcessCount };
+
+        // TODO SPRITE RENDERING
+        // Clean this up, erase my past sins.
 
         foreach (var (treeOwner, comp) in _spriteTreeSystem.GetIntersectingTrees(map, worldBounds))
         {
@@ -88,7 +89,7 @@ internal partial class Clyde
                 }, bounds, true);
 
             // Get bounding boxes & world positions
-            added = list.Count - index;
+            var added = list.Count - index;
             var batches = added/_spriteProcessingBatchSize;
 
             // TODO also do sorting here & use a merge sort later on for y-sorting?
@@ -153,7 +154,7 @@ internal partial class Clyde
 
             // special casing angle = n*pi/2 to avoid box rotation & bounding calculations doesn't seem to give significant speedups.
             data.SpriteScreenBB = TransformCenteredBox(
-                _spriteSystem.GetLocalBounds((data.Uid, data.Sprite)),
+                data.Sprite.Sprite.GetLocalBounds(),
                 finalRotation,
                 pos + batch.PreScaleViewOffset,
                 batch.ViewScale);
@@ -205,7 +206,7 @@ internal partial class Clyde
         return Unsafe.As<Vector128<float>, Box2>(ref lbrt);
     }
 
-    private struct SpriteData
+    internal struct SpriteData
     {
         public EntityUid Uid;
         public SpriteComponent Sprite;

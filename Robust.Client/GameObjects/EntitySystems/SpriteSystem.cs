@@ -1,24 +1,21 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Numerics;
 using JetBrains.Annotations;
 using Robust.Client.ComponentTrees;
 using Robust.Client.Graphics;
 using Robust.Client.ResourceManagement;
-using Robust.Client.Utility;
+using Robust.Client.Sprite.Layers;
 using Robust.Shared;
 using Robust.Shared.Configuration;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Graphics.RSI;
 using Robust.Shared.IoC;
 using Robust.Shared.Log;
-using Robust.Shared.Maths;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.TypeSerializers.Implementations;
 using Robust.Shared.Timing;
 using Robust.Shared.Utility;
-using static Robust.Client.GameObjects.SpriteComponent;
 
 namespace Robust.Client.GameObjects
 {
@@ -28,6 +25,8 @@ namespace Robust.Client.GameObjects
     [UsedImplicitly]
     public sealed partial class SpriteSystem : EntitySystem
     {
+        public const float MinScale = 0.005f;
+
         [Dependency] private readonly IConfigurationManager _cfg = default!;
         [Dependency] private readonly IEyeManager _eye = default!;
         [Dependency] private readonly IGameTiming _timing = default!;
@@ -42,17 +41,22 @@ namespace Robust.Client.GameObjects
         [Dependency] private readonly AppearanceSystem _appearance = default!;
 
         public static readonly ProtoId<ShaderPrototype> UnshadedId = "unshaded";
-        private readonly Queue<SpriteComponent> _inertUpdateQueue = new();
+        private readonly Queue<Entity<SpriteComponent>> _animationUpdateQueue = new();
 
         public static readonly ResPath TextureRoot = SpriteSpecifierSerializer.TextureRoot;
 
         /// <summary>
         ///     Entities that require a sprite frame update.
         /// </summary>
-        private readonly HashSet<EntityUid> _queuedFrameUpdate = new();
+        private readonly List<EntityUid> _queuedFrameUpdate = new();
 
         private ISawmill _sawmill = default!;
         private EntityQuery<SpriteComponent> _query;
+
+        /// <summary>
+        ///     See <see cref="CVars.RenderSpriteDirectionBias"/>.
+        /// </summary>
+        public double DirectionBias = -0.05;
 
         public override void Initialize()
         {
@@ -60,98 +64,69 @@ namespace Robust.Client.GameObjects
 
             UpdatesAfter.Add(typeof(SpriteTreeSystem));
 
+            SubscribeLocalEvent<SpriteComponent, ComponentPreInitEvent>(OnPreInit);
             SubscribeLocalEvent<PrototypesReloadedEventArgs>(OnPrototypesReloaded);
-            SubscribeLocalEvent<SpriteComponent, ComponentInit>(OnInit);
 
             Subs.CVar(_cfg, CVars.RenderSpriteDirectionBias, OnBiasChanged, true);
             _sawmill = _logManager.GetSawmill("sprite");
             _query = GetEntityQuery<SpriteComponent>();
+            InitializePrototypes();
         }
 
-        public bool IsVisible(Layer layer)
+        private void InitializePrototypes()
         {
-            return layer.Visible && layer.CopyToShaderParameters == null;
-        }
-
-        private void OnInit(EntityUid uid, SpriteComponent component, ComponentInit args)
-        {
-            // I'm not 100% this is needed, but I CBF with this ATM. Somebody kill server sprite component please.
-            QueueUpdateInert(uid, component);
+            var name = _factory.GetComponentName<SpriteComponent>();
+            foreach (var proto in _proto.EnumeratePrototypes<EntityPrototype>())
+            {
+                if (proto.TryGetComponent(name, out SpriteComponent? sprite))
+                    InitializeSprite((EntityUid.Invalid, sprite));
+            }
         }
 
         private void OnBiasChanged(double value)
         {
-            SpriteComponent.DirectionBias = value;
+            DirectionBias = value;
         }
 
         private void DoUpdateIsInert(SpriteComponent component)
         {
-            component._inertUpdateQueued = false;
-            component.IsInert = true;
-
-            foreach (var layer in component.Layers)
-            {
-                // Since StateId is a struct, we can't null-check it directly.
-                if (!layer.State.IsValid || !layer.Visible || !layer.AutoAnimated || layer.Blank)
-                {
-                    continue;
-                }
-
-                var rsi = layer.RSI ?? component.BaseRSI;
-                if (rsi == null || !rsi.TryGetState(layer.State, out var state))
-                {
-                    state = GetFallbackState();
-                }
-
-                if (state.IsAnimated)
-                {
-                    component.IsInert = false;
-                    break;
-                }
-            }
+            component.InertUpdateQueued = false;
+            component.IsInert = component.Sprite.Animated;
         }
 
         /// <inheritdoc />
         public override void FrameUpdate(float frameTime)
         {
-            while (_inertUpdateQueue.TryDequeue(out var sprite))
+            while (_animationUpdateQueue.TryDequeue(out var sprite))
             {
                 DoUpdateIsInert(sprite);
             }
 
             var realtime = _timing.RealTime.TotalSeconds;
-            var spriteQuery = GetEntityQuery<SpriteComponent>();
             var syncQuery = GetEntityQuery<SyncSpriteComponent>();
             var metaQuery = GetEntityQuery<MetaDataComponent>();
 
             foreach (var uid in _queuedFrameUpdate)
             {
-                if (!spriteQuery.TryGetComponent(uid, out var sprite) ||
-                    metaQuery.GetComponent(uid).EntityPaused)
-                {
+                if (!_query.TryGetComponent(uid, out var sprite))
                     continue;
-                }
 
+                sprite.UpdateQueued = false;
                 if (sprite.IsInert)
                     continue;
 
+                if (metaQuery.GetComponent(uid).EntityPaused)
+                    continue;
+
                 var sync = syncQuery.HasComponent(uid);
-
-                foreach (var layer in sprite.Layers)
+                foreach (var baseLayer in sprite.Layers)
                 {
-                    if (!layer.State.IsValid || !layer.Visible || !layer.AutoAnimated)
-                        continue;
-
-                    var rsi = layer.RSI ?? sprite.BaseRSI;
-                    if (rsi == null || !rsi.TryGetState(layer.State, out var state))
-                        state = GetFallbackState();
-
-                    if (!state.IsAnimated)
+                    if (baseLayer is not RsiLayer {Animated: true} layer)
                         continue;
 
                     if (sync)
                     {
-                        layer.AnimationTime = (float)(realtime % state.TotalDelay);
+                        layer.AnimationTime = (float)(realtime % layer.State!.TotalDelay);
                         layer.AnimationTimeLeft = -layer.AnimationTime;
                         layer.AnimationFrame = 0;
                     }
@@ -161,7 +136,7 @@ namespace Robust.Client.GameObjects
                         layer.AnimationTimeLeft -= frameTime;
                     }
 
-                    layer.AdvanceFrameAnimation(state);
+                    layer.AdvanceFrameAnimation();
                 }
             }
 
@@ -220,7 +195,7 @@ namespace Robust.Client.GameObjects
                     sprite ??= Frame0(spriteSpec);
                     break;
                 case SpriteSpecifier.Texture texture:
-                    sprite = texture.GetTexture(_resourceCache);
+                    sprite = GetTexture(texture);
                     break;
                 default:
                     throw new NotImplementedException();
@@ -233,15 +208,17 @@ namespace Robust.Client.GameObjects
     /// <summary>
     ///     This event gets raised before a sprite gets drawn using it's post-shader.
     /// </summary>
-    public sealed class BeforePostShaderRenderEvent : EntityEventArgs
+    [ByRefEvent]
+    public readonly struct BeforePostShaderRenderEvent(
+        Entity<SpriteComponent> entity,
+        BaseLayer layer,
+        ShaderInstance shader,
+        IClydeViewport viewport)
     {
-        public readonly SpriteComponent Sprite;
-        public readonly IClydeViewport Viewport;
-
-        public BeforePostShaderRenderEvent(SpriteComponent sprite, IClydeViewport viewport)
-        {
-            Sprite = sprite;
-            Viewport = viewport;
-        }
+        public readonly Entity<SpriteComponent> Entity = entity;
+        public readonly IClydeViewport Viewport = viewport;
+        public SpriteComponent Sprite => Entity.Comp;
+        public readonly BaseLayer Layer = layer;
+        public readonly ShaderInstance Shader  = shader;
     }
 }

@@ -122,7 +122,7 @@ public abstract partial class SharedMapSystem
     {
         SubscribeLocalEvent<MapGridComponent, ComponentGetState>(OnGridGetState);
         SubscribeLocalEvent<MapGridComponent, ComponentHandleState>(OnGridHandleState);
-        SubscribeLocalEvent<MapGridComponent, ComponentAdd>(OnGridAdd);
+        SubscribeLocalEvent<MapGridComponent, ComponentPreInitEvent>(OnGridPreInit);
         SubscribeLocalEvent<MapGridComponent, ComponentInit>(OnGridInit);
         SubscribeLocalEvent<MapGridComponent, ComponentStartup>(OnGridStartup);
         SubscribeLocalEvent<MapGridComponent, ComponentShutdown>(OnGridRemove);
@@ -484,7 +484,7 @@ public abstract partial class SharedMapSystem
 #endif
     }
 
-    private void OnGridAdd(EntityUid uid, MapGridComponent component, ComponentAdd args)
+    private void OnGridPreInit(EntityUid uid, MapGridComponent component, ref ComponentPreInitEvent args)
     {
         var msg = new GridAddEvent(uid);
         RaiseLocalEvent(uid, msg, true);

@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using Robust.Client.GameObjects;
 using Robust.Client.Graphics;
+using Robust.Client.Sprite.Layers;
 using Robust.Shared.GameObjects;
 using Robust.Shared.IoC;
+using Robust.Shared.Sprite;
 using Robust.Shared.Utility;
 
 namespace Robust.Client.Animations
@@ -22,7 +24,7 @@ namespace Robust.Client.Animations
         /// <summary>
         ///     The layer key of the layer to flick on.
         /// </summary>
-        public object? LayerKey { get; set; }
+        public LayerKey? LayerKey { get; set; }
 
         public override (int KeyFrameIndex, float FramePlayingTime) InitPlayback()
         {
@@ -40,7 +42,8 @@ namespace Robust.Client.Animations
             DebugTools.AssertNotNull(LayerKey);
 
             var entity = (EntityUid) context;
-            var sprite = IoCManager.Resolve<IEntityManager>().GetComponent<SpriteComponent>(entity);
+            var ent = IoCManager.Resolve<IEntityManager>();
+            var sys = ent.System<SpriteSystem>();
 
             var playingTime = prevPlayingTime + frameTime;
             var keyFrameIndex = prevKeyFrameIndex;
@@ -51,22 +54,22 @@ namespace Robust.Client.Animations
                 keyFrameIndex += 1;
             }
 
-            if (keyFrameIndex >= 0)
+            if (keyFrameIndex < 0)
+                return (keyFrameIndex, playingTime);
+
+            var keyFrame = KeyFrames[keyFrameIndex];
+
+            if (LayerKey == null
+                || !sys.TryGetLayer(entity, LayerKey!.Value, out RsiLayer? layer)
+                || layer.State is not { } state)
             {
-                var keyFrame = KeyFrames[keyFrameIndex];
-                // Advance animation on current key frame.
-                var rsi = sprite.LayerGetActualRSI(LayerKey!);
-                if (rsi != null && rsi.TryGetState(keyFrame.State, out var state))
-                {
-                    var animationTime = Math.Min(state.AnimationLength - 0.01f, playingTime);
-                    sprite.LayerSetAutoAnimated(LayerKey!, false);
-                    // TODO: Doesn't setting the state explicitly reset the animation
-                    // so it's slightly more inefficient?
-                    sprite.LayerSetState(LayerKey!, keyFrame.State);
-                    sprite.LayerSetAnimationTime(LayerKey!, animationTime);
-                }
+                return (keyFrameIndex, playingTime);
             }
 
+            var animationTime = Math.Min(state.AnimationLength - 0.01f, playingTime);
+            sys.LayerSetAutoAnimated(layer, false);
+            sys.LayerSetRsiState(layer, keyFrame.State);
+            sys.LayerSetAnimationTime(layer, animationTime);
             return (keyFrameIndex, playingTime);
         }
 

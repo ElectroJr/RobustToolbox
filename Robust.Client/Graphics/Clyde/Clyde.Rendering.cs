@@ -160,6 +160,11 @@ namespace Robust.Client.Graphics.Clyde
             UniformConstantsUBO.Reallocate(constants);
         }
 
+        private void CalcScreenMatrices(out Matrix3x2 proj, out Matrix3x2 view) => CalcScreenMatrices(
+            _currentRenderTarget.Size,
+            out proj,
+            out view);
+
         private void CalcScreenMatrices(in Vector2i screenSize, out Matrix3x2 proj, out Matrix3x2 view)
         {
             proj = Matrix3x2.Identity;

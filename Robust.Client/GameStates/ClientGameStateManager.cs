@@ -968,7 +968,7 @@ namespace Robust.Client.GameStates
         {
             try
             {
-                HandleEntityState(data, _entities.EventBus, toTick);
+                HandleEntityState(data, toTick);
             }
             catch (Exception e)
             {
@@ -1038,6 +1038,21 @@ namespace Robust.Client.GameStates
 
             _entities.SetNetEntity(uid, state.NetEntity, newMeta);
             newMeta.LastStateApplied = toTick;
+
+            FixedArray32<(IComponent, CompIdx)> compsFixed = default;
+            var comps = compsFixed.AsSpan;
+            _entities.CopyComponentsInto(ref comps, uid);
+
+            var preInit = new ComponentPreInitEvent();
+            foreach (var (comp, idx) in comps)
+            {
+                if (comp.LifeStage >= ComponentLifeStage.PreInit)
+                    continue;
+
+                DebugTools.AssertEqual(comp.LifeStage, ComponentLifeStage.Added);
+                comp.LifeStage = ComponentLifeStage.PreInit;
+                _entities.EventBus.RaiseComponentEvent(uid, comp, idx, ref preInit);
+            }
 
             // Check if there's any component states awaiting this entity.
             if (!_entities.PendingNetEntityStates.Remove(state.NetEntity, out var value))
@@ -1346,7 +1361,7 @@ namespace Robust.Client.GameStates
             }
         }
 
-        private void HandleEntityState(in StateData data, IEventBus bus, GameTick toTick)
+        private void HandleEntityState(in StateData data, GameTick toTick)
         {
             _compStateWork.Clear();
 
@@ -1457,13 +1472,24 @@ namespace Robust.Client.GameStates
                 }
             }
 
+            var preInit = new ComponentPreInitEvent();
+            foreach (var (comp, _, _) in _compStateWork.Values)
+            {
+                if (comp.LifeStage >= ComponentLifeStage.PreInit)
+                    continue;
+
+                DebugTools.AssertEqual(comp.LifeStage, ComponentLifeStage.Added);
+                comp.LifeStage = ComponentLifeStage.PreInit;
+                _entities.EventBus.RaiseComponentEvent(data.Uid, comp, ref preInit);
+            }
+
             foreach (var (comp, cur, next) in _compStateWork.Values)
             {
                 if (cur == null && next == null)
                     continue;
 
                 var handleState = new ComponentHandleState(cur, next);
-                bus.RaiseComponentEvent(data.Uid, comp, ref handleState);
+                _entities.EventBus.RaiseComponentEvent(data.Uid, comp, ref handleState);
             }
         }
 

@@ -35,7 +35,7 @@ namespace Robust.Client.Graphics
         /// <param name="xform">The entity's transform component.
         /// Only required if <see cref="overrideDirection"/> is null.</param>
         /// <param name="xformSystem">The transform system</param>
-        void DrawEntity(EntityUid entity,
+        void DrawEntityScreen(EntityUid entity,
             Vector2 position,
             Vector2 scale,
             Angle? worldRot,

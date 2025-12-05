@@ -84,6 +84,7 @@ namespace Robust.Client.Graphics
                 instance.Stencil = data with { Enabled = true};
 
             instance.MakeImmutable();
+            instance.Prototype = ID;
             _cachedInstance = instance;
         }
 

@@ -1,7 +1,7 @@
 using System;
 using System.Numerics;
-using Robust.Shared.Graphics;
 using Robust.Shared.Maths;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.Manager.Attributes;
 using Robust.Shared.ViewVariables;
 
@@ -24,6 +24,34 @@ namespace Robust.Client.Graphics
     /// </remarks>
     public abstract class ShaderInstance : IDisposable
     {
+        /// <summary>
+        /// The prototype corresponding to this shader, if there is one.
+        /// </summary>
+        public ProtoId<ShaderPrototype>? Prototype;
+
+        // TODO RENDERING
+        // Make GetScreenTexture and RaiseEvent shader prototype properties and change getter to public
+        // Currently this is just used by sprite layers, but overlays should also use this.
+        internal bool GetScreenTexture
+        {
+            get => _getScreenTexture;
+            set
+            {
+                EnsureMutable();
+                _getScreenTexture = value;
+            }
+        }
+
+        internal bool RaiseEvent
+        {
+            get => _raiseEvent;
+            set
+            {
+                EnsureMutable();
+                _raiseEvent = value;
+            }
+        }
+
         public bool Disposed { get; protected set; }
 
         /// <summary>
@@ -33,6 +61,8 @@ namespace Robust.Client.Graphics
         public bool Mutable { get; private set; } = true;
 
         private StencilParameters _stencil;
+        private bool _getScreenTexture;
+        private bool _raiseEvent;
 
         public StencilParameters Stencil
         {

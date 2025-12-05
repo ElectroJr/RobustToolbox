@@ -78,7 +78,7 @@ public abstract class ComponentTreeSystem<TTreeComp, TComp> : EntitySystem
         }
 
         SubscribeLocalEvent<TTreeComp, EntityTerminatingEvent>(OnTerminating);
-        SubscribeLocalEvent<TTreeComp, ComponentAdd>(OnTreeAdd);
+        SubscribeLocalEvent<TTreeComp, ComponentPreInitEvent>(OnTreePreInit);
         SubscribeLocalEvent<TTreeComp, ComponentRemove>(OnTreeRemove);
 
         Query = GetEntityQuery<TComp>();
@@ -125,7 +125,7 @@ public abstract class ComponentTreeSystem<TTreeComp, TComp> : EntitySystem
     protected virtual void OnCompRemoved(EntityUid uid, TComp component, ComponentRemove args)
         => RemoveFromTree(component);
 
-    protected virtual void OnTreeAdd(EntityUid uid, TTreeComp component, ComponentAdd args)
+    private void OnTreePreInit(EntityUid uid, TTreeComp component, ref ComponentPreInitEvent args)
     {
         component.Tree = new(ExtractAabb, capacity: InitialCapacity);
     }

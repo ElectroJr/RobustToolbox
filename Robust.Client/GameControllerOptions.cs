@@ -8,7 +8,7 @@ namespace Robust.Client
         /// <summary>
         ///     Whether content sandboxing will be enabled & enforced.
         /// </summary>
-        public bool Sandboxing { get; init; } = true;
+        public bool Sandboxing { get; init; } = false; // TODO SPRITE please dont forget
 
         // TODO: Expose mounting methods to games using Robust as a library.
         /// <summary>

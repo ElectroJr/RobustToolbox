@@ -126,10 +126,6 @@ namespace Robust.Client.Utility
         public static RsiDirection OffsetRsiDir(this RsiDirection dir, DirectionOffset offset)
         {
             // There is probably a better way to do this.
-            // Eh.
-            //
-            // Maybe convert RSI direction to a direction and use the much more elegant solution in `TurnCw()` functions?
-            // but that conversion would probably be slower than this, even though its a mess to read.
             switch (offset)
             {
                 case DirectionOffset.None:

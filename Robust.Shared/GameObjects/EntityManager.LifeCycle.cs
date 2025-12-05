@@ -4,7 +4,6 @@ namespace Robust.Shared.GameObjects;
 
 public partial class EntityManager
 {
-    private static readonly ComponentAdd CompAddInstance = new();
     private static readonly ComponentInit CompInitInstance = new();
     private static readonly ComponentStartup CompStartupInstance = new();
     private static readonly ComponentShutdown CompShutdownInstance = new();
@@ -18,15 +17,9 @@ public partial class EntityManager
     {
         DebugTools.Assert(!_deleteSet.Contains(component));
         DebugTools.Assert(component.LifeStage == ComponentLifeStage.PreAdd);
-
-#pragma warning disable CS0618 // Type or member is obsolete
-        component.LifeStage = ComponentLifeStage.Adding;
         component.CreationTick = CurrentTick;
-        // networked components are assumed to be dirty when added to entities. See also: ClearTicks()
         component.LastModifiedTick = CurrentTick;
-        EventBus.RaiseComponentEvent(uid, component, idx, CompAddInstance);
         component.LifeStage = ComponentLifeStage.Added;
-#pragma warning restore CS0618 // Type or member is obsolete
     }
 
     /// <summary>
@@ -36,7 +29,7 @@ public partial class EntityManager
     internal void LifeInitialize<T>(EntityUid uid, T component, CompIdx idx) where T : IComponent
     {
         DebugTools.Assert(!_deleteSet.Contains(component));
-        DebugTools.Assert(component.LifeStage == ComponentLifeStage.Added);
+        DebugTools.Assert(component.LifeStage == ComponentLifeStage.PreInit);
 
         component.LifeStage = ComponentLifeStage.Initializing;
         EventBus.RaiseComponentEvent(uid, component, idx, CompInitInstance);

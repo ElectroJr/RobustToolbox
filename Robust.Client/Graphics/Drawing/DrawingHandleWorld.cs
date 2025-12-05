@@ -1,5 +1,8 @@
 using System.Numerics;
+using Robust.Client.GameObjects;
+using Robust.Shared.GameObjects;
 using Robust.Shared.Graphics;
+using Robust.Shared.Graphics.RSI;
 using Robust.Shared.Maths;
 
 namespace Robust.Client.Graphics
@@ -132,5 +135,12 @@ namespace Robust.Client.Graphics
 
             DrawTextureRectRegion(texture, in quad, modulate);
         }
+
+        public abstract void DrawEntity(
+            Entity<SpriteComponent> ent,
+            Angle eyeRot,
+            Angle worldRot,
+            Vector2 worldPos,
+            RsiDirection? overrideDirection = null);
     }
 }

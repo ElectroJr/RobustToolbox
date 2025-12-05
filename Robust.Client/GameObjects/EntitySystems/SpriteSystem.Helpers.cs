@@ -4,6 +4,7 @@ using System.Numerics;
 using JetBrains.Annotations;
 using Robust.Client.Graphics;
 using Robust.Client.ResourceManagement;
+using Robust.Client.Sprite.Layers;
 using Robust.Shared.GameObjects;
 using Robust.Shared.Map;
 using Robust.Shared.Prototypes;
@@ -94,10 +95,36 @@ public sealed partial class SpriteSystem
         // Finally, we use spawn a dummy entity to get its icon.
         var dummy = Spawn(prototype.ID, MapCoordinates.Nullspace);
         var spriteComponent = EnsureComp<SpriteComponent>(dummy);
-        var result = spriteComponent.Icon ?? GetFallbackState();
+        var result = GetIcon(spriteComponent) ?? GetFallbackState();
         Del(dummy);
 
         return result;
+    }
+
+    public IRsiStateLike? GetIcon(SpriteComponent comp)
+    {
+        foreach (var layer in comp.Layers)
+        {
+            if (layer is not Layer {Visible: true} cast)
+                continue;
+
+            if (cast.State != null)
+                return cast.State;
+
+            if (cast.Texture != null)
+                return cast.Texture;
+        }
+
+        return null;
+    }
+
+    public IRsiStateLike? GetIcon(EntityUid uid)
+    {
+        if (TryComp(uid, out IconComponent? icon))
+            return GetIcon(icon);
+        return TryComp(uid, out SpriteComponent? sprite)
+            ? GetIcon(sprite)
+            : null;
     }
 
     public IEnumerable<IDirectionalTextureProvider> GetPrototypeTextures(EntityPrototype proto) =>
@@ -127,25 +154,15 @@ public sealed partial class SpriteSystem
         // And if it is, shouldn't GetPrototypeIconInternal also use this?
         _appearance.OnChangeData(dummy, spriteComponent);
 
-        foreach (var layer in spriteComponent.AllLayers)
+        foreach (var layer in spriteComponent.Layers)
         {
-            if (!layer.Visible)
+            if (layer is not RsiLayer {Visible: true} cast)
                 continue;
 
-            if (layer.Texture != null)
-            {
-                results.Add(layer.Texture);
-                continue;
-            }
-
-            if (!layer.RsiState.IsValid)
-                continue;
-
-            var rsi = layer.Rsi ?? spriteComponent.BaseRSI;
-            if (rsi == null || !rsi.TryGetState(layer.RsiState, out var state))
-                continue;
-
-            results.Add(state);
+            if (cast.State is { } state)
+                results.Add(state);
+            else if (cast.Texture is {} tex)
+                results.Add(tex);
         }
 
         noRot = spriteComponent.NoRotation;
@@ -171,10 +188,8 @@ public sealed partial class SpriteSystem
     [Pure]
     public RSI.State GetState(SpriteSpecifier.Rsi rsiSpecifier)
     {
-        if (_resourceCache.TryGetResource<RSIResource>(
-                TextureRoot / rsiSpecifier.RsiPath,
-                out var theRsi) &&
-            theRsi.RSI.TryGetState(rsiSpecifier.RsiState, out var state))
+        if (_resourceCache.TryGetResource<RSIResource>(TextureRoot / rsiSpecifier.RsiPath, out var theRsi)
+            && theRsi.RSI.TryGetState(rsiSpecifier.RsiState, out var state))
         {
             return state;
         }
@@ -195,11 +210,13 @@ public sealed partial class SpriteSystem
         if (!args.TryGetModified<EntityPrototype>(out var modified))
             return;
 
-        // Remove all changed prototypes from the cache, if they're there.
+        var name = _factory.GetComponentName<SpriteComponent>();
         foreach (var prototype in modified)
         {
-            // Let's be lazy and not regenerate them until something needs them again.
             _cachedPrototypeIcons.Remove(prototype);
+
+            if (_proto.TryIndex(prototype, out var proto) && proto.TryGetComponent(name, out SpriteComponent? sprite))
+                InitializeSprite((EntityUid.Invalid, sprite));
         }
     }
 
@@ -214,14 +231,10 @@ public sealed partial class SpriteSystem
         var (worldPos, worldRot) = _xforms.GetWorldPositionRotation(entity.Owner);
 
         if (!Resolve(entity, ref entity.Comp1, false))
-        {
             return worldPos;
-        }
 
         if (entity.Comp1.NoRotation)
-        {
             return worldPos + entity.Comp1.Offset;
-        }
 
         return worldPos + worldRot.RotateVec(entity.Comp1.Rotation.RotateVec(entity.Comp1.Offset));
     }
@@ -237,4 +250,7 @@ public sealed partial class SpriteSystem
         var spriteCoords = GetSpriteWorldPosition(entity);
         return _eye.MapToScreen(new MapCoordinates(spriteCoords, entity.Comp2.MapID));
     }
+
+    [Obsolete("Use Layer.IsVisible")]
+    public bool IsVisible(Layer layer) => layer.Visible;
 }

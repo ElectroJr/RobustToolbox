@@ -1,49 +1,61 @@
-using System;
-using System.Collections.Generic;
+using Robust.Client.Sprite.Layers;
 using Robust.Shared.GameObjects;
-using Robust.Shared.Maths;
-using Robust.Shared.Utility;
 
 namespace Robust.Client.GameObjects;
 
 public sealed partial class SpriteSystem
 {
+    private void OnPreInit(Entity<SpriteComponent> ent, ref ComponentPreInitEvent args)
+    {
+        InitializeSprite(ent);
+    }
+
+    private void InitializeSprite(Entity<SpriteComponent> ent)
+    {
+        // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
+        if (ent.Comp.SpriteInternal != null)
+            return;
+
+        ent.Comp.Sys = this;
+        ent.Comp.SpriteInternal = new(ent, this, _tree, EntityManager, Log);
+        ref var data = ref ent.Comp.InitData;
+
+        if (ent.Comp.NoRot == true)
+            data.RenderingStrategy = LayerRenderingStrategy.NoRotation;
+        else if (ent.Comp.SnapCardinalsInternal == true)
+            data.RenderingStrategy = LayerRenderingStrategy.SnapToCardinals;
+        else
+            data.RenderingStrategy =  LayerRenderingStrategy.Default;
+
+        // Insert default layer
+        if (data.Layers == null && (ent.Comp.State != null || ent.Comp.Texture != null))
+        {
+            data.Layers =
+            [
+                new RsiLayerData
+                {
+                    TexturePath = ent.Comp.Texture,
+                    State = ent.Comp.State,
+                }
+            ];
+        }
+
+        LayerSetData(ent.Comp.Sprite, data);
+    }
+
     /// <summary>
     /// Resets the sprite's animated layers to align with a given time (in seconds).
     /// </summary>
     public void SetAutoAnimateSync(SpriteComponent sprite, double time)
     {
-        foreach (var layer in sprite.AllLayers)
+        foreach (var baseLayer in sprite.Layers)
         {
-            if (layer is not SpriteComponent.Layer spriteLayer)
+            if (baseLayer is not RsiLayer {Animated: true} layer)
                 continue;
 
-            SetAutoAnimateSync(sprite, spriteLayer, time);
+            layer.AnimationTimeLeft = (float) -(time % layer.State!.TotalDelay);
+            layer.AnimationFrame = 0;
         }
-    }
-
-    /// <summary>
-    /// Resets the layer's animation to align with a given time (in seconds).
-    /// </summary>
-    public void SetAutoAnimateSync(SpriteComponent sprite, SpriteComponent.Layer layer, double time)
-    {
-        if (!layer.AutoAnimated)
-            return;
-
-        var rsi = layer.RSI ?? sprite.BaseRSI;
-
-        if (rsi == null || !rsi.TryGetState(layer.State, out var state))
-        {
-            state = GetFallbackState();
-        }
-
-        if (!state.IsAnimated)
-        {
-            return;
-        }
-
-        layer.AnimationTimeLeft = (float) -(time % state.TotalDelay);
-        layer.AnimationFrame = 0;
     }
 
     public void CopySprite(Entity<SpriteComponent?> source, Entity<SpriteComponent?> target)
@@ -54,44 +66,15 @@ public sealed partial class SpriteSystem
         if (!Resolve(target.Owner, ref target.Comp))
             return;
 
-        target.Comp._baseRsi = source.Comp._baseRsi;
-        target.Comp._bounds = source.Comp._bounds;
-        target.Comp._visible = source.Comp._visible;
-        target.Comp.color = source.Comp.color;
-        target.Comp.offset = source.Comp.offset;
-        target.Comp.rotation = source.Comp.rotation;
-        target.Comp.scale = source.Comp.scale;
-        target.Comp.LocalMatrix = Matrix3Helpers.CreateTransform(
-            in target.Comp.offset,
-            in target.Comp.rotation,
-            in target
-            .Comp.scale);
+        CopySprite(source.Comp, target!);
+    }
 
-        target.Comp.drawDepth = source.Comp.drawDepth;
-        target.Comp.NoRotation = source.Comp.NoRotation;
-        target.Comp.DirectionOverride = source.Comp.DirectionOverride;
-        target.Comp.EnableDirectionOverride = source.Comp.EnableDirectionOverride;
-        target.Comp.Layers = new List<SpriteComponent.Layer>(source.Comp.Layers.Count);
-        foreach (var otherLayer in source.Comp.Layers)
-        {
-            var layer = new SpriteComponent.Layer(otherLayer, target.Comp);
-            layer.Index = target.Comp.Layers.Count;
-            layer.Owner = target!;
-            target.Comp.Layers.Add(layer);
-        }
-
-        target.Comp.IsInert = source.Comp.IsInert;
-        target.Comp.LayerMap = source.Comp.LayerMap.ShallowClone();
-        target.Comp.PostShader = source.Comp.PostShader is {Mutable: true}
-            ? source.Comp.PostShader.Duplicate()
-            : source.Comp.PostShader;
-
-        target.Comp.RenderOrder = source.Comp.RenderOrder;
-        target.Comp.GranularLayersRendering = source.Comp.GranularLayersRendering;
-        target.Comp.Loop = source.Comp.Loop;
-
-        DirtyBounds(target!);
-        _tree.QueueTreeUpdate(target!);
+    public void CopySprite(SpriteComponent source, Entity<SpriteComponent> target)
+    {
+        target.Comp.SpriteInternal = source.Sprite.Clone(target);
+        target.Comp.DrawDepth = source.DrawDepth;
+        target.Comp.IsInert = source.IsInert;
+        target.Comp.RenderOrder = source.RenderOrder;
     }
 
     /// <summary>
@@ -99,13 +82,22 @@ public sealed partial class SpriteSystem
     /// </summary>
     public void QueueUpdateIsInert(Entity<SpriteComponent> sprite)
     {
-        if (sprite.Comp._inertUpdateQueued)
+        if (sprite.Comp.InertUpdateQueued)
             return;
 
-        sprite.Comp._inertUpdateQueued = true;
-        _inertUpdateQueue.Enqueue(sprite);
+        sprite.Comp.InertUpdateQueued = true;
+        _animationUpdateQueue.Enqueue(sprite);
     }
 
-    [Obsolete("Use QueueUpdateIsInert")]
-    public void QueueUpdateInert(EntityUid uid, SpriteComponent sprite) => QueueUpdateIsInert(new (uid, sprite));
+    /// <summary>
+    /// Adds a sprite to a queue that will update <see cref="SpriteComponent.IsInert"/> next frame.
+    /// </summary>
+    internal void QueueFrameUpdate(EntityUid uid, SpriteComponent sprite)
+    {
+        if (!sprite.IsInert && !sprite.UpdateQueued)
+        {
+            sprite.UpdateQueued = true;
+            _queuedFrameUpdate.Add(uid);
+        }
+    }
 }

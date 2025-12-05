@@ -362,6 +362,7 @@ namespace Robust.Client.Graphics.Clyde
                     WindowId = reg.Id,
                     IsSrgb = true,
                     Instance = new WeakReference<RenderTargetBase>(renderTarget),
+                    TargetHandle = rtId
                 });
 
                 reg.RenderTarget = renderTarget;

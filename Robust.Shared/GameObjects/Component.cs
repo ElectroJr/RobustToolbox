@@ -128,14 +128,14 @@ namespace Robust.Shared.GameObjects
         PreAdd = 0,
 
         /// <summary>
-        /// Currently being added to an entity.
-        /// </summary>
-        Adding,
-
-        /// <summary>
         /// Has been added to an entity.
         /// </summary>
         Added,
+
+        /// <summary>
+        /// Component is about to be initialized.
+        /// </summary>
+        PreInit,
 
         /// <summary>
         /// Currently being initialized.
@@ -179,12 +179,15 @@ namespace Robust.Shared.GameObjects
     }
 
     /// <summary>
-    /// WARNING: Do not subscribe to this unless you know what you are doing!
-    /// The component has been added to the entity. This is the first function
-    /// to be called after the component has been allocated and (optionally) deserialized.
+    /// This event is raised just before components are initialized.
     /// </summary>
-    [ComponentEvent]
-    public readonly record struct ComponentAdd;
+    /// <remarks>
+    /// On the client, this will also get raised before any component states are applied to newly create entities, which is done priort to component initialization.
+    /// </remarks>
+    [ComponentEvent, ByRefEvent]
+    internal readonly record struct ComponentPreInitEvent;
+    // Internal, because content shouldn't need to use this.
+    // This is mainly here because so many content components assume that SpriteComponent is initialized during their onw initialization logic.
 
     /// <summary>
     /// Raised when all of the entity's other components have been added and are available,

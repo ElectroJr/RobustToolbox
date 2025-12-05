@@ -6,6 +6,7 @@ using Robust.Shared.GameObjects;
 using Robust.Shared.Maths;
 using OpenToolkit.Graphics.OpenGL4;
 using Robust.Shared.Graphics;
+using Robust.Shared.Graphics.RSI;
 
 namespace Robust.Client.Graphics.Clyde
 {
@@ -22,6 +23,10 @@ namespace Robust.Client.Graphics.Clyde
 
             public DrawingHandleScreen DrawingHandleScreen { get; }
             public DrawingHandleWorld DrawingHandleWorld { get; }
+            internal ClydeHandle CurrentTarget => _clyde._currentBoundRenderTarget.TargetHandle;
+            public Vector2i CurrentTargetSize =>  _clyde._currentBoundRenderTarget.Size;
+
+            public IClydeViewport? CurrentViewport => _clyde._currentViewport;
 
             public RenderHandle(Clyde clyde, IEntityManager entities)
             {
@@ -46,6 +51,17 @@ namespace Robust.Client.Graphics.Clyde
             public void SetProjView(in Matrix3x2 proj, in Matrix3x2 view)
             {
                 _clyde.DrawSetProjViewTransform(proj, view);
+            }
+
+            public void GetProjView(out Matrix3x2 proj, out Matrix3x2 view)
+            {
+                proj = _clyde._currentMatrixProj;
+                view = _clyde._currentMatrixView;
+            }
+
+            public void CalcScreenMatrices(out Matrix3x2 proj, out Matrix3x2 view)
+            {
+                _clyde.CalcScreenMatrices(out proj, out view);
             }
 
             /// <summary>
@@ -155,7 +171,8 @@ namespace Robust.Client.Graphics.Clyde
             /// <param name="xform">The entity's transform component.
             /// Only required if <see cref="overrideDirection"/> is null.</param>
             /// <param name="xformSystem">The transform system</param>
-            public void DrawEntity(EntityUid entity,
+            public void DrawEntityScreen(
+                EntityUid entity,
                 Vector2 position,
                 Vector2 scale,
                 Angle? worldRot,
@@ -198,20 +215,13 @@ namespace Robust.Client.Graphics.Clyde
                     SetProjView(proj, view);
                 }
 
-                if (worldRot == null)
-                {
-                    xformSystem ??= _entities.System<SharedTransformSystem>();
-                    var query = _entities.GetEntityQuery<TransformComponent>();
-                    xform ??= query.GetComponent(entity);
-                    worldRot = xformSystem.GetWorldRotation(xform, query);
-                }
+                xformSystem ??= _entities.System<SharedTransformSystem>();
+                xform ??= _entities.GetComponent<TransformComponent>(entity);
+                worldRot ??= xformSystem.GetWorldRotation(xform);
 
                 // Draw the entity.
-                sprite.Render(
-                    DrawingHandleWorld,
-                    eyeRot,
-                    worldRot.Value,
-                    overrideDirection);
+                RsiDirection? dir = overrideDirection == null ? null : (RsiDirection)overrideDirection.Value;
+                _clyde._spriteSystem.RenderSprite(this, (entity, sprite), eyeRot, worldRot.Value, default, dir);
 
                 // Reset to screen space
                 SetProjView(oldProj, oldView);
@@ -252,6 +262,11 @@ namespace Robust.Client.Graphics.Clyde
                 var target = (RenderTexture?) renderTarget;
 
                 _clyde.DrawRenderTarget(target?.Handle ?? default);
+            }
+
+            internal void UseRenderTarget(ClydeHandle renderTarget)
+            {
+                _clyde.DrawRenderTarget(renderTarget);
             }
 
             public void Clear(Color color, int stencil = 0, ClearBufferMask mask = ClearBufferMask.ColorBufferBit)
@@ -394,7 +409,7 @@ namespace Robust.Client.Graphics.Clyde
                     TransformComponent? xform = null,
                     SharedTransformSystem? xformSystem = null)
                 {
-                    _renderHandle.DrawEntity(entity, position, scale, worldRot, eyeRot, overrideDirection, sprite, xform, xformSystem);
+                    _renderHandle.DrawEntityScreen(entity, position, scale, worldRot, eyeRot, overrideDirection, sprite, xform, xformSystem);
                 }
             }
 
@@ -539,6 +554,16 @@ namespace Robust.Client.Graphics.Clyde
                         quad.TopLeft, quad.TopRight, color, in subRegion);
                 }
 
+                public override void DrawEntity(
+                    Entity<SpriteComponent> ent,
+                    Angle eyeRot,
+                    Angle worldRot,
+                    Vector2 worldPos,
+                    RsiDirection? overrideDirection = null)
+                {
+                    _renderHandle.DrawEntityWorld(ent, eyeRot, worldRot, worldPos, overrideDirection);
+                }
+
                 public override void DrawPrimitives(DrawPrimitiveTopology primitiveTopology, Texture texture,
                     ReadOnlySpan<DrawVertexUV2DColor> vertices)
                 {
@@ -550,6 +575,16 @@ namespace Robust.Client.Graphics.Clyde
                 {
                     _renderHandle.DrawPrimitives(primitiveTopology, texture, indices, vertices);
                 }
+            }
+
+            public void DrawEntityWorld(
+                Entity<SpriteComponent> ent,
+                Angle eyeRot,
+                Angle worldRot,
+                Vector2 worldPos,
+                RsiDirection? overrideDirection = null)
+            {
+                _clyde._spriteSystem.RenderSprite(this, ent, eyeRot, worldRot, worldPos, overrideDirection);
             }
         }
     }

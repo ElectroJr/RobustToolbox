@@ -146,7 +146,8 @@ namespace Robust.Shared.Maths
         [Pure]
         public static Box2 CentredAroundZero(Vector2 size)
         {
-            return FromDimensions(-size / 2, size);
+            var halfSize = size / 2;
+            return new Box2(-halfSize, halfSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

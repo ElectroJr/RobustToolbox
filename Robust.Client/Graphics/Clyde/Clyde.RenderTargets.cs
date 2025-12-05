@@ -218,6 +218,7 @@ namespace Robust.Client.Graphics.Clyde
                 FramebufferHandle = fbo,
                 Size = size,
                 TextureHandle = textureObject.TextureId,
+                TargetHandle = handle,
                 MemoryPressure = pressure,
                 ColorFormat = format.ColorFormat,
                 SampleParameters = sampleParameters,
@@ -341,6 +342,7 @@ namespace Robust.Client.Graphics.Clyde
             public TextureSampleParameters? SampleParameters;
 
             public required WeakReference<RenderTargetBase> Instance;
+            public ClydeHandle TargetHandle;
         }
 
         internal abstract class RenderTargetBase : IRenderTarget

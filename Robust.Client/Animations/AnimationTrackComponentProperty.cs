@@ -30,13 +30,16 @@ namespace Robust.Client.Animations
                 return;
             }
 
-            if (component is IAnimationProperties properties)
+            try
             {
-                properties.SetAnimatableProperty(Property, value);
+                if (component is IAnimationProperties properties)
+                    properties.SetAnimatableProperty(Property, value);
+                else
+                    AnimationHelper.SetAnimatableProperty(component, Property, value);
             }
-            else
+            catch (Exception e)
             {
-                AnimationHelper.SetAnimatableProperty(component, Property, value);
+                Logger.Error($"Failed to set animatable property {Property} on component {ComponentType.Name}");
             }
         }
     }

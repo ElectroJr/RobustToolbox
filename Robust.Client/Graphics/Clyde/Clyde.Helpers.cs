@@ -35,7 +35,7 @@ namespace Robust.Client.Graphics.Clyde
             GL.ActiveTexture(TextureUnit.Texture0);
         }
 
-        private void CopyRenderTextureToTexture(RenderTexture source, ClydeTexture target) {
+        private void CopyRenderTextureToTexture(IRenderTarget source, ClydeTexture target) {
             LoadedRenderTarget sourceLoaded = RtToLoaded(source);
             bool pause = sourceLoaded != _currentBoundRenderTarget;
             FullStoredRendererState? store = null;
